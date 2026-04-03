@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swing Optimizer Pro — SwingAI-Referenced Biomechanics</title>
+    <meta name="description" content="Research-grade baseball hitting biomechanics analysis. Powered by OpenCap motion capture data with SwingAI-inspired 12-dimension scoring.">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Outfit:wght@700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="background-effects">
+        <div class="glow glow-1"></div>
+        <div class="glow glow-2"></div>
+        <div class="glow glow-3"></div>
+    </div>
+    
+    <div class="container">
+        <header>
+            <h1>Swing Optimizer <span class="accent">Pro</span></h1>
+            <p>12-Dimension Biomechanics Diagnosis &mdash; SwingAI Framework</p>
+        </header>
+        
+        <main>
+            <!-- ===================== UPLOAD SECTION ===================== -->
+            <section class="upload-section glass-card" id="upload-section">
+                <h2>Analyze Swing Data</h2>
+                
+                <div class="split-layout">
+                    <!-- Drag and Drop Zone -->
+                    <div class="upload-zone" id="drop-zone">
+                        <div class="upload-icon">📁</div>
+                        <p>Drag &amp; drop a <strong class="accent">.mot</strong> file here</p>
+                        <p class="small">or</p>
+                        <label class="btn btn-primary">
+                            Browse File
+                            <input type="file" id="file-input" accept=".mot" hidden>
+                        </label>
+                    </div>
+                    
+                    <!-- Local Downloads Scan -->
+                    <div class="local-files-zone">
+                        <h3>Local Downloads <span class="tooltip" title="Scanning ~/Downloads directly">ℹ️</span></h3>
+                        <div class="file-list" id="local-files-list">
+                            <div class="loading-spinner"></div>
+                            <p class="small text-muted mt-2">Scanning...</p>
+                        </div>
+                        <button class="btn btn-secondary btn-sm" id="refresh-local">🔄 Refresh</button>
+                    </div>
+                </div>
+            </section>
+            
+            <!-- ===================== RESULTS SECTION ===================== -->
+            <section class="results-section hidden" id="results-section">
+                <button class="btn btn-secondary btn-sm mb-4" id="btn-back">⬅ New Analysis</button>
+                
+                <!-- SWING SCORE HERO -->
+                <div class="swing-score-hero glass-card glow-border anim-slide-up" id="swing-score-hero">
+                    <div class="hero-left">
+                        <div class="swing-score-ring" id="swing-score-ring">
+                            <svg viewBox="0 0 120 120" class="score-ring-svg">
+                                <circle class="ring-bg" cx="60" cy="60" r="52"/>
+                                <circle class="ring-fill" id="ring-fill" cx="60" cy="60" r="52"
+                                    stroke-dasharray="0 327" stroke-dashoffset="82"/>
+                            </svg>
+                            <div class="score-ring-inner">
+                                <span class="score-number" id="swing-score-number">--</span>
+                                <span class="score-denom">/100</span>
+                            </div>
+                        </div>
+                        <div class="score-meta">
+                            <div class="score-label-text">Swing Score</div>
+                            <div class="skill-badge" id="skill-badge-display">High School</div>
+                        </div>
+                    </div>
+                    <div class="hero-right">
+                        <h2 id="filename-display">swing_file.mot</h2>
+                        <div class="hero-stats">
+                            <div class="hero-stat">
+                                <span class="hero-stat-value accent" id="exit-velo-number">--</span>
+                                <span class="hero-stat-label">Est. Exit Velocity (mph)</span>
+                            </div>
+                            <div class="hero-stat">
+                                <span class="hero-stat-value" id="efficiency-number">--</span>
+                                <span class="hero-stat-label">Physics Efficiency Score</span>
+                            </div>
+                        </div>
+                        <p id="data-warning" class="hidden text-muted small" style="margin-top: 12px; max-width: 400px; line-height: 1.4;">
+                            <span class="val-warn" style="font-weight:bold;">⚠</span> Exit velocity is theoretically improbable for this athlete's demographics — likely a data artifact in the motion capture file.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- 4-PHASE SWINGAI CARDS -->
+                <div class="phase-cards-grid" id="phase-cards-grid">
+                    <!-- Populated by JS -->
+                </div>
+
+                <!-- FINDINGS & PRESCRIPTIONS -->
+                <div class="grid-layout mt-4">
+                    <div class="glass-card panel anim-slide-up" style="animation-delay: 0.15s">
+                        <h3 class="panel-title"><span class="icon">🔬</span> Mechanical Findings</h3>
+                        <ul class="findings-list" id="findings-list"></ul>
+                    </div>
+                    <div class="glass-card panel anim-slide-up" style="animation-delay: 0.25s">
+                        <h3 class="panel-title"><span class="icon">💊</span> Prescriptions</h3>
+                        <ul class="recommendation-list" id="recommendation-list"></ul>
+                    </div>
+                </div>
+
+                <!-- ADVANCED PHYSICS TOGGLE -->
+                <div class="advanced-toggle mt-4 anim-slide-up" style="animation-delay: 0.35s">
+                    <button class="btn btn-secondary btn-sm" id="toggle-advanced">
+                        <span id="toggle-icon">▶</span> Advanced Physics Detail
+                    </button>
+                </div>
+                <div class="advanced-panels hidden" id="advanced-panels">
+                    <div class="grid-layout mt-3">
+                        <div class="glass-card panel">
+                            <h3 class="panel-title"><span class="icon">⚙️</span> Rotational Mechanics</h3>
+                            <div class="metrics-grid" id="rotational-metrics"></div>
+                        </div>
+                        <div class="glass-card panel">
+                            <h3 class="panel-title"><span class="icon">🦵</span> Kinetic Chain &amp; Stride</h3>
+                            <div class="metrics-grid" id="stride-metrics"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div class="loading-overlay hidden" id="loading-overlay">
+        <div class="spinner-container">
+            <div class="spinner"></div>
+            <h3>Running Biomechanical Analysis...</h3>
+            <p class="text-muted">Computing 12-Dimension SwingAI Report...</p>
+        </div>
+    </div>
+    
+    <!-- Demographics / Skill Level Modal -->
+    <div class="modal-overlay hidden" id="demo-modal">
+        <div class="glass-card modal-content" style="max-width: 460px; text-align: center;">
+            <h2 style="margin-bottom: 0;">Configure Athlete</h2>
+            <p class="small mb-4" style="margin-top: 0.25rem;">Physics algorithms and SwingAI thresholds are calibrated by skill level and body metrics.</p>
+            
+            <div class="modal-inputs">
+                <div class="input-group">
+                    <label>Height (ft)</label>
+                    <input type="number" id="height-ft" value="6" min="4" max="7" class="input-dark">
+                </div>
+                <div class="input-group">
+                    <label>Inches (in)</label>
+                    <input type="number" id="height-in" value="0" min="0" max="11" class="input-dark">
+                </div>
+                <div class="input-group">
+                    <label>Weight (lbs)</label>
+                    <input type="number" id="weight-lbs" value="180" min="50" max="350" step="5" class="input-dark">
+                </div>
+                <div class="input-group">
+                    <label>Age</label>
+                    <input type="number" id="athlete-age" value="20" min="8" max="50" class="input-dark">
+                </div>
+            </div>
+
+            <!-- Skill Level Selector -->
+            <div class="skill-selector mt-3">
+                <label class="skill-selector-label">Skill Level</label>
+                <div class="skill-pills" id="skill-pills">
+                    <button class="skill-pill" data-level="youth">Youth</button>
+                    <button class="skill-pill active" data-level="high_school">High School</button>
+                    <button class="skill-pill" data-level="college">College</button>
+                    <button class="skill-pill" data-level="professional">Professional</button>
+                </div>
+            </div>
+            
+            <div style="display: flex; gap: 1rem; justify-content: center; margin-top: 1.5rem;">
+                <button class="btn btn-secondary" id="btn-cancel-demo">Cancel</button>
+                <button class="btn btn-primary" id="btn-run-physics">🚀 Analyze Swing</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Error Toast -->
+    <div class="error-toast" id="error-toast">
+        <span id="error-message">Error message</span>
+        <button id="close-toast">&times;</button>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

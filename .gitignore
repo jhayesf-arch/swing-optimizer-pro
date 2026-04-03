@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+*.so
+
+# Virtual environment
+venv/
+env/
+.env
+.venv/
+
+# Backend tmp uploads
+backend/tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data files (large motion capture data — keep only sample structure)
+*.trc
+*.c3d
+
+# CSV output files
+refined_swing_comparison.csv
+
+# Logs
+*.log
