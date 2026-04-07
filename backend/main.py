@@ -24,7 +24,7 @@ async def add_no_cache_header(request: Request, call_next):
     response.headers["Expires"] = "0"
     return response
 
-FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "../frontend")
+FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "../docs")
 TMP_DIR = os.path.join(os.path.dirname(__file__), "tmp")
 os.makedirs(TMP_DIR, exist_ok=True)
 
