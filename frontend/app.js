@@ -237,12 +237,11 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('filename-display').textContent = filename;
         const swingScore = diagnosis.swing_score || 0;
         const effScore = diagnosis.efficiency_score || 0;
-        const velo = diagnosis.metrics.predicted_exit_velo || 0;
-        const isSuspect = diagnosis.metrics.suspect_data_warning;
+        const handSpeed = diagnosis.metrics.estimated_hand_speed_mph || 0;
 
         // Score ring animation
         const ringFill = document.getElementById('ring-fill');
-        const circumference = 2 * Math.PI * 52; // r=52
+        const circumference = 2 * Math.PI * 52;
         const dashVal = (swingScore / 100) * circumference;
         ringFill.style.strokeDasharray = `${dashVal} ${circumference}`;
         ringFill.classList.remove('clr-green', 'clr-yellow', 'clr-red');
@@ -251,7 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
         else ringFill.classList.add('clr-red');
 
         document.getElementById('swing-score-number').textContent = swingScore.toFixed(0);
-        document.getElementById('exit-velo-number').textContent = `${velo.toFixed(1)}${isSuspect ? '*' : ''}`;
+        document.getElementById('exit-velo-number').textContent = handSpeed.toFixed(1);
         document.getElementById('efficiency-number').textContent = effScore;
 
         // Skill badge
@@ -262,10 +261,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const skillLevel = diagnosis.swingai_report?.skill_level || selectedSkillLevel;
         document.getElementById('skill-badge-display').textContent = skillLabels[skillLevel] || skillLevel;
 
-        // Suspect warning
-        const warningEl = document.getElementById('data-warning');
-        if (isSuspect) warningEl.classList.remove('hidden');
-        else warningEl.classList.add('hidden');
+        // Hide data-warning (no longer needed without exit velo guess)
+        document.getElementById('data-warning').classList.add('hidden');
 
         // ---- SWINGAI 4-PHASE CARDS ----
         if (diagnosis.swingai_report) {

@@ -273,10 +273,8 @@ class RefinedSwingMetrics:
     stride_efficiency_pct: float
     plant_frame: int
     plant_method: str
-    predicted_exit_velo: float
+    estimated_hand_speed_mph: float
     overall_efficiency: int
-    max_hand_speed_mph: float = 0.0
-    suspect_data_warning: bool = False
     # Driveline-inspired Energy Transfer Metrics
     pelvis_ke_J: float = 0.0
     torso_ke_J: float = 0.0
@@ -287,7 +285,6 @@ class RefinedSwingMetrics:
     pelvis_to_torso_transfer_ratio: float = 0.0
     torso_to_pelvis_rot_ratio: float = 0.0
     kinetic_chain_efficiency_pct: float = 0.0
-    e_total_J: float = 0.0
 
 class RefinedHittingOptimizer:
     def __init__(self, body_mass_kg: float, body_height_m: float, skill_level: str = 'high_school'):
@@ -626,89 +623,50 @@ class RefinedHittingOptimizer:
             'plant_method': plant_method
         }
         
-    def predict_exit_velocity(self, rotation: Dict, trc_metrics: Dict = None) -> Dict:
-        if not rotation:
-            return None
-        
-        # =====================================================================
-        # DRIVELINE-INSPIRED EXIT VELOCITY MODEL
-        # Key insight from autoresearch worklog: Energy Transfer Ratios are the
-        # #1 predictive feature class. Raw angular velocities are secondary.
-        # 
-        # Model: E_total = Bat_KE + Transferred_Athlete_KE
-        #   Where Transferred_Athlete_KE scales with body mass (demographic input)
-        #   and is modulated by the kinetic chain transfer efficiency.
-        # =====================================================================
-        
-        bat_m = 0.9   # kg (standard MLB bat)
-        bat_I = 0.12  # kg*m^2 (bat MOI about handle)
-        
-        # Terminal segment angular velocities
-        peak_arm_w = rotation.get('peak_arm_omega_rad_s', 15.0)
-        peak_elb_w = rotation.get('peak_elb_omega_rad_s', 15.0)
-        bat_w = peak_arm_w + peak_elb_w
+    def estimate_hand_speed(self, rotation: Dict, trc_metrics: Dict = None) -> Dict:
+        """Estimate peak hand/wrist speed in mph.
 
-        # Linear component from hands or derived
+        Priority:
+          1. Direct wrist marker velocity from TRC data (most accurate).
+          2. Reconstructed from distal segment angular velocities × lever arm
+             (forearm + hand ≈ 14.6% + 5.8% of height from de Leva 1996).
+        """
+        # ── Method 1: TRC wrist markers ─────────────────────────────────────
         if trc_metrics and trc_metrics.get('max_hand_speed_mps', 0) > 0:
-            bat_v = trc_metrics['max_hand_speed_mps'] * 1.5
+            hand_speed_mps = float(trc_metrics['max_hand_speed_mps'])
+            source = 'trc_marker'
         else:
-            bat_v = (peak_arm_w * 0.9) + (peak_elb_w * 0.2)
-            
-        # 1. BAT KINEMATICS
-        e_bat_linear = 0.5 * bat_m * (bat_v ** 2)
-        e_bat_angular = 0.5 * bat_I * (bat_w ** 2)
-        
-        # 2. ATHLETE MASS TRANSFER (Demographic-dependent)
-        # The total segmental KE from the kinematic chain, modulated by transfer efficiency
-        total_chain_ke = rotation.get('total_energy_transfer_J', 0.0)
-        chain_eff = rotation.get('kinetic_chain_efficiency_pct', 30.0) / 100.0
-        
-        # Transfer coefficient: how much body KE reaches the bat
-        # Driveline found ~20% proximal energy reaches the bat in elite sequences
-        # Poor sequences transfer as low as 8-10%
-        base_transfer = 0.12  # conservative baseline
-        if rotation.get('proper_sequence', False):
-            base_transfer = 0.18  # proper sequence transfers more energy
-        
-        # Scale transfer by chain efficiency (Driveline's top feature)
-        transfer_coefficient = base_transfer * (1.0 + chain_eff * 0.5)
-        transferred_athlete_energy = total_chain_ke * transfer_coefficient
-        
-        # 3. TOTAL ENERGY
-        e_total_J = e_bat_linear + e_bat_angular + transferred_athlete_energy
-        
-        # Collision Physics
-        m_effective = 0.45
-        bat_tip_v_mps = np.sqrt(max(0, (2 * e_total_J) / m_effective))
-        bat_tip_mph = bat_tip_v_mps * 2.23694
-        
-        # Transfer efficiency modifier from X-Factor separation
-        separation = float(rotation['max_separation_deg'])
-        smash_factor = 1.05
-        
-        if separation < 25 or separation > 80:
-            smash_factor *= 0.90
-        elif 35 <= separation <= 55:
-            smash_factor *= 1.10
-            
-        predicted_exit_velo = bat_tip_mph * smash_factor
-        
-        # No hard cap per user request — instead flag suspect data
-        theoretical_max_ev = 85.0 + ((self.body_mass_kg - 50.0) * 0.7)
-        is_suspect = bool(predicted_exit_velo > (theoretical_max_ev + 5.0))
-            
+            # ── Method 2: Angular velocity × lever arm ───────────────────────
+            # Forearm length ≈ 14.6% of height; hand ≈ 5.8% → total ≈ 20.4%
+            lever_arm_m = self.body_height_m * 0.204
+
+            peak_arm_w   = rotation.get('peak_arm_omega_rad_s', 0.0) if rotation else 0.0
+            peak_elb_w   = rotation.get('peak_elb_omega_rad_s', 0.0) if rotation else 0.0
+
+            if peak_arm_w > 0 or peak_elb_w > 0:
+                # Elbow extension contributes additively to the hand's linear velocity
+                hand_speed_mps = (peak_arm_w + peak_elb_w) * lever_arm_m
+            else:
+                # Final fallback: derive from shoulder omega × full arm span
+                peak_shoulder_w = rotation.get('peak_shoulder_omega_rad_s', 0.0) if rotation else 0.0
+                full_arm = self.body_height_m * 0.366  # upper arm + forearm + hand
+                hand_speed_mps = peak_shoulder_w * full_arm
+
+            source = 'angular_velocity'
+
+        hand_speed_mph = hand_speed_mps * 2.23694
+
         return {
-            'predicted_exit_velo': float(predicted_exit_velo),
-            'e_total_J': float(e_total_J),
-            'suspect_data_warning': is_suspect,
-            'transfer_coefficient': float(transfer_coefficient)
+            'estimated_hand_speed_mph': float(hand_speed_mph),
+            'estimated_hand_speed_mps': float(hand_speed_mps),
+            'source': source,
         }
         
     def comprehensive_diagnosis(self, kinematics: pd.DataFrame, filename: str, trc_data: pd.DataFrame = None, verbose: bool = False) -> Dict:
         rotation = self.calculate_rotational_torques_refined(kinematics)
         stride = self.calculate_stride_refined(kinematics, rotation)
         trc_metrics = self.calculate_trc_metrics(trc_data) if trc_data is not None else {'max_hand_speed_mph': 0.0, 'max_hand_speed_mps': 0.0}
-        exit_velo = self.predict_exit_velocity(rotation, trc_metrics)
+        hand_speed = self.estimate_hand_speed(rotation, trc_metrics)
         
         findings = []
         recommendations = []
@@ -799,20 +757,22 @@ class RefinedHittingOptimizer:
             else:
                 findings.append("Efficient Stride Mechanics & Center of Mass Control.")
                 
-        if trc_metrics and trc_metrics.get('max_hand_speed_mph', 0) > 0:
-            hand_spd = trc_metrics['max_hand_speed_mph']
-            if hand_spd > 40:
-                hand_spd = 35 + (np.log((hand_spd*2.23694) - 34) * 5)
-            if hand_spd < 22:
-                findings.append(f"Low Proximal Hand Speed Proxy ({hand_spd:.1f} mph).")
-                recommendations.append("Improve bat linear velocity by fully extending and stiffening the lead leg at contact to whip the hands through the zone.")
+        hand_spd_mph = hand_speed['estimated_hand_speed_mph'] if hand_speed else 0.0
+        benchmarks = SKILL_LEVEL_BENCHMARKS.get(self.skill_level, {})
+        hs_lo, hs_hi = benchmarks.get('max_hand_speed_mph', (35, 55))
+        if hand_spd_mph > 0:
+            if hand_spd_mph < hs_lo:
+                findings.append(f"Below-Average Hand Speed ({hand_spd_mph:.1f} mph; target {hs_lo}–{hs_hi} mph).")
+                recommendations.append(f"Hand speed is below the {self.skill_level} benchmark. Focus on lead-leg bracing at contact and sequential deceleration of the pelvis to whip maximum energy into the hands.")
+            elif hand_spd_mph >= hs_hi:
+                findings.append(f"Elite Hand Speed ({hand_spd_mph:.1f} mph).")
             else:
-                findings.append(f"Exceptional Hand Linear Velocity Proxy.")
-                
-        # Brute-Force Check
-        if exit_velo and exit_velo['predicted_exit_velo'] > 95 and efficiency_score < 75:
-            findings.append("⚠️ High Velocity / Low Efficiency Discrepancy (Brute Force Mode).")
-            recommendations.append("You are generating elite exit velocity using raw strength over mechanical efficiency. This limits your ceiling and increases injury risk. Improving the kinetic chain transfer (currently your biggest limiter) would unlock more velocity with less effort.")
+                findings.append(f"Adequate Hand Speed ({hand_spd_mph:.1f} mph; target {hs_lo}–{hs_hi} mph).")
+
+        # High speed / low efficiency discrepancy
+        if hand_spd_mph > 0 and hand_spd_mph > hs_hi * 1.1 and efficiency_score < 75:
+            findings.append("⚠️ High Hand Speed / Low Efficiency Discrepancy (Brute Force Mode).")
+            recommendations.append("You are generating high hand speed with raw strength rather than mechanical efficiency. Improving kinetic chain transfer would unlock more speed with less effort and lower injury risk.")
                 
         metrics = RefinedSwingMetrics(
             peak_hip_torque_Nm=rotation['peak_hip_torque_Nm'] if rotation else 0.0,
@@ -832,10 +792,8 @@ class RefinedHittingOptimizer:
             stride_efficiency_pct=stride['stride_efficiency_pct'] if stride else 0.0,
             plant_frame=stride['plant_frame'] if stride else 0,
             plant_method=stride['plant_method'] if stride else "none",
-            predicted_exit_velo=exit_velo['predicted_exit_velo'] if exit_velo else 0.0,
+            estimated_hand_speed_mph=hand_speed['estimated_hand_speed_mph'] if hand_speed else 0.0,
             overall_efficiency=max(0, efficiency_score),
-            max_hand_speed_mph=trc_metrics.get('max_hand_speed_mph', 0.0),
-            suspect_data_warning=exit_velo.get('suspect_data_warning', False) if exit_velo else False,
             # Driveline Energy Transfer Metrics
             pelvis_ke_J=rotation.get('pelvis_ke_J', 0.0) if rotation else 0.0,
             torso_ke_J=rotation.get('torso_ke_J', 0.0) if rotation else 0.0,
@@ -846,7 +804,6 @@ class RefinedHittingOptimizer:
             pelvis_to_torso_transfer_ratio=rotation.get('pelvis_to_torso_transfer_ratio', 0.0) if rotation else 0.0,
             torso_to_pelvis_rot_ratio=rotation.get('torso_to_pelvis_rot_ratio', 0.0) if rotation else 0.0,
             kinetic_chain_efficiency_pct=rotation.get('kinetic_chain_efficiency_pct', 0.0) if rotation else 0.0,
-            e_total_J=exit_velo.get('e_total_J', 0.0) if exit_velo else 0.0
         )
         
         # Terminal printing if verbose
@@ -873,11 +830,9 @@ class RefinedHittingOptimizer:
                 print(f"   Stride Length:    {stride['stride_length_ft']:.2f} ft ({stride['stride_ratio']:.2f} × height)")
                 print(f"   Stride Efficiency: {stride['stride_efficiency_pct']:.0f}%")
                 
-            if exit_velo:
-                print(f"\n⚡ EXIT VELOCITY: {exit_velo['predicted_exit_velo']:.1f} mph (predicted)")
-                
-            if trc_metrics and trc_metrics['max_hand_speed_mph'] > 0:
-                print(f"🦾 MAX HAND SPEED: {trc_metrics['max_hand_speed_mph']:.1f} mph")
+            if hand_speed:
+                src = hand_speed.get('source', '')
+                print(f"\n🦾 EST. HAND SPEED: {hand_speed['estimated_hand_speed_mph']:.1f} mph ({src})")
                 
             print(f"\n" + "="*70)
             print(f"OVERALL EFFICIENCY: {max(0, efficiency_score)}/100")
@@ -1230,7 +1185,7 @@ def main():
             'inertia_ratio': metrics['inertia_ratio'],
             'hip_power_W_kg': metrics['hip_power_per_kg'],
             'plant_method': metrics['plant_method'],
-            'hand_speed_mph': metrics['max_hand_speed_mph']
+            'hand_speed_mph': metrics['estimated_hand_speed_mph']
         })
         
     if len(all_metrics) > 1:
