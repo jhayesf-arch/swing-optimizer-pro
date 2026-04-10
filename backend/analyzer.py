@@ -3,7 +3,7 @@ import glob
 import numpy as np
 import pandas as pd
 from dataclasses import dataclass, asdict
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 try:
     from scipy.signal import savgol_filter, butter, filtfilt
@@ -271,6 +271,7 @@ class RefinedSwingMetrics:
     stride_length_m: float
     stride_ratio: float
     stride_efficiency_pct: float
+    negative_move_m: float
     plant_frame: int
     plant_method: str
     estimated_hand_speed_mph: float
@@ -285,6 +286,13 @@ class RefinedSwingMetrics:
     pelvis_to_torso_transfer_ratio: float = 0.0
     torso_to_pelvis_rot_ratio: float = 0.0
     kinetic_chain_efficiency_pct: float = 0.0
+    # Advanced Driveline-inspired segment velocity & braking metrics
+    peak_pelvis_omega_deg_s: float = 0.0
+    peak_shoulder_omega_deg_s: float = 0.0
+    peak_arm_omega_deg_s: float = 0.0
+    pelvis_decel_at_contact_pct: float = 0.0
+    velocity_amplification_ratio: float = 0.0
+    swing_duration_ms: float = 0.0
 
 class RefinedHittingOptimizer:
     def __init__(self, body_mass_kg: float, body_height_m: float, skill_level: str = 'high_school'):
@@ -447,16 +455,22 @@ class RefinedHittingOptimizer:
             shoulder_alpha = np.gradient(shoulder_omega, dt)
         
         trunk_I = self.segments['trunk']['I']
-        hip_inertia = trunk_I
-        hip_torque = hip_inertia * pelvis_alpha
-        
+        thigh_I = self.segments['thigh']['I']
         upper_arm_I = self.segments['upper_arm']['I']
         forearm_I = self.segments['forearm']['I']
+
+        # Pelvis-lumbar complex: lower trunk fraction (~30%) + bilateral thighs rotating
+        # about the vertical pelvis axis (de Leva 1996 trunk partition).
+        hip_inertia = trunk_I * 0.30 + 2 * thigh_I
+        hip_torque = hip_inertia * pelvis_alpha
+
         bat_mass = 0.91
-        bat_radius = 0.6
-        bat_I = bat_mass * bat_radius**2
-        
-        shoulder_inertia = trunk_I + 2 * (upper_arm_I + forearm_I) + bat_I
+        # Bat COM at ~57% of 86 cm standard bat length from handle end -> 0.49 m
+        bat_com_dist = 0.49
+        bat_I = bat_mass * bat_com_dist ** 2
+
+        # Upper body shoulder system: upper+mid trunk fraction (~70%) + bilateral arms + bat
+        shoulder_inertia = trunk_I * 0.70 + 2 * (upper_arm_I + forearm_I) + bat_I
         shoulder_torque = shoulder_inertia * shoulder_alpha
         
         inertia_ratio = shoulder_inertia / hip_inertia
@@ -474,17 +488,20 @@ class RefinedHittingOptimizer:
         separation = (shoulder_angle - pelvis_angle) * 180.0/np.pi
         max_separation = np.max(np.abs(separation))
         
-        # Incorporating the Arms and Elbow details for Kinematics
-        # We will proxy the 'Arm' segment using the dominant arm flexion/rotation
-        arm_omega = np.zeros_like(pelvis_omega)
-        if 'arm_flex_r' in data.columns:
-            # Simple vector magnitude of arm angular velocity
-            arm_r_unwrapped = np.unwrap(np.deg2rad(data['arm_flex_r'].values))
-            if HAS_SCIPY:
-                arm_r_filtered = butter_lowpass_filter(arm_r_unwrapped, cutoff_hz, fs)
-                arm_omega = savgol_smooth_and_diff(arm_r_filtered, window=window_size, polyorder=3, deriv=1, dt=dt)
-            else:
-                arm_omega = np.gradient(smooth_data(arm_r_unwrapped, window=11), dt)
+        # Arm angular velocity: vector magnitude across all contributing DOF.
+        # Internal rotation (arm_rot_r) and horizontal adduction (arm_add_r) are the
+        # dominant contributors to hand speed in hitting; flexion alone is a poor proxy.
+        arm_omega_sq = np.zeros_like(pelvis_omega)
+        for col in ['arm_flex_r', 'arm_add_r', 'arm_rot_r']:
+            if col in data.columns:
+                ang = np.unwrap(np.deg2rad(data[col].values))
+                if HAS_SCIPY:
+                    ang = butter_lowpass_filter(ang, cutoff_hz, fs)
+                    omega_dof = savgol_smooth_and_diff(ang, window=window_size, polyorder=3, deriv=1, dt=dt)
+                else:
+                    omega_dof = np.gradient(smooth_data(ang, window=11), dt)
+                arm_omega_sq += omega_dof ** 2
+        arm_omega = np.sqrt(arm_omega_sq)
                 
         # Elbow Extension Whip
         elb_omega = np.zeros_like(pelvis_omega)
@@ -557,6 +574,7 @@ class RefinedHittingOptimizer:
             'peak_pelvis_omega_rad_s': float(peak_pelvis_w),
             'pelvis_omega': pelvis_omega,
             'pelvis_angle': pelvis_angle,
+            'shoulder_angle': shoulder_angle,
             # Driveline Energy Transfer Metrics
             'pelvis_ke_J': float(pelvis_ke),
             'torso_ke_J': float(torso_ke),
@@ -570,19 +588,23 @@ class RefinedHittingOptimizer:
         }
         
     def calculate_stride_refined(self, data: pd.DataFrame, rotation: Dict = None) -> Dict:
-        if 'pelvis_tx' not in data.columns or 'pelvis_ty' not in data.columns:
+        if 'pelvis_tx' not in data.columns:
             return None
-            
+
         # Optional: apply low-pass filter to positions if scipy is available
         dt = data['time'].diff().mean()
         fs = 1.0 / dt if dt > 0 else 60.0
-        
+
+        # Stride is a horizontal-plane measurement: forward (tx) + lateral (tz).
+        # pelvis_ty is the vertical axis in OpenSim/OpenCap and must NOT be included.
         pelvis_x = data['pelvis_tx'].values
-        pelvis_y = data['pelvis_ty'].values
-        
+        has_tz = 'pelvis_tz' in data.columns
+        pelvis_z = data['pelvis_tz'].values if has_tz else np.zeros_like(pelvis_x)
+
         if HAS_SCIPY:
             pelvis_x = butter_lowpass_filter(pelvis_x, 15.0, fs)
-            pelvis_y = butter_lowpass_filter(pelvis_y, 15.0, fs)
+            if has_tz:
+                pelvis_z = butter_lowpass_filter(pelvis_z, 15.0, fs)
         
         # Event Detection: finding plant frame robustly
         if rotation and 'pelvis_omega' in rotation:
@@ -604,10 +626,14 @@ class RefinedHittingOptimizer:
             plant_frame = len(data) // 2
             plant_method = "fallback_midframe"
         
-        # It's possible for kinematics to start slightly after stride. 
-        start_pos = np.array([pelvis_x[0], pelvis_y[0]])
-        plant_pos = np.array([pelvis_x[plant_frame], pelvis_y[plant_frame]])
+        # Stride length in the horizontal plane (sagittal + lateral displacement).
+        start_pos = np.array([pelvis_x[0], pelvis_z[0]])
+        plant_pos = np.array([pelvis_x[plant_frame], pelvis_z[plant_frame]])
         stride_length = np.linalg.norm(plant_pos - start_pos)
+
+        # Negative move: actual backward displacement of pelvis_tx before plant.
+        pre_plant_x = pelvis_x[:plant_frame + 1]
+        neg_move_m = float(max(0.0, pelvis_x[0] - np.min(pre_plant_x)))
         
         stride_ratio = stride_length / self.body_height_m
         optimal_stride_ratio = 0.75
@@ -620,7 +646,8 @@ class RefinedHittingOptimizer:
             'stride_efficiency_pct': float(stride_efficiency_pct),
             'plant_frame': int(plant_frame),
             'plant_time': float(data['time'].iloc[plant_frame]),
-            'plant_method': plant_method
+            'plant_method': plant_method,
+            'negative_move_m': neg_move_m,
         }
         
     def estimate_hand_speed(self, rotation: Dict, trc_metrics: Dict = None) -> Dict:
@@ -773,7 +800,65 @@ class RefinedHittingOptimizer:
         if hand_spd_mph > 0 and hand_spd_mph > hs_hi * 1.1 and efficiency_score < 75:
             findings.append("⚠️ High Hand Speed / Low Efficiency Discrepancy (Brute Force Mode).")
             recommendations.append("You are generating high hand speed with raw strength rather than mechanical efficiency. Improving kinetic chain transfer would unlock more speed with less effort and lower injury risk.")
-                
+
+        # =========================================================================
+        # ADVANCED DRIVELINE-INSPIRED METRICS
+        # Ref: Driveline openbiomechanics dataset, Cohen et al. (2014) kinematic
+        # sequence analysis, Fleisig & Escamilla (1996) arm/trunk velocity data.
+        # =========================================================================
+        _eps = 1e-6
+        peak_pelvis_omega_deg_s = rotation.get('peak_pelvis_omega_rad_s', 0.0) * (180.0 / np.pi) if rotation else 0.0
+        peak_shoulder_omega_deg_s = rotation.get('peak_shoulder_omega_rad_s', 0.0) * (180.0 / np.pi) if rotation else 0.0
+        peak_arm_omega_deg_s = rotation.get('peak_arm_omega_rad_s', 0.0) * (180.0 / np.pi) if rotation else 0.0
+
+        pelvis_decel_at_contact_pct = 0.0
+        if rotation and stride and 'pelvis_omega' in rotation:
+            _plant_idx = min(stride['plant_frame'], len(rotation['pelvis_omega']) - 1)
+            _peak_pv = rotation.get('peak_pelvis_omega_rad_s', 0.0)
+            if _peak_pv > _eps:
+                _contact_pv = abs(float(rotation['pelvis_omega'][_plant_idx]))
+                pelvis_decel_at_contact_pct = (_contact_pv / _peak_pv) * 100.0
+
+        velocity_amplification_ratio = 0.0
+        if rotation:
+            _p = rotation.get('peak_pelvis_omega_rad_s', 0.0)
+            _a = rotation.get('peak_arm_omega_rad_s', 0.0)
+            if _p > _eps and _a > 0.0:
+                velocity_amplification_ratio = _a / _p
+
+        swing_duration_ms = float((kinematics['time'].iloc[-1] - kinematics['time'].iloc[0]) * 1000.0)
+
+        if rotation and peak_pelvis_omega_deg_s > 10:
+            if peak_pelvis_omega_deg_s >= 450:
+                findings.append(f"Elite Peak Pelvis Rotational Velocity ({peak_pelvis_omega_deg_s:.0f} °/s; Driveline elite ≥450 °/s).")
+            elif peak_pelvis_omega_deg_s >= 300:
+                findings.append(f"Adequate Peak Pelvis Velocity ({peak_pelvis_omega_deg_s:.0f} °/s; elite target ≥450 °/s).")
+                recommendations.append("Increase explosive hip rotation speed through overload/underload rotational training and improved lower-half loading patterns.")
+            else:
+                findings.append(f"Below-Average Peak Pelvis Velocity ({peak_pelvis_omega_deg_s:.0f} °/s; elite target ≥450 °/s).")
+                recommendations.append("Insufficient hip rotational velocity. Prioritize explosive rotational med ball throws, hip mobility protocols, and ground-reaction force training.")
+                efficiency_score -= 10
+
+        if pelvis_decel_at_contact_pct > 0:
+            if pelvis_decel_at_contact_pct <= 55:
+                findings.append(f"Effective Pelvis Deceleration at Contact ({pelvis_decel_at_contact_pct:.0f}% of peak): front-leg brace efficiently redirects energy up the chain.")
+            elif pelvis_decel_at_contact_pct <= 78:
+                findings.append(f"Partial Pelvis Braking at Contact ({pelvis_decel_at_contact_pct:.0f}% of peak).")
+                recommendations.append("Sharpen front-leg bracing. A faster pelvis deceleration at foot plant amplifies the energy whip into the torso and arms.")
+            else:
+                findings.append(f"Poor Pelvis Braking at Contact ({pelvis_decel_at_contact_pct:.0f}% of peak still active): pelvis not decelerating — energy stalls proximally.")
+                recommendations.append("Lead leg must brace hard at foot plant. The pelvis must decelerate sharply to transfer energy up the chain (proximal-to-distal whip effect — Welch et al. 1995).")
+                efficiency_score -= 12
+
+        if velocity_amplification_ratio > 0:
+            if velocity_amplification_ratio >= 2.5:
+                findings.append(f"Elite Distal Velocity Amplification ({velocity_amplification_ratio:.1f}×): arm segments effectively multiplying pelvis angular speed.")
+            elif velocity_amplification_ratio >= 1.5:
+                findings.append(f"Good Velocity Amplification ({velocity_amplification_ratio:.1f}×): kinetic chain successfully amplifying arm speed from pelvis base.")
+            else:
+                findings.append(f"Low Distal Velocity Amplification ({velocity_amplification_ratio:.1f}×): arm speed not amplifying sufficiently above pelvis velocity.")
+                recommendations.append("Keep hands and forearms relaxed during load. Tension in distal segments prevents them from being whipped by proximal deceleration (Hirashima et al. 2008).")
+
         metrics = RefinedSwingMetrics(
             peak_hip_torque_Nm=rotation['peak_hip_torque_Nm'] if rotation else 0.0,
             peak_shoulder_torque_Nm=rotation['peak_shoulder_torque_Nm'] if rotation else 0.0,
@@ -790,6 +875,7 @@ class RefinedHittingOptimizer:
             stride_length_m=stride['stride_length_m'] if stride else 0.0,
             stride_ratio=stride['stride_ratio'] if stride else 0.0,
             stride_efficiency_pct=stride['stride_efficiency_pct'] if stride else 0.0,
+            negative_move_m=stride['negative_move_m'] if stride else 0.0,
             plant_frame=stride['plant_frame'] if stride else 0,
             plant_method=stride['plant_method'] if stride else "none",
             estimated_hand_speed_mph=hand_speed['estimated_hand_speed_mph'] if hand_speed else 0.0,
@@ -804,6 +890,12 @@ class RefinedHittingOptimizer:
             pelvis_to_torso_transfer_ratio=rotation.get('pelvis_to_torso_transfer_ratio', 0.0) if rotation else 0.0,
             torso_to_pelvis_rot_ratio=rotation.get('torso_to_pelvis_rot_ratio', 0.0) if rotation else 0.0,
             kinetic_chain_efficiency_pct=rotation.get('kinetic_chain_efficiency_pct', 0.0) if rotation else 0.0,
+            peak_pelvis_omega_deg_s=peak_pelvis_omega_deg_s,
+            peak_shoulder_omega_deg_s=peak_shoulder_omega_deg_s,
+            peak_arm_omega_deg_s=peak_arm_omega_deg_s,
+            pelvis_decel_at_contact_pct=pelvis_decel_at_contact_pct,
+            velocity_amplification_ratio=velocity_amplification_ratio,
+            swing_duration_ms=swing_duration_ms,
         )
         
         # Terminal printing if verbose
@@ -897,19 +989,18 @@ class RefinedHittingOptimizer:
         # from a fixed ratio typical of the sport. Without pelvis_tx timeseries
         # here, we use a heuristic from stride ratio.
         if stride:
-            # Negative move correlates strongly with stride initiation quality.
-            # Use stride_ratio as primary signal: good stride implies good load back.
-            neg_move_proxy = stride['stride_length_m'] * 0.15  # ~15% of stride is backward
-            neg_move_stars = self._rate_dimension('negative_move', neg_move_proxy)
+            # Use actual measured backward pelvis displacement before plant frame.
+            neg_move_m = stride.get('negative_move_m', 0.0)
+            neg_move_stars = self._rate_dimension('negative_move', neg_move_m)
         else:
-            neg_move_proxy = 0.0
+            neg_move_m = 0.0
             neg_move_stars = 2
 
         dims['negative_move'] = {
             'label': SWINGAI_LABELS['negative_move'],
             'stars': neg_move_stars,
             'badge': self._rating_to_badge(neg_move_stars),
-            'value': round(neg_move_proxy, 3),
+            'value': round(neg_move_m, 3),
             'unit': 'm',
             'description': 'Initial weight shift rearward to load energy before the stride.',
         }
@@ -1000,12 +1091,13 @@ class RefinedHittingOptimizer:
             'description': 'Total hip rotation from load through contact.',
         }
 
-        # Upper Torso Total Rotation Range — shoulder_angle range (rad->deg)
-        # We derive shoulder from pelvis + lumbar (already computed in rotation dict as
-        # peak_shoulder_omega; reconstruct rough total from ratio).
-        if rotation:
-            torso_to_pelvis = rotation.get('torso_to_pelvis_rot_ratio', 1.0)
-            torso_rot_range = pelvis_rot_range * torso_to_pelvis
+        # Upper Torso Total Rotation Range — computed directly from shoulder_angle timeseries.
+        if rotation and 'shoulder_angle' in rotation:
+            shoulder_ang = rotation['shoulder_angle']
+            torso_rot_range = float(np.abs(np.max(shoulder_ang) - np.min(shoulder_ang)) * 180.0 / np.pi)
+        elif rotation:
+            # Fallback: scale pelvis range by omega ratio
+            torso_rot_range = pelvis_rot_range * rotation.get('torso_to_pelvis_rot_ratio', 1.0)
         else:
             torso_rot_range = 0.0
         utrr_stars = self._rate_dimension('upper_torso_rotation_range', torso_rot_range)
@@ -1021,12 +1113,13 @@ class RefinedHittingOptimizer:
         # ------------------------------------------------------------------
         # PHASE 4: CONTACT & FOLLOW-THROUGH
         # ------------------------------------------------------------------
-        # Pelvis Direction at Contact — how close to 90° (square) at plant frame
+        # Pelvis Direction at Contact — rotation accumulated from initial position to plant.
+        # Target: hips have rotated ~90° (square to pitcher) by front foot plant.
         if rotation and 'pelvis_angle' in rotation and stride:
             plant_idx = min(stride['plant_frame'], len(rotation['pelvis_angle']) - 1)
-            pelvis_at_contact_deg = float(np.abs(rotation['pelvis_angle'][plant_idx]) * 180.0 / np.pi)
-            # Deviation from "square" — 90° is ideal so deviation = |90 - angle|
-            pelvis_dev = abs(90.0 - pelvis_at_contact_deg)
+            pelvis_rot_at_contact = (rotation['pelvis_angle'][plant_idx] - rotation['pelvis_angle'][0]) * 180.0 / np.pi
+            # Deviation from the ideal 90° of rotation at contact
+            pelvis_dev = abs(90.0 - abs(pelvis_rot_at_contact))
         else:
             pelvis_dev = 45.0
         pdc_stars = self._rate_dimension('pelvis_direction_at_contact', pelvis_dev, invert=True)
@@ -1039,8 +1132,12 @@ class RefinedHittingOptimizer:
             'description': 'Hip alignment at contact. Hips should be square (90°) to the pitcher.',
         }
 
-        # Upper Torso Direction at Contact
-        if rotation:
+        # Upper Torso Direction at Contact — use shoulder_angle directly when available.
+        if rotation and 'shoulder_angle' in rotation and stride:
+            plant_idx = min(stride['plant_frame'], len(rotation['shoulder_angle']) - 1)
+            shoulder_rot_at_contact = (rotation['shoulder_angle'][plant_idx] - rotation['shoulder_angle'][0]) * 180.0 / np.pi
+            torso_dev = abs(90.0 - abs(shoulder_rot_at_contact))
+        elif rotation:
             torso_dev = pelvis_dev * (1.0 / max(0.5, rotation.get('torso_to_pelvis_rot_ratio', 1.0)))
         else:
             torso_dev = 50.0
