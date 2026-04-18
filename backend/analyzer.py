@@ -7,6 +7,7 @@ from typing import Dict, List
 
 try:
     from scipy.signal import savgol_filter, butter, filtfilt
+    from scipy.interpolate import CubicSpline
     HAS_SCIPY = True
 except ImportError:
     HAS_SCIPY = False
@@ -393,10 +394,16 @@ class RefinedHittingOptimizer:
                     wx = butter_lowpass_filter(wx, 15.0, fs)
                     wy = butter_lowpass_filter(wy, 15.0, fs)
                     wz = butter_lowpass_filter(wz, 15.0, fs)
-                    
-                vx = np.gradient(wx, dt)
-                vy = np.gradient(wy, dt)
-                vz = np.gradient(wz, dt)
+
+                    t = trc_data['Time'].values
+                    t_up = np.linspace(t[0], t[-1], len(t) * 16)
+                    vx = CubicSpline(t, wx)(t_up, 1)
+                    vy = CubicSpline(t, wy)(t_up, 1)
+                    vz = CubicSpline(t, wz)(t_up, 1)
+                else:
+                    vx = np.gradient(wx, dt)
+                    vy = np.gradient(wy, dt)
+                    vz = np.gradient(wz, dt)
                 speed = np.sqrt(vx**2 + vy**2 + vz**2)
                 
                 cur_max = np.max(speed)

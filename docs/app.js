@@ -16,7 +16,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const errorMessage = document.getElementById('error-message');
     const closeToast = document.getElementById('close-toast');
     
-    const API_BASE = '';
+    const API_BASE = window.location.hostname.includes('github.io')
+        ? 'https://swing-optimizer-pro.onrender.com'
+        : '';
 
     // -----------------------------------------
     // State
@@ -31,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // -----------------------------------------
     // Init
     // -----------------------------------------
+    checkBackendHealth();
     fetchLocalFiles();
     initSkillPills();
 
@@ -115,6 +118,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // -----------------------------------------
     // API Calls
     // -----------------------------------------
+    async function checkBackendHealth() {
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 15000);
+            const res = await fetch(`${API_BASE}/api/health`, { signal: controller.signal });
+            clearTimeout(timeout);
+            if (!res.ok) throw new Error('not ok');
+        } catch (err) {
+            showError("Backend is waking up — this may take up to 60 seconds on first load. Please try your upload again shortly.");
+        }
+    }
+
     async function fetchLocalFiles() {
         localFilesList.innerHTML = '<div class="loading-spinner"></div><p class="small text-muted mt-2">Scanning...</p>';
         try {
@@ -147,13 +162,20 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('weight_kg', demo.weight_kg);
         formData.append('skill_level', selectedSkillLevel);
         
+        const doUpload = () => fetch(`${API_BASE}/api/analyze/upload`, { method: 'POST', body: formData });
         try {
-            const response = await fetch(`${API_BASE}/api/analyze/upload`, {
-                method: 'POST',
-                body: formData
-            });
-            const data = await response.json();
-            
+            let response;
+            try {
+                response = await doUpload();
+            } catch (_) {
+                // Backend may have been sleeping — wait and retry once
+                await new Promise(r => setTimeout(r, 5000));
+                response = await doUpload();
+            }
+            let data;
+            try { data = await response.json(); }
+            catch (_) { throw new Error(`Server error (HTTP ${response.status})`); }
+
             if (data.success) {
                 renderDashboard(data.data, data.filename);
             } else {
@@ -161,7 +183,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 hideLoading();
             }
         } catch (err) {
-            showError("Network error. Make sure backend is running.");
+            showError("Network error — backend may still be waking up. Please try again in a moment.");
             console.error(err);
             hideLoading();
         }
@@ -170,20 +192,20 @@ document.addEventListener('DOMContentLoaded', () => {
     async function analyzeLocalFile(filepath, filename) {
         showLoading();
         const demo = getDemographics();
+        const payload = JSON.stringify({ filepath, filename, height_m: demo.height_m, weight_kg: demo.weight_kg, skill_level: selectedSkillLevel });
+        const doLocal = () => fetch(`${API_BASE}/api/analyze/local`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload });
         try {
-            const response = await fetch(`${API_BASE}/api/analyze/local`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ 
-                    filepath, 
-                    filename,
-                    height_m: demo.height_m,
-                    weight_kg: demo.weight_kg,
-                    skill_level: selectedSkillLevel,
-                })
-            });
-            const data = await response.json();
-            
+            let response;
+            try {
+                response = await doLocal();
+            } catch (_) {
+                await new Promise(r => setTimeout(r, 5000));
+                response = await doLocal();
+            }
+            let data;
+            try { data = await response.json(); }
+            catch (_) { throw new Error(`Server error (HTTP ${response.status})`); }
+
             if (data.success) {
                 currentLocalFilepath = filepath;
                 currentLocalFilename = filename;
@@ -193,7 +215,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 hideLoading();
             }
         } catch (err) {
-            showError("Network error. Make sure backend is running.");
+            showError("Network error — backend may still be waking up. Please try again in a moment.");
             console.error(err);
             hideLoading();
         }
