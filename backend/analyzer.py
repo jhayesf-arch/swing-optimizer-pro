@@ -287,13 +287,41 @@ class RefinedSwingMetrics:
     pelvis_to_torso_transfer_ratio: float = 0.0
     torso_to_pelvis_rot_ratio: float = 0.0
     kinetic_chain_efficiency_pct: float = 0.0
-    # Advanced Driveline-inspired segment velocity & braking metrics
-    peak_pelvis_omega_deg_s: float = 0.0
-    peak_shoulder_omega_deg_s: float = 0.0
-    peak_arm_omega_deg_s: float = 0.0
-    pelvis_decel_at_contact_pct: float = 0.0
-    velocity_amplification_ratio: float = 0.0
-    swing_duration_ms: float = 0.0
+    # Full 6-DOF Pelvis
+    pelvis_tilt_range_deg: float = 0.0
+    pelvis_list_range_deg: float = 0.0
+    pelvis_tz_range_m: float = 0.0
+    # Lower-body kinematics (bilateral peak values)
+    peak_hip_flexion_r_deg: float = 0.0
+    peak_hip_flexion_l_deg: float = 0.0
+    peak_knee_flexion_r_deg: float = 0.0
+    peak_knee_flexion_l_deg: float = 0.0
+    peak_ankle_dorsiflexion_r_deg: float = 0.0
+    peak_ankle_dorsiflexion_l_deg: float = 0.0
+    hip_flexion_asymmetry_deg: float = 0.0
+    knee_flexion_asymmetry_deg: float = 0.0
+    # Lower-body kinetics (Newton-Euler)
+    peak_knee_torque_r_Nm: float = 0.0
+    peak_knee_torque_l_Nm: float = 0.0
+    peak_ankle_torque_r_Nm: float = 0.0
+    peak_ankle_torque_l_Nm: float = 0.0
+    peak_knee_power_r_W: float = 0.0
+    peak_knee_power_l_W: float = 0.0
+    # Linear inverse dynamics (pelvis segment F=ma)
+    peak_pelvis_force_ap_N: float = 0.0   # anterior-posterior (tx)
+    peak_pelvis_force_vert_N: float = 0.0  # vertical (ty)
+    peak_pelvis_force_lat_N: float = 0.0   # lateral (tz)
+    peak_pelvis_force_resultant_N: float = 0.0
+    # Weight shift / lateral balance
+    lateral_sway_range_m: float = 0.0
+    lateral_sway_at_plant_m: float = 0.0
+    weight_shift_timing_pct: float = 0.0   # % of swing when peak lateral shift occurs
+    # Bilateral arm kinematics
+    peak_arm_flex_l_deg: float = 0.0
+    peak_elbow_flex_l_deg: float = 0.0
+    arm_flex_asymmetry_deg: float = 0.0
+    peak_prosup_r_deg: float = 0.0
+    peak_prosup_l_deg: float = 0.0
 
 class RefinedHittingOptimizer:
     def __init__(self, body_mass_kg: float, body_height_m: float, skill_level: str = 'high_school'):
@@ -696,11 +724,152 @@ class RefinedHittingOptimizer:
             'source': source,
         }
         
+    def calculate_lower_body_kinematics(self, data: pd.DataFrame) -> Dict:
+        """Extract bilateral hip/knee/ankle kinematics and lower-body Newton-Euler kinetics."""
+        dt = data['time'].diff().mean()
+        fs = 1.0 / dt if dt > 0 else 60.0
+
+        def _filt(arr):
+            if HAS_SCIPY:
+                return butter_lowpass_filter(arr, 15.0, fs)
+            return smooth_data(arr, 11)
+
+        def _diff2(arr):
+            if HAS_SCIPY:
+                w = max(11, int(0.10 * fs) | 1)
+                return savgol_smooth_and_diff(arr, window=w, polyorder=3, deriv=2, dt=dt)
+            v = np.gradient(smooth_data(arr, 11), dt)
+            return np.gradient(v, dt)
+
+        result = {}
+        # ── Bilateral joint angles ──────────────────────────────────────────
+        for side in ('r', 'l'):
+            for joint, col in [('hip_flex', f'hip_flexion_{side}'),
+                                ('hip_add',  f'hip_adduction_{side}'),
+                                ('hip_rot',  f'hip_rotation_{side}'),
+                                ('knee',     f'knee_angle_{side}'),
+                                ('ankle',    f'ankle_angle_{side}')]:
+                if col in data.columns:
+                    arr = _filt(data[col].values)
+                    result[f'{joint}_{side}'] = arr
+                    result[f'peak_{joint}_{side}_deg'] = float(np.max(np.abs(arr)))
+
+        # ── Asymmetry ───────────────────────────────────────────────────────
+        for joint in ('hip_flex', 'knee'):
+            r = result.get(f'peak_{joint}_r_deg', 0.0)
+            l = result.get(f'peak_{joint}_l_deg', 0.0)
+            result[f'{joint}_asymmetry_deg'] = float(abs(r - l))
+
+        # ── Lower-body Newton-Euler kinetics (τ = I·α, P = τ·ω) ────────────
+        # Segment inertias: thigh and shank from SEGMENT_PARAMS
+        thigh_I = self.segments['thigh']['I']
+        shank_I = self.segments['shank']['I']
+
+        for side in ('r', 'l'):
+            for seg, I_val, col_key in [('knee', thigh_I, f'knee_{side}'),
+                                         ('ankle', shank_I, f'ankle_{side}')]:
+                arr = result.get(col_key)
+                if arr is None:
+                    continue
+                angle_rad = np.deg2rad(arr)
+                alpha = _diff2(angle_rad)
+                omega = np.gradient(angle_rad, dt)
+                torque = I_val * alpha
+                power  = torque * omega
+                result[f'peak_{seg}_torque_{side}_Nm'] = float(np.max(np.abs(torque)))
+                result[f'peak_{seg}_power_{side}_W']   = float(np.max(np.abs(power)))
+
+        # ── Bilateral arm kinematics ────────────────────────────────────────
+        for col, key in [('arm_flex_l', 'arm_flex_l'), ('elbow_flex_l', 'elbow_flex_l'),
+                          ('pro_sup_r', 'prosup_r'), ('pro_sup_l', 'prosup_l')]:
+            if col in data.columns:
+                arr = _filt(data[col].values)
+                result[f'peak_{key}_deg'] = float(np.max(np.abs(arr)))
+
+        # Arm flex asymmetry (right already computed in rotational torques)
+        r_flex = float(np.max(np.abs(_filt(data['arm_flex_r'].values)))) if 'arm_flex_r' in data.columns else 0.0
+        l_flex = result.get('peak_arm_flex_l_deg', 0.0)
+        result['arm_flex_asymmetry_deg'] = float(abs(r_flex - l_flex))
+
+        return result
+
+    def calculate_linear_inverse_dynamics(self, data: pd.DataFrame) -> Dict:
+        """Compute pelvis segment joint reaction forces via F = m·a on all 3 translation axes."""
+        dt = data['time'].diff().mean()
+        fs = 1.0 / dt if dt > 0 else 60.0
+        required = {'pelvis_tx', 'pelvis_ty', 'pelvis_tz'}
+        if not required.issubset(data.columns):
+            return {}
+
+        pelvis_mass = self.body_mass_kg * SEGMENT_PARAMS['trunk']['mass_pct']
+
+        def _accel(col):
+            raw = data[col].values
+            if HAS_SCIPY:
+                filt = butter_lowpass_filter(raw, 15.0, fs)
+                w = max(11, int(0.10 * fs) | 1)
+                return savgol_smooth_and_diff(filt, window=w, polyorder=3, deriv=2, dt=dt)
+            smooth = smooth_data(raw, 11)
+            return np.gradient(np.gradient(smooth, dt), dt)
+
+        ax = _accel('pelvis_tx')  # anterior-posterior
+        ay = _accel('pelvis_ty')  # vertical
+        az = _accel('pelvis_tz')  # lateral
+
+        Fx = pelvis_mass * ax
+        Fy = pelvis_mass * ay
+        Fz = pelvis_mass * az
+        F_res = np.sqrt(Fx**2 + Fy**2 + Fz**2)
+
+        return {
+            'pelvis_force_ap':         Fx,
+            'pelvis_force_vert':       Fy,
+            'pelvis_force_lat':        Fz,
+            'peak_pelvis_force_ap_N':  float(np.max(np.abs(Fx))),
+            'peak_pelvis_force_vert_N':float(np.max(np.abs(Fy))),
+            'peak_pelvis_force_lat_N': float(np.max(np.abs(Fz))),
+            'peak_pelvis_force_resultant_N': float(np.max(F_res)),
+        }
+
+    def calculate_weight_shift(self, data: pd.DataFrame, plant_frame: int) -> Dict:
+        """Lateral balance and weight-shift metrics from pelvis_list and pelvis_tz."""
+        dt = data['time'].diff().mean()
+        fs = 1.0 / dt if dt > 0 else 60.0
+        result = {}
+
+        def _filt(arr):
+            if HAS_SCIPY:
+                return butter_lowpass_filter(arr, 15.0, fs)
+            return smooth_data(arr, 11)
+
+        # Full 6-DOF pelvis ranges
+        for col, key in [('pelvis_tilt', 'pelvis_tilt_range_deg'),
+                          ('pelvis_list', 'pelvis_list_range_deg')]:
+            if col in data.columns:
+                arr = _filt(data[col].values)
+                result[key] = float(np.ptp(arr))  # peak-to-peak range
+
+        if 'pelvis_tz' in data.columns:
+            tz = _filt(data['pelvis_tz'].values)
+            result['pelvis_tz_range_m'] = float(np.ptp(tz))
+            result['lateral_sway_range_m'] = float(np.ptp(tz))
+            plant_idx = min(plant_frame, len(tz) - 1)
+            result['lateral_sway_at_plant_m'] = float(tz[plant_idx] - tz[0])
+            # Timing: at what % of the swing does peak lateral shift occur?
+            peak_lat_frame = int(np.argmax(np.abs(tz - tz[0])))
+            result['weight_shift_timing_pct'] = float(peak_lat_frame / max(1, len(tz) - 1) * 100.0)
+
+        return result
+
     def comprehensive_diagnosis(self, kinematics: pd.DataFrame, filename: str, trc_data: pd.DataFrame = None, verbose: bool = False) -> Dict:
         rotation = self.calculate_rotational_torques_refined(kinematics)
         stride = self.calculate_stride_refined(kinematics, rotation)
         trc_metrics = self.calculate_trc_metrics(trc_data) if trc_data is not None else {'max_hand_speed_mph': 0.0, 'max_hand_speed_mps': 0.0}
         hand_speed = self.estimate_hand_speed(rotation, trc_metrics)
+        lower_body = self.calculate_lower_body_kinematics(kinematics)
+        linear_id  = self.calculate_linear_inverse_dynamics(kinematics)
+        plant_frame = stride['plant_frame'] if stride else len(kinematics) // 2
+        weight_shift = self.calculate_weight_shift(kinematics, plant_frame)
         
         findings = []
         recommendations = []
@@ -808,63 +977,56 @@ class RefinedHittingOptimizer:
             findings.append("⚠️ High Hand Speed / Low Efficiency Discrepancy (Brute Force Mode).")
             recommendations.append("You are generating high hand speed with raw strength rather than mechanical efficiency. Improving kinetic chain transfer would unlock more speed with less effort and lower injury risk.")
 
-        # =========================================================================
-        # ADVANCED DRIVELINE-INSPIRED METRICS
-        # Ref: Driveline openbiomechanics dataset, Cohen et al. (2014) kinematic
-        # sequence analysis, Fleisig & Escamilla (1996) arm/trunk velocity data.
-        # =========================================================================
-        _eps = 1e-6
-        peak_pelvis_omega_deg_s = rotation.get('peak_pelvis_omega_rad_s', 0.0) * (180.0 / np.pi) if rotation else 0.0
-        peak_shoulder_omega_deg_s = rotation.get('peak_shoulder_omega_rad_s', 0.0) * (180.0 / np.pi) if rotation else 0.0
-        peak_arm_omega_deg_s = rotation.get('peak_arm_omega_rad_s', 0.0) * (180.0 / np.pi) if rotation else 0.0
-
-        pelvis_decel_at_contact_pct = 0.0
-        if rotation and stride and 'pelvis_omega' in rotation:
-            _plant_idx = min(stride['plant_frame'], len(rotation['pelvis_omega']) - 1)
-            _peak_pv = rotation.get('peak_pelvis_omega_rad_s', 0.0)
-            if _peak_pv > _eps:
-                _contact_pv = abs(float(rotation['pelvis_omega'][_plant_idx]))
-                pelvis_decel_at_contact_pct = (_contact_pv / _peak_pv) * 100.0
-
-        velocity_amplification_ratio = 0.0
-        if rotation:
-            _p = rotation.get('peak_pelvis_omega_rad_s', 0.0)
-            _a = rotation.get('peak_arm_omega_rad_s', 0.0)
-            if _p > _eps and _a > 0.0:
-                velocity_amplification_ratio = _a / _p
-
-        swing_duration_ms = float((kinematics['time'].iloc[-1] - kinematics['time'].iloc[0]) * 1000.0)
-
-        if rotation and peak_pelvis_omega_deg_s > 10:
-            if peak_pelvis_omega_deg_s >= 450:
-                findings.append(f"Elite Peak Pelvis Rotational Velocity ({peak_pelvis_omega_deg_s:.0f} °/s; Driveline elite ≥450 °/s).")
-            elif peak_pelvis_omega_deg_s >= 300:
-                findings.append(f"Adequate Peak Pelvis Velocity ({peak_pelvis_omega_deg_s:.0f} °/s; elite target ≥450 °/s).")
-                recommendations.append("Increase explosive hip rotation speed through overload/underload rotational training and improved lower-half loading patterns.")
-            else:
-                findings.append(f"Below-Average Peak Pelvis Velocity ({peak_pelvis_omega_deg_s:.0f} °/s; elite target ≥450 °/s).")
-                recommendations.append("Insufficient hip rotational velocity. Prioritize explosive rotational med ball throws, hip mobility protocols, and ground-reaction force training.")
+        # === LOWER-BODY KINEMATICS ===
+        if lower_body:
+            knee_asym = lower_body.get('knee_asymmetry_deg', 0.0)
+            hip_asym  = lower_body.get('hip_flex_asymmetry_deg', 0.0)
+            if knee_asym > 15:
+                findings.append(f"Bilateral Knee Flexion Asymmetry ({knee_asym:.1f}°).")
+                recommendations.append("Significant lead/trail knee asymmetry detected. Uneven loading increases injury risk and reduces rotational stability. Address with single-leg strength work.")
                 efficiency_score -= 10
+            if hip_asym > 20:
+                findings.append(f"Bilateral Hip Flexion Asymmetry ({hip_asym:.1f}°).")
+                recommendations.append("Hip flexion asymmetry suggests uneven weight distribution at load. Focus on balanced hip hinge mechanics.")
+                efficiency_score -= 8
 
-        if pelvis_decel_at_contact_pct > 0:
-            if pelvis_decel_at_contact_pct <= 55:
-                findings.append(f"Effective Pelvis Deceleration at Contact ({pelvis_decel_at_contact_pct:.0f}% of peak): front-leg brace efficiently redirects energy up the chain.")
-            elif pelvis_decel_at_contact_pct <= 78:
-                findings.append(f"Partial Pelvis Braking at Contact ({pelvis_decel_at_contact_pct:.0f}% of peak).")
-                recommendations.append("Sharpen front-leg bracing. A faster pelvis deceleration at foot plant amplifies the energy whip into the torso and arms.")
-            else:
-                findings.append(f"Poor Pelvis Braking at Contact ({pelvis_decel_at_contact_pct:.0f}% of peak still active): pelvis not decelerating — energy stalls proximally.")
-                recommendations.append("Lead leg must brace hard at foot plant. The pelvis must decelerate sharply to transfer energy up the chain (proximal-to-distal whip effect — Welch et al. 1995).")
-                efficiency_score -= 12
+            peak_knee_r = lower_body.get('peak_knee_r_deg', 0.0)
+            if peak_knee_r < 20:
+                findings.append(f"Insufficient Trail Knee Flexion ({peak_knee_r:.1f}°).")
+                recommendations.append("Trail knee should flex 30-50° during load to store elastic energy. Increase hip hinge depth.")
+                efficiency_score -= 10
+            elif peak_knee_r > 70:
+                findings.append(f"Excessive Trail Knee Flexion ({peak_knee_r:.1f}°).")
+                recommendations.append("Over-flexed trail knee reduces rotational power and increases knee stress.")
+                efficiency_score -= 5
 
-        if velocity_amplification_ratio > 0:
-            if velocity_amplification_ratio >= 2.5:
-                findings.append(f"Elite Distal Velocity Amplification ({velocity_amplification_ratio:.1f}×): arm segments effectively multiplying pelvis angular speed.")
-            elif velocity_amplification_ratio >= 1.5:
-                findings.append(f"Good Velocity Amplification ({velocity_amplification_ratio:.1f}×): kinetic chain successfully amplifying arm speed from pelvis base.")
-            else:
-                findings.append(f"Low Distal Velocity Amplification ({velocity_amplification_ratio:.1f}×): arm speed not amplifying sufficiently above pelvis velocity.")
-                recommendations.append("Keep hands and forearms relaxed during load. Tension in distal segments prevents them from being whipped by proximal deceleration (Hirashima et al. 2008).")
+        # === LINEAR INVERSE DYNAMICS (Pelvis Joint Reaction Forces) ===
+        if linear_id:
+            F_res = linear_id.get('peak_pelvis_force_resultant_N', 0.0)
+            F_lat = linear_id.get('peak_pelvis_force_lat_N', 0.0)
+            F_ap  = linear_id.get('peak_pelvis_force_ap_N', 0.0)
+            if F_res > 0:
+                findings.append(f"Peak Pelvis Resultant Force: {F_res:.0f} N ({F_res/self.body_mass_kg:.1f} N/kg).")
+            if F_lat > 0.3 * F_res:
+                findings.append(f"High Lateral Pelvis Force Component ({F_lat:.0f} N, {F_lat/F_res*100:.0f}% of resultant).")
+                recommendations.append("Excessive lateral pelvis force indicates energy leaking sideways rather than rotating. Improve hip-to-hip weight transfer timing.")
+                efficiency_score -= 8
+
+        # === WEIGHT SHIFT / LATERAL BALANCE ===
+        if weight_shift:
+            sway = weight_shift.get('lateral_sway_range_m', 0.0)
+            sway_at_plant = weight_shift.get('lateral_sway_at_plant_m', 0.0)
+            shift_timing = weight_shift.get('weight_shift_timing_pct', 0.0)
+            if sway > 0.12:
+                findings.append(f"Excessive Lateral Sway ({sway*100:.1f} cm range).")
+                recommendations.append("Lateral sway > 12 cm indicates poor rotational axis stability. Keep the pelvis centered over the rear hip during load.")
+                efficiency_score -= 10
+            elif sway > 0:
+                findings.append(f"Controlled Lateral Sway ({sway*100:.1f} cm range).")
+            if abs(sway_at_plant) > 0.06:
+                findings.append(f"Pelvis laterally displaced at plant ({sway_at_plant*100:.1f} cm from start).")
+                recommendations.append("Pelvis should return near center by front foot plant. Excessive lateral displacement at contact reduces rotational power.")
+                efficiency_score -= 5
 
         metrics = RefinedSwingMetrics(
             peak_hip_torque_Nm=rotation['peak_hip_torque_Nm'] if rotation else 0.0,
@@ -897,12 +1059,41 @@ class RefinedHittingOptimizer:
             pelvis_to_torso_transfer_ratio=rotation.get('pelvis_to_torso_transfer_ratio', 0.0) if rotation else 0.0,
             torso_to_pelvis_rot_ratio=rotation.get('torso_to_pelvis_rot_ratio', 0.0) if rotation else 0.0,
             kinetic_chain_efficiency_pct=rotation.get('kinetic_chain_efficiency_pct', 0.0) if rotation else 0.0,
-            peak_pelvis_omega_deg_s=peak_pelvis_omega_deg_s,
-            peak_shoulder_omega_deg_s=peak_shoulder_omega_deg_s,
-            peak_arm_omega_deg_s=peak_arm_omega_deg_s,
-            pelvis_decel_at_contact_pct=pelvis_decel_at_contact_pct,
-            velocity_amplification_ratio=velocity_amplification_ratio,
-            swing_duration_ms=swing_duration_ms,
+            # Full 6-DOF pelvis
+            pelvis_tilt_range_deg=weight_shift.get('pelvis_tilt_range_deg', 0.0),
+            pelvis_list_range_deg=weight_shift.get('pelvis_list_range_deg', 0.0),
+            pelvis_tz_range_m=weight_shift.get('pelvis_tz_range_m', 0.0),
+            # Lower-body kinematics
+            peak_hip_flexion_r_deg=lower_body.get('peak_hip_flex_r_deg', 0.0),
+            peak_hip_flexion_l_deg=lower_body.get('peak_hip_flex_l_deg', 0.0),
+            peak_knee_flexion_r_deg=lower_body.get('peak_knee_r_deg', 0.0),
+            peak_knee_flexion_l_deg=lower_body.get('peak_knee_l_deg', 0.0),
+            peak_ankle_dorsiflexion_r_deg=lower_body.get('peak_ankle_r_deg', 0.0),
+            peak_ankle_dorsiflexion_l_deg=lower_body.get('peak_ankle_l_deg', 0.0),
+            hip_flexion_asymmetry_deg=lower_body.get('hip_flex_asymmetry_deg', 0.0),
+            knee_flexion_asymmetry_deg=lower_body.get('knee_asymmetry_deg', 0.0),
+            # Lower-body kinetics
+            peak_knee_torque_r_Nm=lower_body.get('peak_knee_torque_r_Nm', 0.0),
+            peak_knee_torque_l_Nm=lower_body.get('peak_knee_torque_l_Nm', 0.0),
+            peak_ankle_torque_r_Nm=lower_body.get('peak_ankle_torque_r_Nm', 0.0),
+            peak_ankle_torque_l_Nm=lower_body.get('peak_ankle_torque_l_Nm', 0.0),
+            peak_knee_power_r_W=lower_body.get('peak_knee_power_r_W', 0.0),
+            peak_knee_power_l_W=lower_body.get('peak_knee_power_l_W', 0.0),
+            # Linear inverse dynamics
+            peak_pelvis_force_ap_N=linear_id.get('peak_pelvis_force_ap_N', 0.0),
+            peak_pelvis_force_vert_N=linear_id.get('peak_pelvis_force_vert_N', 0.0),
+            peak_pelvis_force_lat_N=linear_id.get('peak_pelvis_force_lat_N', 0.0),
+            peak_pelvis_force_resultant_N=linear_id.get('peak_pelvis_force_resultant_N', 0.0),
+            # Weight shift / lateral balance
+            lateral_sway_range_m=weight_shift.get('lateral_sway_range_m', 0.0),
+            lateral_sway_at_plant_m=weight_shift.get('lateral_sway_at_plant_m', 0.0),
+            weight_shift_timing_pct=weight_shift.get('weight_shift_timing_pct', 0.0),
+            # Bilateral arm kinematics
+            peak_arm_flex_l_deg=lower_body.get('peak_arm_flex_l_deg', 0.0),
+            peak_elbow_flex_l_deg=lower_body.get('peak_elbow_flex_l_deg', 0.0),
+            arm_flex_asymmetry_deg=lower_body.get('arm_flex_asymmetry_deg', 0.0),
+            peak_prosup_r_deg=lower_body.get('peak_prosup_r_deg', 0.0),
+            peak_prosup_l_deg=lower_body.get('peak_prosup_l_deg', 0.0),
         )
         
         # Terminal printing if verbose
@@ -932,15 +1123,38 @@ class RefinedHittingOptimizer:
             if hand_speed:
                 src = hand_speed.get('source', '')
                 print(f"\n🦾 EST. HAND SPEED: {hand_speed['estimated_hand_speed_mph']:.1f} mph ({src})")
-                
+
+            if lower_body:
+                print(f"\n🦵 LOWER-BODY KINEMATICS:")
+                print(f"   Hip Flex R/L:   {lower_body.get('peak_hip_flex_r_deg',0):.1f}° / {lower_body.get('peak_hip_flex_l_deg',0):.1f}°  (asym {lower_body.get('hip_flex_asymmetry_deg',0):.1f}°)")
+                print(f"   Knee Flex R/L:  {lower_body.get('peak_knee_r_deg',0):.1f}° / {lower_body.get('peak_knee_l_deg',0):.1f}°  (asym {lower_body.get('knee_asymmetry_deg',0):.1f}°)")
+                print(f"   Ankle R/L:      {lower_body.get('peak_ankle_r_deg',0):.1f}° / {lower_body.get('peak_ankle_l_deg',0):.1f}°")
+                print(f"   Knee Torque R/L:{lower_body.get('peak_knee_torque_r_Nm',0):.1f} / {lower_body.get('peak_knee_torque_l_Nm',0):.1f} N·m")
+                print(f"   Knee Power  R/L:{lower_body.get('peak_knee_power_r_W',0):.0f} / {lower_body.get('peak_knee_power_l_W',0):.0f} W")
+
+            if linear_id:
+                print(f"\n⚡ LINEAR INVERSE DYNAMICS (Pelvis F=ma):")
+                print(f"   AP Force:   {linear_id.get('peak_pelvis_force_ap_N',0):.0f} N")
+                print(f"   Vert Force: {linear_id.get('peak_pelvis_force_vert_N',0):.0f} N")
+                print(f"   Lat Force:  {linear_id.get('peak_pelvis_force_lat_N',0):.0f} N")
+                print(f"   Resultant:  {linear_id.get('peak_pelvis_force_resultant_N',0):.0f} N ({linear_id.get('peak_pelvis_force_resultant_N',0)/self.body_mass_kg:.1f} N/kg)")
+
+            if weight_shift:
+                print(f"\n⚖️  WEIGHT SHIFT / LATERAL BALANCE:")
+                print(f"   Pelvis Tilt Range:  {weight_shift.get('pelvis_tilt_range_deg',0):.1f}°")
+                print(f"   Pelvis List Range:  {weight_shift.get('pelvis_list_range_deg',0):.1f}°")
+                print(f"   Lateral Sway:       {weight_shift.get('lateral_sway_range_m',0)*100:.1f} cm")
+                print(f"   Sway at Plant:      {weight_shift.get('lateral_sway_at_plant_m',0)*100:.1f} cm")
+                print(f"   Shift Timing:       {weight_shift.get('weight_shift_timing_pct',0):.0f}% of swing")
+
             print(f"\n" + "="*70)
             print(f"OVERALL EFFICIENCY: {max(0, efficiency_score)}/100")
             print("="*70)
             for finding in findings:
                 print(f"   {finding}")
-        
+
         swingai_report = self.build_swingai_report(rotation, stride, trc_metrics)
-        
+
         return {
             "metrics": asdict(metrics),
             "findings": findings,
@@ -949,6 +1163,9 @@ class RefinedHittingOptimizer:
             "reference_values": SKILL_LEVEL_BENCHMARKS.get(self.skill_level, SKILL_LEVEL_BENCHMARKS['high_school']),
             "swingai_report": swingai_report,
             "swing_score": swingai_report['swing_score'],
+            "lower_body": {k: v for k, v in lower_body.items() if not isinstance(v, np.ndarray)},
+            "linear_inverse_dynamics": {k: v for k, v in linear_id.items() if not isinstance(v, np.ndarray)},
+            "weight_shift": weight_shift,
         }
 
     def _rate_dimension(self, key: str, value: float, invert: bool = False) -> int:

@@ -38,3 +38,5 @@ refined_swing_comparison.csv
 
 # Logs
 *.log
+.claude/
+.gemini/
