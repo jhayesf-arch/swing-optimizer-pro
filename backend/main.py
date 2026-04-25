@@ -35,6 +35,10 @@ os.makedirs(TMP_DIR, exist_ok=True)
 def serve_index():
     return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
 
+@app.get("/api/health")
+def health():
+    return JSONResponse(content={"status": "ok"})
+
 @app.post("/api/analyze/upload")
 async def analyze_upload(
     file: UploadFile = File(...),
@@ -105,6 +109,14 @@ def analyze_local(payload: dict):
         import traceback
         traceback.print_exc()
         return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+
+@app.get("/style.css")
+def serve_css():
+    return FileResponse(os.path.join(FRONTEND_DIR, "style.css"))
+
+@app.get("/app.js")
+def serve_js():
+    return FileResponse(os.path.join(FRONTEND_DIR, "app.js"))
 
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 

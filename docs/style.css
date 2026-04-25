@@ -481,6 +481,47 @@ header p { color: var(--text-muted); font-size: 1.1rem; }
 .metric-value { font-size: 1.2rem; font-weight: 700; font-family: var(--font-heading); margin-top: 0.2rem; }
 
 /* ============================================================
+   ADVANCED PANEL — SEQUENCE TIMELINE & BENCHMARKS
+   ============================================================ */
+.adv-section { margin-bottom: 1.4rem; }
+.adv-section-title { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 1.2px; color: var(--accent-blue); margin-bottom: 0.65rem; font-weight: 600; }
+.seq-row { display: grid; grid-template-columns: 48px 1fr 62px; gap: 0.5rem; align-items: center; margin-bottom: 0.55rem; }
+.seq-seg-label { font-size: 0.68rem; color: var(--text-muted); }
+.seq-track { background: rgba(255,255,255,0.07); border-radius: 3px; height: 5px; position: relative; overflow: visible; }
+.seq-range { position: absolute; height: 100%; border-radius: 3px; opacity: 0.2; }
+.seq-pip { position: absolute; width: 12px; height: 12px; border-radius: 50%; top: -3.5px; transform: translateX(-50%); border: 2px solid var(--bg-color); box-shadow: 0 0 6px currentColor; transition: left 0.8s ease; }
+.seq-pip-label { font-size: 0.65rem; font-weight: 700; text-align: right; }
+.seq-legend { display: flex; justify-content: space-between; align-items: center; margin-top: 0.4rem; margin-bottom: 0.5rem; }
+.seq-lag-row { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; font-size: 0.7rem; padding: 0.4rem 0.6rem; background: rgba(0,0,0,0.25); border-radius: 6px; }
+.seq-lag-label { color: var(--text-muted); }
+.seq-lag-val { font-weight: 700; font-family: var(--font-heading); font-size: 0.75rem; }
+.bench-row { margin-bottom: 0.75rem; }
+.bench-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.3rem; }
+.bench-seg { font-size: 0.7rem; color: var(--text-muted); }
+.bench-val { font-size: 0.82rem; font-weight: 700; font-family: var(--font-heading); }
+.bench-track { background: rgba(255,255,255,0.08); border-radius: 4px; height: 8px; position: relative; overflow: visible; }
+.bench-fill { height: 100%; border-radius: 4px; min-width: 3px; transition: width 1s cubic-bezier(.4,0,.2,1); }
+.bench-elite-line { position: absolute; top: -4px; width: 2px; height: 16px; background: rgba(255,255,255,0.45); border-radius: 1px; }
+.bench-subtext { font-size: 0.58rem; color: var(--text-muted); margin-top: 0.2rem; }
+.energy-chain { display: flex; align-items: center; gap: 0; margin-bottom: 0.75rem; }
+.energy-node { text-align: center; flex: 1; padding: 0.5rem 0.25rem; background: rgba(0,0,0,0.2); border-radius: 8px; }
+.energy-node-label { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 0.2rem; }
+.energy-node-val { font-size: 1.05rem; font-weight: 700; font-family: var(--font-heading); }
+.energy-node-sub { font-size: 0.6rem; color: var(--text-muted); margin-top: 0.1rem; }
+.energy-arrow { display: flex; flex-direction: column; align-items: center; padding: 0 0.15rem; flex: 0 0 auto; }
+.energy-arrow-line { font-size: 1.1rem; color: var(--text-muted); line-height: 1.2; }
+.energy-arrow-pct { font-size: 0.58rem; font-weight: 700; }
+.energy-total-row { display: flex; align-items: center; gap: 0.4rem; font-size: 0.72rem; padding: 0.35rem 0.6rem; background: rgba(0,0,0,0.25); border-radius: 6px; flex-wrap: wrap; }
+.energy-total-row .adv-inline-label { color: var(--text-muted); }
+.energy-total-row .adv-inline-val { font-weight: 700; font-family: var(--font-heading); }
+.adv-inline-row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+.adv-inline-stat { flex: 1; min-width: 80px; background: rgba(0,0,0,0.2); padding: 0.6rem 0.5rem; border-radius: 8px; text-align: center; }
+.adv-inline-label { font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.adv-inline-val { font-size: 1rem; font-weight: 700; font-family: var(--font-heading); margin: 0.2rem 0; }
+.adv-inline-sub { font-size: 0.58rem; color: var(--text-muted); }
+
+
+/* ============================================================
    ANIMATIONS
    ============================================================ */
 .anim-slide-up {
