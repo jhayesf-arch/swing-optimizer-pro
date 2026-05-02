@@ -134,6 +134,14 @@ def analyze_local(payload: dict):
         kinematics = optimizer.load_mot_file(file_path)
 
         trc_path = file_path.replace('Kinematics', 'MarkerData').replace('.mot', '.trc')
+        if not os.path.exists(trc_path):
+            # .mot may be a copy (e.g. in Downloads) — search known OpenCap data dirs by filename
+            trc_name = os.path.basename(file_path).replace('.mot', '.trc')
+            for search_root in [os.path.expanduser('~/Desktop'), os.path.expanduser('~/Downloads')]:
+                for dirpath, _, fnames in os.walk(search_root):
+                    if trc_name in fnames and 'MarkerData' in dirpath:
+                        trc_path = os.path.join(dirpath, trc_name)
+                        break
         trc_data = optimizer.load_trc_file(trc_path) if os.path.exists(trc_path) else None
 
         diagnosis = optimizer.comprehensive_diagnosis(kinematics, filename, trc_data=trc_data)
