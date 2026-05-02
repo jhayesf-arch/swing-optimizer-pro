@@ -439,7 +439,7 @@ class RefinedHittingOptimizer:
         }
         return metrics
         
-    def calculate_rotational_torques_refined(self, data: pd.DataFrame) -> Dict:
+    def calculate_rotational_torques_refined(self, data: pd.DataFrame, wrist_speed_mps: float = 0.0) -> Dict:
         dt = data['time'].diff().mean()
         fs = 1.0 / dt if dt > 0 else 60.0
         
@@ -614,7 +614,18 @@ class RefinedHittingOptimizer:
         torso_ke  = 0.5 * trunk_I * (peak_shoulder_w ** 2)
         arm_ke    = 0.5 * (upper_arm_I + forearm_I) * 2 * (peak_arm_w_val ** 2)
         elbow_ke  = 0.5 * forearm_I * 2 * (peak_elb_w_val ** 2)
-        bat_ke    = 0.5 * bat_I * (peak_arm_w_val ** 2)  # bat rotates with lead arm
+
+        # Bat KE = translational (½mv²) + rotational (½Iω²).
+        # Translational term uses measured wrist speed from TRC markers when available
+        # (most reliable), otherwise falls back to arm angular velocity × lever arm.
+        if wrist_speed_mps > 0 and self.bat_mass_kg > 0:
+            bat_ke_trans = 0.5 * self.bat_mass_kg * (wrist_speed_mps ** 2)
+        else:
+            # Fallback: estimate wrist linear speed from arm omega × forearm+hand length
+            lever = self.body_height_m * 0.204  # forearm + hand ≈ 20.4% of height
+            bat_ke_trans = 0.5 * self.bat_mass_kg * (peak_arm_w_val * lever) ** 2
+        bat_ke_rot = 0.5 * bat_I * (peak_arm_w_val ** 2)
+        bat_ke = bat_ke_trans + bat_ke_rot
 
         total_energy_transfer = pelvis_ke + torso_ke + arm_ke + elbow_ke + bat_ke
 
@@ -892,9 +903,10 @@ class RefinedHittingOptimizer:
         return result
 
     def comprehensive_diagnosis(self, kinematics: pd.DataFrame, filename: str, trc_data: pd.DataFrame = None, verbose: bool = False) -> Dict:
-        rotation = self.calculate_rotational_torques_refined(kinematics)
-        stride = self.calculate_stride_refined(kinematics, rotation)
         trc_metrics = self.calculate_trc_metrics(trc_data) if trc_data is not None else {'max_hand_speed_mph': 0.0, 'max_hand_speed_mps': 0.0}
+        wrist_speed_mps = float(trc_metrics.get('max_hand_speed_mps', 0.0))
+        rotation = self.calculate_rotational_torques_refined(kinematics, wrist_speed_mps=wrist_speed_mps)
+        stride = self.calculate_stride_refined(kinematics, rotation)
         hand_speed = self.estimate_hand_speed(rotation, trc_metrics)
         lower_body = self.calculate_lower_body_kinematics(kinematics)
         linear_id  = self.calculate_linear_inverse_dynamics(kinematics)
