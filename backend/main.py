@@ -133,10 +133,20 @@ def analyze_local(payload: dict):
         )
         kinematics = optimizer.load_mot_file(file_path)
 
+        trc_name = os.path.basename(file_path).replace('.mot', '.trc')
+        # 1. Standard OpenCap folder structure: .../OpenSimData/Kinematics/ -> .../MarkerData/
         trc_path = file_path.replace('Kinematics', 'MarkerData').replace('.mot', '.trc')
         if not os.path.exists(trc_path):
-            # .mot may be a copy (e.g. in Downloads) — search known OpenCap data dirs by filename
-            trc_name = os.path.basename(file_path).replace('.mot', '.trc')
+            # 2. Walk up from the .mot file's directory looking for a sibling MarkerData/ folder
+            search_dir = os.path.dirname(file_path)
+            for _ in range(4):  # up to 4 levels up
+                candidate = os.path.join(search_dir, 'MarkerData', trc_name)
+                if os.path.exists(candidate):
+                    trc_path = candidate
+                    break
+                search_dir = os.path.dirname(search_dir)
+        if not os.path.exists(trc_path):
+            # 3. Broad search under ~/Desktop and ~/Downloads as last resort
             for search_root in [os.path.expanduser('~/Desktop'), os.path.expanduser('~/Downloads')]:
                 for dirpath, _, fnames in os.walk(search_root):
                     if trc_name in fnames and 'MarkerData' in dirpath:
