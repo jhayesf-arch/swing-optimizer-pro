@@ -604,25 +604,27 @@ class RefinedHittingOptimizer:
         peak_shoulder_w = float(np.max(np.abs(lumbar_omega_sw)))  # relative trunk twist rate
         peak_arm_w_val  = float(np.max(np.abs(arm_omega_sw)))
         peak_elb_w_val  = float(np.max(np.abs(elb_omega_sw)))
-        
+
         # Segmental Kinetic Energy: KE = 0.5 * I * omega^2
+        # All segments use their own angular velocity in their own reference frame.
+        # pelvis: absolute rotation; torso: relative to pelvis (lumbar); arms: absolute.
+        bat_I = (1.0 / 3.0) * self.bat_mass_kg * (self.bat_length_m ** 2)
+
         pelvis_ke = 0.5 * hip_inertia * (peak_pelvis_w ** 2)
-        torso_ke = 0.5 * trunk_I * (peak_shoulder_w ** 2)
-        arm_ke = 0.5 * (upper_arm_I + forearm_I) * 2 * (peak_arm_w_val ** 2)  # bilateral
-        elbow_ke = 0.5 * forearm_I * 2 * (peak_elb_w_val ** 2)  # bilateral forearm
-        
-        total_energy_transfer = pelvis_ke + torso_ke + arm_ke + elbow_ke
-        
-        # Driveline's top transfer ratios (proximal-to-distal energy flow)
-        torso_to_arm_ratio = torso_ke / (arm_ke + eps)
-        pelvis_to_torso_ratio = pelvis_ke / (torso_ke + eps)
+        torso_ke  = 0.5 * trunk_I * (peak_shoulder_w ** 2)
+        arm_ke    = 0.5 * (upper_arm_I + forearm_I) * 2 * (peak_arm_w_val ** 2)
+        elbow_ke  = 0.5 * forearm_I * 2 * (peak_elb_w_val ** 2)
+        bat_ke    = 0.5 * bat_I * (peak_arm_w_val ** 2)  # bat rotates with lead arm
+
+        total_energy_transfer = pelvis_ke + torso_ke + arm_ke + elbow_ke + bat_ke
+
+        torso_to_arm_ratio       = torso_ke / (arm_ke + eps)
+        pelvis_to_torso_ratio    = pelvis_ke / (torso_ke + eps)
+        # Ratio of lumbar twist rate to pelvis rotation rate — >1 means torso amplifies
         torso_to_pelvis_rot_ratio = peak_shoulder_w / (peak_pelvis_w + eps)
-        
-        # Kinetic Chain Efficiency: how well does energy amplify distally?
-        # In an ideal proximal-to-distal sequence, each distal segment should
-        # have HIGHER angular velocity (but lower inertia) than its proximal neighbor.
-        # Efficiency = (distal KE sum) / (total KE) — higher = better transfer
-        distal_ke = arm_ke + elbow_ke
+
+        # KCE: fraction of total chain energy that reaches the distal segments (arms + bat)
+        distal_ke = arm_ke + elbow_ke + bat_ke
         chain_efficiency = (distal_ke / (total_energy_transfer + eps)) * 100.0
         
         return {
@@ -650,6 +652,7 @@ class RefinedHittingOptimizer:
             'torso_ke_J': float(torso_ke),
             'arm_ke_J': float(arm_ke),
             'elbow_ke_J': float(elbow_ke),
+            'bat_ke_J': float(bat_ke),
             'total_energy_transfer_J': float(total_energy_transfer),
             'torso_to_arm_transfer_ratio': float(torso_to_arm_ratio),
             'pelvis_to_torso_transfer_ratio': float(pelvis_to_torso_ratio),
