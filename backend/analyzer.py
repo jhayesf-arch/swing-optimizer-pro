@@ -322,10 +322,13 @@ class RefinedSwingMetrics:
     peak_prosup_l_deg: float = 0.0
 
 class RefinedHittingOptimizer:
-    def __init__(self, body_mass_kg: float, body_height_m: float, skill_level: str = 'high_school'):
+    def __init__(self, body_mass_kg: float, body_height_m: float, skill_level: str = 'high_school',
+                 bat_mass_kg: float = 0.88, bat_length_m: float = 0.864):
         self.body_mass_kg = float(body_mass_kg)
         self.body_height_m = float(body_height_m)
         self.skill_level = skill_level if skill_level in SKILL_LEVEL_BENCHMARKS else 'high_school'
+        self.bat_mass_kg = float(bat_mass_kg)
+        self.bat_length_m = float(bat_length_m)
         self.g = 9.81
         self.calculate_segment_properties()
         
@@ -510,9 +513,10 @@ class RefinedHittingOptimizer:
         
         upper_arm_I = self.segments['upper_arm']['I']
         forearm_I = self.segments['forearm']['I']
-        bat_mass = 0.91
-        bat_radius = 0.6
-        bat_I = bat_mass * bat_radius**2
+        bat_mass = self.bat_mass_kg
+        # Bat modelled as uniform rod: I = (1/12)*m*L^2 about CoM, then parallel axis to handle
+        # Simplified: use (1/3)*m*L^2 (rod rotating about one end — grip end)
+        bat_I = (1.0 / 3.0) * bat_mass * (self.bat_length_m ** 2)
         
         shoulder_inertia = trunk_I + 2 * (upper_arm_I + forearm_I) + bat_I
         shoulder_torque = shoulder_inertia * shoulder_alpha

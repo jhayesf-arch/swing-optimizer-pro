@@ -161,6 +161,8 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('height_m', demo.height_m);
         formData.append('weight_kg', demo.weight_kg);
         formData.append('skill_level', selectedSkillLevel);
+        formData.append('bat_mass_kg', demo.bat_mass_kg);
+        formData.append('bat_length_m', demo.bat_length_m);
         
         const doUpload = () => fetch(`${API_BASE}/api/analyze/upload`, { method: 'POST', body: formData });
         try {
@@ -192,7 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function analyzeLocalFile(filepath, filename) {
         showLoading();
         const demo = getDemographics();
-        const payload = JSON.stringify({ filepath, filename, height_m: demo.height_m, weight_kg: demo.weight_kg, skill_level: selectedSkillLevel });
+        const payload = JSON.stringify({ filepath, filename, height_m: demo.height_m, weight_kg: demo.weight_kg, skill_level: selectedSkillLevel, bat_mass_kg: demo.bat_mass_kg, bat_length_m: demo.bat_length_m });
         const doLocal = () => fetch(`${API_BASE}/api/analyze/local`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload });
         try {
             let response;
@@ -489,9 +491,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const ft = parseFloat(document.getElementById('height-ft').value) || 6;
         const inc = parseFloat(document.getElementById('height-in').value) || 0;
         const lbs = parseFloat(document.getElementById('weight-lbs').value) || 180;
+        const batOz = parseFloat(document.getElementById('bat-weight-oz').value) || 0;
+        const batIn = parseFloat(document.getElementById('bat-length-in').value) || 0;
         return {
             height_m: ((ft * 12) + inc) * 0.0254,
-            weight_kg: lbs * 0.453592
+            weight_kg: lbs * 0.453592,
+            bat_mass_kg: batOz * 0.0283495,   // oz → kg
+            bat_length_m: batIn * 0.0254       // in → m
         };
     }
     
