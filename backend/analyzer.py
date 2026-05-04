@@ -65,22 +65,23 @@ SEGMENT_PARAMS = {
 SWINGAI_THRESHOLDS = {
     # PHASE 1 — BALANCE & LOAD
     'negative_move': {
-        # How far the pelvis shifts BACKWARD before stride (m)
-        # Derived from pelvis_tx: min value before plant vs starting position
+        # Pelvis backward shift before stride (m). No direct batting literature;
+        # estimated from coaching consensus (Lau, Epstein) and swing analysis tools.
         'youth':        [(-0.02,1),(-0.01,2),(0.01,3),(0.03,4),(0.05,5)],
         'high_school':  [(-0.02,1),(-0.01,2),(0.02,3),(0.04,4),(0.06,5)],
         'college':      [(-0.02,1),(0.00,2),(0.03,3),(0.05,4),(0.08,5)],
         'professional': [(-0.02,1),(0.00,2),(0.03,3),(0.06,4),(0.10,5)],
     },
     'pelvis_load': {
-        # Pelvis KE during load phase (J) — proxy for hip coil
+        # Pelvis KE during load (J). No direct literature values by level;
+        # thresholds are relative benchmarks scaled from observed data.
         'youth':        [(0,1),(5,2),(15,3),(30,4),(50,5)],
         'high_school':  [(0,1),(10,2),(25,3),(50,4),(80,5)],
         'college':      [(0,1),(15,2),(40,3),(80,4),(120,5)],
         'professional': [(0,1),(25,2),(60,3),(110,4),(160,5)],
     },
     'upper_torso_load': {
-        # Torso KE during load (J) — shoulder coil tension
+        # Torso KE during load (J). Relative benchmarks; no direct literature.
         'youth':        [(0,1),(5,2),(12,3),(25,4),(40,5)],
         'high_school':  [(0,1),(8,2),(18,3),(40,4),(65,5)],
         'college':      [(0,1),(12,2),(28,3),(60,4),(95,5)],
@@ -88,14 +89,16 @@ SWINGAI_THRESHOLDS = {
     },
     # PHASE 2 — STRIDE
     'stride_length': {
-        # stride_ratio (stride / height). Elite = ~0.7-0.9
-        'youth':        [(0.0,1),(0.3,2),(0.5,3),(0.65,4),(0.80,5)],
+        # stride_ratio (stride / height).
+        # Literature: ~75-90% of height for elite hitters (Welch 1995, Coleman 2000).
+        # Pitching literature: ~85% of height (Clinician's Guide to Baseball Pitching Biomechanics).
+        'youth':        [(0.0,1),(0.30,2),(0.50,3),(0.65,4),(0.80,5)],
         'high_school':  [(0.0,1),(0.35,2),(0.55,3),(0.70,4),(0.85,5)],
-        'college':      [(0.0,1),(0.40,2),(0.60,3),(0.75,4),(0.90,5)],
-        'professional': [(0.0,1),(0.45,2),(0.65,3),(0.78,4),(0.92,5)],
+        'college':      [(0.0,1),(0.40,2),(0.60,3),(0.75,4),(0.88,5)],
+        'professional': [(0.0,1),(0.45,2),(0.65,3),(0.78,4),(0.90,5)],
     },
     'forward_move': {
-        # stride_efficiency_pct. Target 75-110%.
+        # stride_efficiency_pct (stride_ratio / 0.75 × 100). Target 75-110%.
         'youth':        [(0,1),(40,2),(65,3),(90,4),(115,5)],
         'high_school':  [(0,1),(45,2),(70,3),(95,4),(115,5)],
         'college':      [(0,1),(50,2),(75,3),(98,4),(115,5)],
@@ -103,53 +106,72 @@ SWINGAI_THRESHOLDS = {
     },
     # PHASE 3 — POWER MOVE
     'max_hip_shoulder_separation': {
-        # max_separation_deg. Elite = 40-55 degrees.
-        'youth':        [(0,1),(15,2),(28,3),(38,4),(48,5)],
-        'high_school':  [(0,1),(18,2),(30,3),(40,4),(52,5)],
-        'college':      [(0,1),(22,2),(33,3),(42,4),(54,5)],
-        'professional': [(0,1),(25,2),(35,3),(44,4),(56,5)],
+        # max_separation_deg.
+        # Literature: High school pitchers: 48.4 ± 10.9° (Bullock et al. 2020, IJSPT).
+        # Industry threshold for elite pitching: 55° (Bullock 2020).
+        # Batting values similar; elite hitters 40-55° (Welch 1995, Coleman 2000).
+        # Youth batting typically 20-35° due to reduced trunk mobility.
+        'youth':        [(0,1),(12,2),(22,3),(32,4),(42,5)],
+        'high_school':  [(0,1),(18,2),(30,3),(42,4),(52,5)],
+        'college':      [(0,1),(22,2),(34,3),(45,4),(55,5)],
+        'professional': [(0,1),(25,2),(37,3),(48,4),(58,5)],
     },
     'pelvis_rotation_range': {
         # Total pelvis rotation from load to contact (degrees).
-        # Derived from pelvis_angle range (rad->deg).
+        # Literature: Elite batting pelvis rotation ~60-80° (Welch 1995).
+        # Pelvis omega ~714 deg/s (Welch 1995) over ~100ms swing → ~70° total.
         'youth':        [(0,1),(20,2),(35,3),(50,4),(65,5)],
         'high_school':  [(0,1),(25,2),(40,3),(55,4),(70,5)],
         'college':      [(0,1),(30,2),(45,3),(60,4),(75,5)],
         'professional': [(0,1),(35,2),(50,3),(65,4),(80,5)],
     },
     'upper_torso_rotation_range': {
-        # Total shoulder rotation from load to contact (degrees).
-        'youth':        [(0,1),(30,2),(50,3),(70,4),(90,5)],
-        'high_school':  [(0,1),(35,2),(55,3),(80,4),(100,5)],
-        'college':      [(0,1),(40,2),(65,3),(90,4),(110,5)],
-        'professional': [(0,1),(45,2),(70,3),(95,4),(115,5)],
+        # Total shoulder/trunk rotation from load to contact (degrees).
+        # Literature: Trunk rotation ~80-100° in elite hitters (Fleisig et al. 2013,
+        # Sports Biomech; Welch 1995 shoulder segment ~937 deg/s).
+        # Trunk rotation ROM in high school pitchers: ~62° (Bullock 2020) — but
+        # this is passive ROM, not swing range. Swing range is larger.
+        'youth':        [(0,1),(30,2),(50,3),(70,4),(88,5)],
+        'high_school':  [(0,1),(35,2),(55,3),(78,4),(95,5)],
+        'college':      [(0,1),(40,2),(62,3),(82,4),(100,5)],
+        'professional': [(0,1),(45,2),(65,3),(85,4),(105,5)],
     },
     # PHASE 4 — CONTACT & FOLLOW-THROUGH
     'pelvis_direction_at_contact': {
-        # Absolute deviation of pelvis from 90° (square to pitcher) at plant frame.
-        # Lower is better. Score 1-5 inversely.
-        'youth':        [(90,1),(60,2),(40,3),(20,4),(8,5)],
-        'high_school':  [(90,1),(55,2),(35,3),(18,4),(6,5)],
-        'college':      [(90,1),(50,2),(30,3),(15,4),(5,5)],
-        'professional': [(90,1),(45,2),(25,3),(12,4),(4,5)],
+        # Deviation of pelvis from square (90°) at front foot plant (degrees).
+        # Lower = better (hips more open = closer to square).
+        # No direct batting-specific published values found. Previous thresholds
+        # (≤4° for professional) were too strict. Revised based on coaching consensus:
+        # elite hitters typically 10-25° open at contact (Welch 1995 describes
+        # hips "rotating through" contact, not perfectly square).
+        'youth':        [(90,1),(60,2),(45,3),(30,4),(15,5)],
+        'high_school':  [(90,1),(55,2),(40,3),(25,4),(12,5)],
+        'college':      [(90,1),(50,2),(35,3),(22,4),(10,5)],
+        'professional': [(90,1),(45,2),(30,3),(18,4),(8,5)],
     },
     'upper_torso_direction_at_contact': {
-        # Same but for torso angle at contact.
-        'youth':        [(90,1),(65,2),(45,3),(25,4),(10,5)],
-        'high_school':  [(90,1),(60,2),(40,3),(22,4),(8,5)],
-        'college':      [(90,1),(55,2),(35,3),(18,4),(6,5)],
-        'professional': [(90,1),(50,2),(30,3),(15,4),(5,5)],
+        # Torso typically lags pelvis by ~20-30° at contact (Fleisig 2013).
+        # Revised to be ~20° more closed than pelvis thresholds above.
+        'youth':        [(90,1),(65,2),(50,3),(35,4),(20,5)],
+        'high_school':  [(90,1),(60,2),(45,3),(30,4),(16,5)],
+        'college':      [(90,1),(55,2),(40,3),(26,4),(14,5)],
+        'professional': [(90,1),(50,2),(35,3),(22,4),(12,5)],
     },
     'kinetic_chain_efficiency': {
-        # kinetic_chain_efficiency_pct. Higher = better distal energy amplification.
-        'youth':        [(0,1),(8,2),(18,3),(30,4),(42,5)],
-        'high_school':  [(0,1),(10,2),(22,3),(35,4),(48,5)],
-        'college':      [(0,1),(12,2),(25,3),(40,4),(55,5)],
-        'professional': [(0,1),(15,2),(28,3),(44,4),(60,5)],
+        # KCE% = (arm_ke + elbow_ke + bat_ke) / total_ke × 100.
+        # No direct published batting values. Thresholds revised upward after
+        # bat KE was added to the distal sum (bat alone contributes ~150J).
+        # Observed values: ~14% without TRC, ~40% with TRC wrist speed.
+        # Thresholds set conservatively pending more data.
+        'youth':        [(0,1),(10,2),(22,3),(35,4),(50,5)],
+        'high_school':  [(0,1),(12,2),(25,3),(40,4),(55,5)],
+        'college':      [(0,1),(15,2),(28,3),(44,4),(60,5)],
+        'professional': [(0,1),(18,2),(32,3),(48,4),(65,5)],
     },
     'sequence_quality': {
-        # Combined rating of proper_sequence + sequence_timing_ms
-        # (computed directly, not threshold lookup)
+        # Computed directly from proper_sequence + sequence_timing_ms.
+        # Literature: 24.3 ± 24.3 ms pelvis-to-trunk lag in high school pitching
+        # (Bullock 2020). Elite batting: 30-60ms (Welch 1995, Stodden 2001).
         'youth':        [],
         'high_school':  [],
         'college':      [],
@@ -213,13 +235,17 @@ SWINGAI_PHASES = {
 
 SKILL_LEVEL_BENCHMARKS = {
     'youth': {
+        # Power range: estimated; no published youth batting power data
         'power_range_W': (900, 2500),
         'hip_power_per_kg_elite': 8.0,
         'ke_per_kg_elite': 2.0,
         'chain_efficiency_elite': 25.0,
         'torso_pelvis_ratio_optimal': (0.8, 1.1),
-        'x_factor_optimal': (25, 40),
-        'sequence_timing_ms': (20, 50),
+        # X-factor: youth typically 20-35° (reduced trunk mobility vs adults)
+        'x_factor_optimal': (20, 38),
+        # Sequence timing: literature shows ~24ms mean for HS pitching (Bullock 2020);
+        # youth batting likely similar or slightly less consistent
+        'sequence_timing_ms': (15, 45),
         'max_hand_speed_mph': (35, 55)
     },
     'high_school': {
@@ -228,8 +254,10 @@ SKILL_LEVEL_BENCHMARKS = {
         'ke_per_kg_elite': 3.5,
         'chain_efficiency_elite': 35.0,
         'torso_pelvis_ratio_optimal': (1.0, 1.2),
-        'x_factor_optimal': (30, 50),
-        'sequence_timing_ms': (30, 60),
+        # X-factor: HS pitchers 48.4 ± 10.9° (Bullock 2020); batting similar
+        'x_factor_optimal': (30, 52),
+        # Sequence timing: 24.3 ± 24.3ms for HS pitching (Bullock 2020)
+        'sequence_timing_ms': (20, 55),
         'max_hand_speed_mph': (45, 65)
     },
     'college': {
@@ -238,8 +266,10 @@ SKILL_LEVEL_BENCHMARKS = {
         'ke_per_kg_elite': 5.0,
         'chain_efficiency_elite': 40.0,
         'torso_pelvis_ratio_optimal': (1.1, 1.3),
+        # X-factor: collegiate ~35-55° (Welch 1995, Coleman 2000)
         'x_factor_optimal': (35, 55),
-        'sequence_timing_ms': (30, 60),
+        # Sequence timing: 30-60ms for elite batting (Stodden 2001, Welch 1995)
+        'sequence_timing_ms': (25, 60),
         'max_hand_speed_mph': (55, 75)
     },
     'professional': {
@@ -248,9 +278,12 @@ SKILL_LEVEL_BENCHMARKS = {
         'ke_per_kg_elite': 7.0,
         'chain_efficiency_elite': 45.0,
         'torso_pelvis_ratio_optimal': (1.2, 1.5),
-        'x_factor_optimal': (40, 60),
-        'sequence_timing_ms': (40, 60),
-        'max_hand_speed_mph': (65, 85)
+        # X-factor: professional elite 40-58° (Welch 1995; industry threshold 55°)
+        'x_factor_optimal': (40, 58),
+        # Sequence timing: 30-60ms (Welch 1995 hip 714 deg/s → shoulder 937 deg/s)
+        'sequence_timing_ms': (30, 60),
+        # Hand speed: MLB bat speed ~70-80 mph (Statcast); hand speed ~65-75 mph
+        'max_hand_speed_mph': (65, 80)
     }
 }
 
