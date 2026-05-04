@@ -1,49 +1,57 @@
 """
 scale_shoulder_model.py
 -----------------------
-Scales LaiUhlrich2022_shoulder.osim by copying body segment scale factors
-from the already-scaled LaiUhlrich2022_scaled.osim (which OpenCap produced).
+Scales LaiUhlrich2022_shoulder.osim for any subject by transferring body
+segment properties from their OpenCap-generated LaiUhlrich2022_scaled.osim.
 
-Both models share the same body segment names, so we can directly transfer
-the mass and inertia scaling without re-running the full ScaleTool pipeline.
+Works for any session — just pass the path to the scaled standard model.
+The shoulder model's new bodies (scapulaPhantom_r/l) keep generic values
+since they have no counterpart in the standard model.
 
-Produces: LaiUhlrich2022_shoulder_scaled.osim
+Usage:
+    python scale_shoulder_model.py [path/to/LaiUhlrich2022_scaled.osim]
+
+If no argument given, uses the default session path.
 """
 import os, sys, urllib.request
 import opensim as osim
 
-SESSION_DIR  = os.path.expanduser(
-    "~/Desktop/OpenCapData_94fba876-8deb-4074-afe5-8d7872fec1ae")
-MODEL_DIR    = os.path.join(SESSION_DIR, "OpenSimData", "Model")
-SCALED_STD   = os.path.join(MODEL_DIR, "LaiUhlrich2022_scaled.osim")
-GENERIC_SH   = os.path.join(MODEL_DIR, "LaiUhlrich2022_shoulder.osim")
-OUT_MODEL    = os.path.join(MODEL_DIR, "LaiUhlrich2022_shoulder_scaled.osim")
 SHOULDER_URL = ("https://raw.githubusercontent.com/stanfordnmbl/opencap-core"
                 "/main/opensimPipeline/Models/LaiUhlrich2022_shoulder.osim")
 
-
-def download_if_missing(path, url):
-    if not os.path.exists(path):
-        print(f"Downloading {os.path.basename(path)} ...")
-        urllib.request.urlretrieve(url, path)
+# Cache the generic shoulder model here so it's only downloaded once
+GENERIC_CACHE = os.path.expanduser("~/.opencap_shoulder_generic.osim")
 
 
-def copy_scaling(scaled_std_path, generic_sh_path, out_path):
+def get_generic_shoulder_model() -> str:
+    if not os.path.exists(GENERIC_CACHE):
+        print("Downloading LaiUhlrich2022_shoulder.osim (cached for future use)...")
+        urllib.request.urlretrieve(SHOULDER_URL, GENERIC_CACHE)
+    return GENERIC_CACHE
+
+
+def scale_shoulder_for_session(scaled_standard_osim: str) -> str:
     """
-    For each body in the shoulder model, find the matching body in the
-    scaled standard model and copy its mass, mass_center, and inertia.
-    The shoulder model adds scapula/clavicle bodies not in the standard
-    model — those keep their generic values (already sized for an average adult).
+    Given a session's LaiUhlrich2022_scaled.osim, produce a matching
+    LaiUhlrich2022_shoulder_scaled.osim in the same directory.
+
+    Returns the path to the scaled shoulder model.
     """
-    std  = osim.Model(scaled_std_path);  std.initSystem()
-    sh   = osim.Model(generic_sh_path);  sh.initSystem()
+    model_dir = os.path.dirname(scaled_standard_osim)
+    out_path  = os.path.join(model_dir, "LaiUhlrich2022_shoulder_scaled.osim")
+
+    if os.path.exists(out_path):
+        return out_path
+
+    generic_path = get_generic_shoulder_model()
+
+    std = osim.Model(scaled_standard_osim); std.initSystem()
+    sh  = osim.Model(generic_path);         sh.initSystem()
 
     std_bodies = {std.getBodySet().get(i).getName(): std.getBodySet().get(i)
                   for i in range(std.getBodySet().getSize())}
 
-    transferred = []
-    kept_generic = []
-
+    transferred, kept = [], []
     for i in range(sh.getBodySet().getSize()):
         body = sh.getBodySet().get(i)
         name = body.getName()
@@ -54,21 +62,25 @@ def copy_scaling(scaled_std_path, generic_sh_path, out_path):
             body.setInertia(src.getInertia())
             transferred.append(name)
         else:
-            kept_generic.append(name)
+            kept.append(name)
 
     sh.printToXML(out_path)
-    print(f"Transferred scaling for {len(transferred)} bodies: {transferred}")
-    if kept_generic:
-        print(f"Kept generic values for {len(kept_generic)} new bodies: {kept_generic}")
-    print(f"Saved: {out_path}")
+    print(f"Scaled shoulder model → {out_path}")
+    print(f"  Transferred: {len(transferred)} bodies, kept generic: {kept}")
+    return out_path
 
 
 if __name__ == "__main__":
-    os.makedirs(MODEL_DIR, exist_ok=True)
-    download_if_missing(GENERIC_SH, SHOULDER_URL)
+    if len(sys.argv) > 1:
+        scaled_std = sys.argv[1]
+    else:
+        scaled_std = os.path.expanduser(
+            "~/Desktop/OpenCapData_94fba876-8deb-4074-afe5-8d7872fec1ae"
+            "/OpenSimData/Model/LaiUhlrich2022_scaled.osim"
+        )
 
-    if os.path.exists(OUT_MODEL):
-        print(f"Already exists: {OUT_MODEL}")
-        sys.exit(0)
+    if not os.path.exists(scaled_std):
+        print(f"Error: model not found: {scaled_std}")
+        sys.exit(1)
 
-    copy_scaling(SCALED_STD, GENERIC_SH, OUT_MODEL)
+    scale_shoulder_for_session(scaled_std)

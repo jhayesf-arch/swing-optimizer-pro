@@ -52,8 +52,25 @@ def run_inverse_dynamics(mot_path: str, model_path: str = DEFAULT_MODEL,
     use_shoulder_model : if True, use the ISB shoulder model (adds scapular DOFs)
                          instead of the standard ball-and-socket arm model.
     """
-    if use_shoulder_model and os.path.exists(DEFAULT_SHOULDER_MODEL):
-        model_path = DEFAULT_SHOULDER_MODEL
+    if use_shoulder_model:
+        try:
+            from scale_shoulder_model import scale_shoulder_for_session
+            search = os.path.dirname(mot_path)
+            shoulder_found = False
+            for _ in range(5):
+                for candidate in [os.path.join(search, "LaiUhlrich2022_scaled.osim"),
+                                   os.path.join(search, "Model", "LaiUhlrich2022_scaled.osim")]:
+                    if os.path.exists(candidate):
+                        model_path = scale_shoulder_for_session(candidate)
+                        shoulder_found = True
+                        break
+                if shoulder_found:
+                    break
+                search = os.path.dirname(search)
+            if not shoulder_found and os.path.exists(DEFAULT_SHOULDER_MODEL):
+                model_path = DEFAULT_SHOULDER_MODEL
+        except Exception as e:
+            print(f"Warning: could not load shoulder model ({e}), using standard model")
     if not HAS_OPENSIM:
         raise RuntimeError("opensim not found. Activate the opencap-processing conda env.")
     if not os.path.exists(model_path):
