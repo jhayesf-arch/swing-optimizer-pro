@@ -30,6 +30,10 @@ DEFAULT_MODEL = os.path.expanduser(
     "~/Desktop/OpenCapData_94fba876-8deb-4074-afe5-8d7872fec1ae"
     "/OpenSimData/Model/LaiUhlrich2022_scaled.osim"
 )
+DEFAULT_SHOULDER_MODEL = os.path.expanduser(
+    "~/Desktop/OpenCapData_94fba876-8deb-4074-afe5-8d7872fec1ae"
+    "/OpenSimData/Model/LaiUhlrich2022_shoulder_scaled.osim"
+)
 
 # Lumbar rotation limit for baseball swing (±90° default is too loose)
 LUMBAR_ROT_LIMIT_RAD = math.radians(50.0)
@@ -38,15 +42,18 @@ LUMBAR_ROT_LIMIT_RAD = math.radians(50.0)
 def run_inverse_dynamics(mot_path: str, model_path: str = DEFAULT_MODEL,
                           lowpass_hz: float = 15.0,
                           bat_mass_kg: float = 0.0,
-                          bat_length_m: float = 0.0) -> dict:
+                          bat_length_m: float = 0.0,
+                          use_shoulder_model: bool = False) -> dict:
     """
     Run OpenSim Inverse Dynamics on a swing .mot file.
 
     Parameters
     ----------
-    bat_mass_kg   : bat mass in kg (0 = no bat added)
-    bat_length_m  : bat length in metres, used to compute moment of inertia
+    use_shoulder_model : if True, use the ISB shoulder model (adds scapular DOFs)
+                         instead of the standard ball-and-socket arm model.
     """
+    if use_shoulder_model and os.path.exists(DEFAULT_SHOULDER_MODEL):
+        model_path = DEFAULT_SHOULDER_MODEL
     if not HAS_OPENSIM:
         raise RuntimeError("opensim not found. Activate the opencap-processing conda env.")
     if not os.path.exists(model_path):
@@ -257,8 +264,12 @@ def summarize_id_results(id_result: dict) -> dict:
         'peak_knee_torque_l_Nm':     _peak('knee_angle_l'),
         'peak_ankle_torque_r_Nm':    _peak('ankle_angle_r'),
         'peak_ankle_torque_l_Nm':    _peak('ankle_angle_l'),
-        'peak_shoulder_torque_r_Nm': _peak('arm_flex_r', 'arm_add_r', 'arm_rot_r'),
-        'peak_shoulder_torque_l_Nm': _peak('arm_flex_l', 'arm_add_l', 'arm_rot_l'),
+        'peak_shoulder_torque_r_Nm': _peak('arm_flex_r', 'arm_add_r', 'arm_rot_r',
+                                            'sh_plane_elev_r', 'sh_elev_r', 'sh_axial_rot_r'),
+        'peak_shoulder_torque_l_Nm': _peak('arm_flex_l', 'arm_add_l', 'arm_rot_l',
+                                            'sh_plane_elev_l', 'sh_elev_l', 'sh_axial_rot_l'),
+        'peak_scapular_force_r_N':   _peak('sh_tx_r', 'sh_ty_r', 'sh_tz_r'),
+        'peak_scapular_force_l_N':   _peak('sh_tx_l', 'sh_ty_l', 'sh_tz_l'),
         'peak_elbow_torque_r_Nm':    _peak('elbow_flex_r'),
         'peak_elbow_torque_l_Nm':    _peak('elbow_flex_l'),
         'peak_prosup_torque_r_Nm':   _peak('pro_sup_r'),
