@@ -1483,11 +1483,14 @@ class RefinedHittingOptimizer:
             'description': 'Maximum angle between hips and shoulders. Stores elastic energy (X-Factor).',
         }
 
-        # Pelvis Total Rotation Range — total radians traversed converted to degrees
+        # Pelvis Total Rotation Range — within swing window only (load to follow-through)
         if rotation and 'pelvis_angle' in rotation:
             pelvis_ang = rotation['pelvis_angle']
-            pelvis_rot_range = float(np.abs(np.max(pelvis_ang) - np.min(pelvis_ang)) * 180.0 / np.pi)
+            sw = rotation.get('swing_start_frame', 0)
+            pelvis_ang_sw = pelvis_ang[sw:]
+            pelvis_rot_range = float(np.abs(np.max(pelvis_ang_sw) - np.min(pelvis_ang_sw)) * 180.0 / np.pi)
         else:
+            pelvis_rot_range = 0.0
             pelvis_rot_range = 0.0
         prr_stars = self._rate_dimension('pelvis_rotation_range', pelvis_rot_range)
         dims['pelvis_rotation_range'] = {

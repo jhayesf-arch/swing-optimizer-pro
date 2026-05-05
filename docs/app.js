@@ -327,18 +327,19 @@ document.addEventListener('DOMContentLoaded', () => {
             ${createMetric('Chain Efficiency', m.kinetic_chain_efficiency_pct.toFixed(1), '%')}
             ${createMetric('Torso/Pelvis Ratio', m.torso_to_pelvis_rot_ratio.toFixed(2), '')}
             ${createMetric('Total Chain KE', m.total_energy_transfer_J.toFixed(0), 'J')}
-            ${createMetric('E_total (Bat)', m.e_total_J.toFixed(0), 'J')}
         `;
-        
+
+        const grf = diagnosis.grf_estimation || {};
         document.getElementById('stride-metrics').innerHTML = `
             ${createMetric('Stride Efficiency', m.stride_efficiency_pct.toFixed(0), '%')}
             ${createMetric('Stride Ratio', m.stride_ratio.toFixed(2), 'x Ht')}
-            ${createMetric('Proper Sequence', m.proper_sequence ? 'YES' : 'NO', '')}
-            ${createMetric('Plant Method', m.plant_method.replace(/_/g, ' '), '', true)}
+            ${createMetric('Proper Sequence', m.proper_sequence ? 'YES ✅' : 'NO ❌', '', true)}
             ${createMetric('Pelvis KE', m.pelvis_ke_J.toFixed(1), 'J')}
             ${createMetric('Torso KE', m.torso_ke_J.toFixed(1), 'J')}
             ${createMetric('Arm KE', m.arm_ke_J.toFixed(1), 'J')}
-            ${createMetric('Elbow KE', m.elbow_ke_J.toFixed(1), 'J')}
+            ${createMetric('Bat KE', (m.bat_ke_J || 0).toFixed(1), 'J')}
+            ${grf.peak_grf_vert_BW ? createMetric('Peak GRF Vert', (grf.peak_grf_vert_BW * 100).toFixed(0), '% BW') : ''}
+            ${grf.peak_grf_ap_N ? createMetric('Peak GRF AP', grf.peak_grf_ap_N.toFixed(0), 'N') : ''}
         `;
 
         // Reset advanced panel state
