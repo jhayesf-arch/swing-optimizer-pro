@@ -374,6 +374,81 @@ class RefinedSwingMetrics:
     peak_prosup_r_deg: float = 0.0
     peak_prosup_l_deg: float = 0.0
 
+def _build_data_quality(trc_metrics: dict) -> dict:
+    """
+    Returns a data quality and validation context block for the API response.
+
+    Surfaces:
+    - OpenCap kinematic validation (Uhlrich et al. 2023)
+    - Which metrics are GRF-dependent vs. GRF-independent
+    - Whether TRC marker data was used (improves bat KE accuracy)
+    - Limitations of the current ID approach (no force plates)
+    """
+    has_trc = trc_metrics.get('max_hand_speed_mps', 0.0) > 0
+
+    return {
+        "opencap_validation": {
+            "source": "Uhlrich et al. 2023, Nature Communications",
+            "finding": "OpenCap kinematics validated against force plates: GRF MAE = 6.2% BW",
+            "implication": (
+                "The .mot kinematics driving this analysis are from the same validated pipeline. "
+                "Joint angle accuracy is the primary input quality metric."
+            ),
+        },
+        "grf_status": {
+            "force_plates_used": False,
+            "grf_source": "none — no force plates or OpenSimAD dynamic simulation",
+            "impact": (
+                "Lower-extremity joint torques (knee, ankle) are less accurate without GRFs. "
+                "Upper-body torques (shoulder, elbow, lumbar) are less GRF-dependent and more reliable. "
+                "Pelvis residual forces in the OpenSim ID output absorb unbalanced dynamics."
+            ),
+        },
+        "metric_reliability": {
+            "high": [
+                "pelvis_rotation_range_deg",
+                "max_separation_deg (X-Factor)",
+                "sequence_timing_ms",
+                "peak_pelvis_omega_rad_s",
+                "peak_shoulder_torque_Nm (OpenSim ID)",
+                "peak_elbow_torque_Nm (OpenSim ID)",
+                "peak_lumbar_torque_Nm (OpenSim ID)",
+            ],
+            "moderate": [
+                "peak_hip_torque_Nm (no GRF)",
+                "peak_knee_torque_Nm (no GRF)",
+                "kinetic_chain_efficiency_pct",
+                "estimated_hand_speed_mph (angular velocity method)" if not has_trc
+                else "estimated_hand_speed_mph (TRC wrist markers — higher accuracy)",
+            ],
+            "low_or_data_dependent": [
+                "stride_length_m (unreliable for long trials >2s)",
+                "pelvis_residual_force_N (expected to be large without GRFs)",
+                "negative_move_m (no published hitting normative data)",
+                "pelvis_ke_J / torso_ke_J (no published hitting normative data)",
+            ],
+        },
+        "trc_markers_used": has_trc,
+        "bat_ke_method": (
+            "TRC wrist marker velocity (½mv²) — directly measured"
+            if has_trc else
+            "Angular velocity × lever arm estimate (½mv² with v = ω × forearm_length)"
+        ),
+        "threshold_evidence": {
+            "literature_supported": [
+                "max_hip_shoulder_separation (Fleisig et al. 2013, Sports Biomech, n=40 pro batters)",
+                "sequence_timing_ms (Taguchi et al. 2023, Fukushima J Med Sci, n=18 Div I batters)",
+                "pelvis_rotation_range (Welch et al. 1995, JOSPT)",
+                "upper_torso_rotation_range (Welch 1995; Taguchi 2023)",
+            ],
+            "coaching_consensus_only": [
+                "negative_move", "stride_length", "forward_move",
+                "pelvis_load", "upper_torso_load", "kinetic_chain_efficiency",
+            ],
+        },
+    }
+
+
 class RefinedHittingOptimizer:
     def __init__(self, body_mass_kg: float, body_height_m: float, skill_level: str = 'high_school',
                  bat_mass_kg: float = 0.88, bat_length_m: float = 0.864):
@@ -1260,6 +1335,7 @@ class RefinedHittingOptimizer:
             "lower_body": {k: v for k, v in lower_body.items() if not isinstance(v, np.ndarray)},
             "linear_inverse_dynamics": {k: v for k, v in linear_id.items() if not isinstance(v, np.ndarray)},
             "weight_shift": weight_shift,
+            "data_quality": _build_data_quality(trc_metrics),
         }
 
     def _rate_dimension(self, key: str, value: float, invert: bool = False) -> int:
