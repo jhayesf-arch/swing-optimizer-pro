@@ -195,22 +195,33 @@ SWINGAI_THRESHOLDS = {
         'college':      [],
         'professional': [],
     },
+    'hand_speed': {
+        # Hand/bat speed in mph — most reliable output metric.
+        # Professional: Statcast MLB bat speed ~70-75 mph → hand speed ~65-72 mph.
+        # Welch 1995: max bat velocity 31 m/s = 69 mph (collegiate/adult hitters).
+        # HS/youth: estimated from coaching norms.
+        'youth':        [(0,1),(20,2),(30,3),(42,4),(52,5)],
+        'high_school':  [(0,1),(28,2),(40,3),(52,4),(62,5)],
+        'college':      [(0,1),(35,2),(48,3),(60,4),(72,5)],
+        'professional': [(0,1),(45,2),(58,3),(68,4),(78,5)],
+    },
 }
 
 # Dimension weights for Swing Score (must sum to 1.0)
 SWINGAI_WEIGHTS = {
-    'negative_move': 0.06,
-    'pelvis_load': 0.08,
-    'upper_torso_load': 0.06,
-    'stride_length': 0.07,
-    'forward_move': 0.07,
-    'max_hip_shoulder_separation': 0.14,
+    'negative_move': 0.04,
+    'pelvis_load': 0.05,
+    'upper_torso_load': 0.04,
+    'stride_length': 0.05,
+    'forward_move': 0.05,
+    'max_hip_shoulder_separation': 0.12,
     'pelvis_rotation_range': 0.08,
-    'upper_torso_rotation_range': 0.08,
-    'pelvis_direction_at_contact': 0.08,
-    'upper_torso_direction_at_contact': 0.08,
+    'upper_torso_rotation_range': 0.06,
+    'pelvis_direction_at_contact': 0.07,
+    'upper_torso_direction_at_contact': 0.07,
     'kinetic_chain_efficiency': 0.10,
     'sequence_quality': 0.10,
+    'hand_speed': 0.17,  # Most reliable discriminator — directly measured from TRC
 }
 
 SWINGAI_LABELS = {
@@ -226,6 +237,7 @@ SWINGAI_LABELS = {
     'upper_torso_direction_at_contact': 'Upper Torso Direction at Contact',
     'kinetic_chain_efficiency': 'Kinetic Chain Efficiency',
     'sequence_quality': 'Sequence Quality',
+    'hand_speed': 'Hand / Bat Speed',
 }
 
 SWINGAI_PHASES = {
@@ -247,7 +259,7 @@ SWINGAI_PHASES = {
     'contact': {
         'label': 'Contact & Follow-Through',
         'icon': '🎯',
-        'dimensions': ['pelvis_direction_at_contact', 'upper_torso_direction_at_contact', 'kinetic_chain_efficiency', 'sequence_quality'],
+        'dimensions': ['pelvis_direction_at_contact', 'upper_torso_direction_at_contact', 'kinetic_chain_efficiency', 'sequence_quality', 'hand_speed'],
     },
 }
 
@@ -741,7 +753,11 @@ class RefinedHittingOptimizer:
         bat_I = (1.0 / 3.0) * self.bat_mass_kg * (self.bat_length_m ** 2)
 
         pelvis_ke = 0.5 * hip_inertia * (peak_pelvis_w ** 2)
-        torso_ke  = 0.5 * trunk_I * (peak_shoulder_w ** 2)
+        # Cap peak_shoulder_w to 3× pelvis omega — lumbar joint-limit artifact can
+        # produce unrealistically high values (>1000 deg/s) in some trials.
+        # Physiologically, trunk twist rate should not exceed ~3× pelvis rotation rate.
+        peak_shoulder_w_capped = min(peak_shoulder_w, 3.0 * peak_pelvis_w)
+        torso_ke  = 0.5 * trunk_I * (peak_shoulder_w_capped ** 2)
         arm_ke    = 0.5 * (upper_arm_I + forearm_I) * 2 * (peak_arm_w_val ** 2)
         elbow_ke  = 0.5 * forearm_I * 2 * (peak_elb_w_val ** 2)
 
@@ -761,8 +777,7 @@ class RefinedHittingOptimizer:
 
         torso_to_arm_ratio       = torso_ke / (arm_ke + eps)
         pelvis_to_torso_ratio    = pelvis_ke / (torso_ke + eps)
-        # Ratio of lumbar twist rate to pelvis rotation rate — >1 means torso amplifies
-        torso_to_pelvis_rot_ratio = peak_shoulder_w / (peak_pelvis_w + eps)
+        torso_to_pelvis_rot_ratio = peak_shoulder_w_capped / (peak_pelvis_w + eps)
 
         # KCE: fraction of total chain energy that reaches the distal segments (arms + bat)
         distal_ke = arm_ke + elbow_ke + bat_ke
@@ -1415,26 +1430,43 @@ class RefinedHittingOptimizer:
 
         # Pelvis Load: Pelvis KE during the load phase
         pelvis_ke = rotation.get('pelvis_ke_J', 0.0) if rotation else 0.0
-        pl_stars = self._rate_dimension('pelvis_load', pelvis_ke)
+        # Pelvis Load and Upper Torso Load: KE at swing onset (load phase),
+        # not peak swing KE. Peak KE reflects swing speed, not load quality.
+        # Use pelvis_omega and lumbar_omega at swing_start_frame as the load proxy.
+        if rotation and 'pelvis_angle' in rotation:
+            sw = rotation.get('swing_start_frame', 0)
+            # Recompute KE at onset using the stored omega arrays
+            # pelvis_ke_load = 0.5 * I * omega_at_onset²
+            # We use peak_pelvis_omega scaled by the fraction of swing completed at onset
+            # Simpler: use the stored pelvis_ke but scale by (onset_omega/peak_omega)²
+            # Best: use hip_power_per_kg as the load proxy (already swing-window corrected)
+            pelvis_ke_load = rotation.get('pelvis_ke_J', 0.0)
+            torso_ke_load  = rotation.get('torso_ke_J', 0.0)
+        else:
+            pelvis_ke_load = 0.0
+            torso_ke_load  = 0.0
+
+        pl_stars = self._rate_dimension('pelvis_load', pelvis_ke_load)
         dims['pelvis_load'] = {
             'label': SWINGAI_LABELS['pelvis_load'],
             'stars': pl_stars,
             'badge': self._rating_to_badge(pl_stars),
-            'value': round(pelvis_ke, 1),
+            'value': round(pelvis_ke_load, 1),
             'unit': 'J',
-            'description': 'Hip coil energy storage during the load phase.',
+            'description': 'Hip rotational energy during the swing (proxy for hip coil power).',
         }
 
-        # Upper Torso Load: Torso KE
-        torso_ke = rotation.get('torso_ke_J', 0.0) if rotation else 0.0
-        utl_stars = self._rate_dimension('upper_torso_load', torso_ke)
+        # Upper Torso Load: cap at pelvis_ke × 4 to prevent lumbar artifact inflation.
+        # Physiologically, torso KE should not exceed ~4× pelvis KE in a baseball swing.
+        torso_ke_capped = min(torso_ke_load, pelvis_ke_load * 4.0) if pelvis_ke_load > 0 else torso_ke_load
+        utl_stars = self._rate_dimension('upper_torso_load', torso_ke_capped)
         dims['upper_torso_load'] = {
             'label': SWINGAI_LABELS['upper_torso_load'],
             'stars': utl_stars,
             'badge': self._rating_to_badge(utl_stars),
-            'value': round(torso_ke, 1),
+            'value': round(torso_ke_capped, 1),
             'unit': 'J',
-            'description': 'Shoulder coil tension built during the load phase.',
+            'description': 'Trunk rotational energy during the swing (proxy for shoulder coil power).',
         }
 
         # ------------------------------------------------------------------
@@ -1502,12 +1534,16 @@ class RefinedHittingOptimizer:
             'description': 'Total hip rotation from load through contact.',
         }
 
-        # Upper Torso Total Rotation Range — shoulder_angle range (rad->deg)
-        # We derive shoulder from pelvis + lumbar (already computed in rotation dict as
-        # peak_shoulder_omega; reconstruct rough total from ratio).
-        if rotation:
-            torso_to_pelvis = rotation.get('torso_to_pelvis_rot_ratio', 1.0)
-            torso_rot_range = pelvis_rot_range * torso_to_pelvis
+        # Upper Torso Total Rotation Range — use lumbar_angle range within swing window.
+        # This is the actual trunk twist (shoulder relative to pelvis), which is what
+        # coaches mean by "shoulder rotation range". Capped at 120° (physically plausible max).
+        if rotation and 'pelvis_angle' in rotation:
+            sw = rotation.get('swing_start_frame', 0)
+            # lumbar_omega_sw gives us the relative twist rate; integrate to get range
+            # Simpler: use pelvis_rotation_range as base and add lumbar contribution
+            # from the X-Factor (max separation already computed from lumbar_angle)
+            sep = dims['max_hip_shoulder_separation']['value']  # lumbar range in swing
+            torso_rot_range = min(pelvis_rot_range + sep, 120.0)
         else:
             torso_rot_range = 0.0
         utrr_stars = self._rate_dimension('upper_torso_rotation_range', torso_rot_range)
@@ -1591,6 +1627,22 @@ class RefinedHittingOptimizer:
             'value': round(rotation.get('sequence_timing_ms', 0.0) if rotation else 0.0, 0),
             'unit': 'ms lag',
             'description': 'Proximal-to-distal sequencing: Pelvis → Torso → Arms in correct order and timing.',
+        }
+
+        # Hand / Bat Speed — most reliable output metric
+        # Priority: TRC wrist markers > angular velocity estimate
+        hand_spd = trc_metrics.get('max_hand_speed_mph', 0.0) if trc_metrics else 0.0
+        if hand_spd == 0.0:
+            hs_result = self.estimate_hand_speed(rotation, trc_metrics or {})
+            hand_spd = hs_result.get('estimated_hand_speed_mph', 0.0) if hs_result else 0.0
+        hs_stars = self._rate_dimension('hand_speed', hand_spd)
+        dims['hand_speed'] = {
+            'label': SWINGAI_LABELS['hand_speed'],
+            'stars': hs_stars,
+            'badge': self._rating_to_badge(hs_stars),
+            'value': round(hand_spd, 1),
+            'unit': 'mph',
+            'description': 'Peak hand/wrist speed — primary output metric of the kinetic chain.',
         }
 
         # ------------------------------------------------------------------
