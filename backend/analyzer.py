@@ -668,14 +668,29 @@ class RefinedHittingOptimizer:
         shoulder_power = shoulder_torque * shoulder_omega
 
         # Detect swing window: walk backward from peak pelvis omega to last quiet frame.
-        # All peak metrics are computed within this window to exclude pre-swing and
-        # follow-through motion from inflating the scores.
+        # Swing window: find the last local minimum of pelvis angle before peak omega.
+        # This is the point where the pelvis stops counter-rotating and starts the
+        # actual swing — physically meaningful regardless of trial length or speed.
+        # Fallback: walk backward from peak to last frame where omega changes sign.
         peak_pelvis_frame_global = int(np.argmax(np.abs(pelvis_omega)))
         swing_start = 0
-        for i in range(peak_pelvis_frame_global, -1, -1):
-            if abs(pelvis_omega[i]) * 180.0 / np.pi < 50.0:
+
+        # Find the direction of rotation at peak (positive or negative)
+        peak_sign = np.sign(pelvis_omega[peak_pelvis_frame_global])
+
+        # Walk backward: swing starts at the last frame where omega was opposite sign
+        # (i.e., the last reversal point = local minimum of pelvis angle in swing direction)
+        for i in range(peak_pelvis_frame_global - 1, -1, -1):
+            if np.sign(pelvis_omega[i]) != peak_sign and abs(pelvis_omega[i]) * 180/np.pi > 20.0:
                 swing_start = i
                 break
+        # If no sign reversal found, fall back to last frame below 15% of peak
+        if swing_start == 0:
+            quiet_threshold = abs(pelvis_omega[peak_pelvis_frame_global]) * 0.15
+            for i in range(peak_pelvis_frame_global, -1, -1):
+                if abs(pelvis_omega[i]) < quiet_threshold:
+                    swing_start = i
+                    break
 
         sw = slice(swing_start, None)
         peak_hip_torque      = float(np.max(np.abs(hip_torque[sw])))
@@ -841,13 +856,19 @@ class RefinedHittingOptimizer:
             pelvis_omega_abs_deg = np.abs(pelvis_omega) * 180.0 / np.pi
 
             peak_frame = int(np.argmax(pelvis_omega_abs_deg))
-            # Walk backward from peak to find last frame below 50 deg/s
+            peak_sign = np.sign(rotation['pelvis_omega'][peak_frame])
             plant_frame = 0
-            for i in range(peak_frame, -1, -1):
-                if pelvis_omega_abs_deg[i] < 50.0:
+            for i in range(peak_frame - 1, -1, -1):
+                if np.sign(rotation['pelvis_omega'][i]) != peak_sign and pelvis_omega_abs_deg[i] > 20.0:
                     plant_frame = i
                     break
-            plant_method = "backward_onset_from_peak"
+            if plant_frame == 0:
+                quiet_thresh = pelvis_omega_abs_deg[peak_frame] * 0.15
+                for i in range(peak_frame, -1, -1):
+                    if pelvis_omega_abs_deg[i] < quiet_thresh:
+                        plant_frame = i
+                        break
+            plant_method = "sign_reversal_onset"
         else:
             plant_frame = len(data) // 2
             plant_method = "fallback_midframe"
@@ -1515,14 +1536,15 @@ class RefinedHittingOptimizer:
             'description': 'Maximum angle between hips and shoulders. Stores elastic energy (X-Factor).',
         }
 
-        # Pelvis Total Rotation Range — within swing window only (load to follow-through)
+        # Pelvis Total Rotation Range — from swing onset to peak pelvis omega only.
+        # Excludes follow-through which inflates the range to 200°+.
         if rotation and 'pelvis_angle' in rotation:
             pelvis_ang = rotation['pelvis_angle']
-            sw = rotation.get('swing_start_frame', 0)
-            pelvis_ang_sw = pelvis_ang[sw:]
-            pelvis_rot_range = float(np.abs(np.max(pelvis_ang_sw) - np.min(pelvis_ang_sw)) * 180.0 / np.pi)
+            sw  = rotation.get('swing_start_frame', 0)
+            pk  = int(np.argmax(np.abs(rotation.get('pelvis_omega', np.zeros(len(pelvis_ang))))))
+            pelvis_ang_window = pelvis_ang[sw:pk + 1] if pk > sw else pelvis_ang[sw:]
+            pelvis_rot_range = float(np.abs(np.max(pelvis_ang_window) - np.min(pelvis_ang_window)) * 180.0 / np.pi)
         else:
-            pelvis_rot_range = 0.0
             pelvis_rot_range = 0.0
         prr_stars = self._rate_dimension('pelvis_rotation_range', pelvis_rot_range)
         dims['pelvis_rotation_range'] = {
