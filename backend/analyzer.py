@@ -205,6 +205,16 @@ SWINGAI_THRESHOLDS = {
         'college':      [(0,1),(35,2),(48,3),(60,4),(72,5)],
         'professional': [(0,1),(45,2),(58,3),(68,4),(78,5)],
     },
+    'follow_through_quality': {
+        # Pelvis deceleration arc after contact (degrees of continued rotation post-peak).
+        # A complete follow-through requires the pelvis to continue rotating 30-60° after
+        # peak omega (contact). Abrupt deceleration indicates bracing/injury risk.
+        # NO direct hitting literature with level-stratified values. Relative benchmarks.
+        'youth':        [(0,1),(10,2),(20,3),(35,4),(50,5)],
+        'high_school':  [(0,1),(15,2),(25,3),(40,4),(55,5)],
+        'college':      [(0,1),(18,2),(30,3),(45,4),(60,5)],
+        'professional': [(0,1),(20,2),(35,3),(50,4),(65,5)],
+    },
 }
 
 # Dimension weights for Swing Score (must sum to 1.0)
@@ -221,7 +231,8 @@ SWINGAI_WEIGHTS = {
     'upper_torso_direction_at_contact': 0.07,
     'kinetic_chain_efficiency': 0.10,
     'sequence_quality': 0.10,
-    'hand_speed': 0.17,  # Most reliable discriminator — directly measured from TRC
+    'hand_speed': 0.13,  # Most reliable discriminator — directly measured from TRC
+    'follow_through_quality': 0.04,
 }
 
 SWINGAI_LABELS = {
@@ -238,6 +249,7 @@ SWINGAI_LABELS = {
     'kinetic_chain_efficiency': 'Kinetic Chain Efficiency',
     'sequence_quality': 'Sequence Quality',
     'hand_speed': 'Hand / Bat Speed',
+    'follow_through_quality': 'Follow-Through Quality',
 }
 
 SWINGAI_PHASES = {
@@ -259,7 +271,7 @@ SWINGAI_PHASES = {
     'contact': {
         'label': 'Contact & Follow-Through',
         'icon': '🎯',
-        'dimensions': ['pelvis_direction_at_contact', 'upper_torso_direction_at_contact', 'kinetic_chain_efficiency', 'sequence_quality', 'hand_speed'],
+        'dimensions': ['pelvis_direction_at_contact', 'upper_torso_direction_at_contact', 'kinetic_chain_efficiency', 'sequence_quality', 'hand_speed', 'follow_through_quality'],
     },
 }
 
@@ -1665,6 +1677,35 @@ class RefinedHittingOptimizer:
             'value': round(hand_spd, 1),
             'unit': 'mph',
             'description': 'Peak hand/wrist speed — primary output metric of the kinetic chain.',
+        }
+
+        # Follow-Through Quality: pelvis deceleration arc after contact (peak pelvis omega)
+        # Measured as degrees of continued pelvis rotation from peak omega to end of trial.
+        # A complete follow-through = 30-65° of continued rotation post-contact.
+        ft_range = 0.0
+        if rotation and 'pelvis_angle' in rotation and 'pelvis_omega' in rotation:
+            pelvis_ang = rotation['pelvis_angle']
+            pelvis_om  = rotation['pelvis_omega']
+            pk = int(np.argmax(np.abs(pelvis_om)))
+            if pk < len(pelvis_ang) - 1:
+                # Rotation from peak to the point where pelvis reverses or trial ends
+                post_peak = pelvis_ang[pk:]
+                # Find where pelvis stops rotating in the same direction (sign change)
+                peak_sign = np.sign(pelvis_om[pk])
+                end_idx = len(post_peak) - 1
+                for j in range(1, len(post_peak)):
+                    if np.sign(pelvis_om[pk + j] if pk + j < len(pelvis_om) else 0) != peak_sign:
+                        end_idx = j
+                        break
+                ft_range = float(np.abs(post_peak[end_idx] - post_peak[0]) * 180.0 / np.pi)
+        ft_stars = self._rate_dimension('follow_through_quality', ft_range)
+        dims['follow_through_quality'] = {
+            'label': SWINGAI_LABELS['follow_through_quality'],
+            'stars': ft_stars,
+            'badge': self._rating_to_badge(ft_stars),
+            'value': round(ft_range, 1),
+            'unit': '°',
+            'description': 'Pelvis deceleration arc after contact. Complete follow-through = 30-65° continued rotation.',
         }
 
         # ------------------------------------------------------------------
