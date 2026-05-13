@@ -1726,7 +1726,7 @@ class RefinedHittingOptimizer:
         # ------------------------------------------------------------------
         phases = {}
         for phase_key, phase_meta in SWINGAI_PHASES.items():
-            phase_dims = [dims[d] for d in phase_meta['dimensions'] if d in dims]
+            phase_dims = [{**dims[d], 'key': d} for d in phase_meta['dimensions'] if d in dims]
             phase_avg_stars = sum(d['stars'] for d in phase_dims) / max(1, len(phase_dims))
             phases[phase_key] = {
                 'label': phase_meta['label'],

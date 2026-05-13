@@ -53,6 +53,87 @@ def _run_id(file_path, model_path, bat_mass_kg, bat_length_m, diagnosis):
             pass
 
 
+# Key markers for stick figure (subset of 63 TRC markers)
+_SKEL_MARKERS = [
+    'Neck', 'RShoulder', 'LShoulder', 'RElbow', 'LElbow', 'RWrist', 'LWrist',
+    'midHip', 'RHip', 'LHip', 'RKnee', 'LKnee', 'RAnkle', 'LAnkle',
+    'RHeel', 'LHeel',
+]
+
+def _extract_skeleton_frames(trc_df, mot_df, max_frames: int = 60) -> dict:
+    """
+    Extract downsampled marker positions during the swing window for visualization.
+    Returns a dict with marker names, frames array, and swing event indices.
+    """
+    import numpy as np
+    from scipy.signal import butter, filtfilt, savgol_filter
+
+    # Find swing window from pelvis_rotation in mot
+    if 'pelvis_rotation' not in mot_df.columns:
+        return {}
+
+    dt = mot_df['time'].diff().mean()
+    fs = 1.0 / dt
+    pelvis_rad = np.unwrap(np.deg2rad(mot_df['pelvis_rotation'].values))
+    nyq = 0.5 * fs
+    b, a = butter(4, min(15.0 / nyq, 0.99), btype='low')
+    pelvis_f = filtfilt(b, a, pelvis_rad)
+    w = max(11, int(0.10 * fs) | 1)
+    pelvis_omega = savgol_filter(pelvis_f, w, 3, deriv=1, delta=dt)
+
+    peak = int(np.argmax(np.abs(pelvis_omega)))
+    swing_start = 0
+    peak_sign = np.sign(pelvis_omega[peak])
+    for i in range(peak - 1, -1, -1):
+        if np.sign(pelvis_omega[i]) != peak_sign and abs(pelvis_omega[i]) * 180 / np.pi > 20:
+            swing_start = i
+            break
+
+    # Map mot frame indices to trc frame indices (both at 60Hz, same time base)
+    mot_times = mot_df['time'].values
+    trc_times = trc_df['Time'].values if 'Time' in trc_df.columns else trc_df['time'].values
+
+    t_start = mot_times[swing_start]
+    t_end   = mot_times[min(peak + int(0.3 / dt), len(mot_times) - 1)]  # include 300ms follow-through
+
+    trc_mask = (trc_times >= t_start) & (trc_times <= t_end)
+    trc_sub  = trc_df[trc_mask].reset_index(drop=True)
+
+    if len(trc_sub) == 0:
+        return {}
+
+    # Downsample to max_frames — but don't over-downsample short windows
+    step = max(1, len(trc_sub) // max_frames)
+    trc_sub = trc_sub.iloc[::step].reset_index(drop=True)
+
+    # Extract available markers
+    frames = []
+    available = []
+    for m in _SKEL_MARKERS:
+        cols = [f'{m}_X', f'{m}_Y', f'{m}_Z']
+        if all(c in trc_sub.columns for c in cols):
+            available.append(m)
+
+    for _, row in trc_sub.iterrows():
+        frame = {}
+        for m in available:
+            frame[m] = [round(float(row[f'{m}_X']), 4),
+                        round(float(row[f'{m}_Y']), 4),
+                        round(float(row[f'{m}_Z']), 4)]
+        frames.append(frame)
+
+    # Contact frame index within the downsampled frames
+    t_contact = mot_times[peak]
+    contact_idx = int(np.argmin(np.abs(trc_sub['Time'].values - t_contact))) if 'Time' in trc_sub.columns else len(frames) // 2
+
+    return {
+        'markers': available,
+        'frames':  frames,
+        'contact_frame': contact_idx,
+        'fps': round(1.0 / (step * dt), 1),
+    }
+
+
 @app.get("/")
 def serve_index():
     return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
@@ -88,6 +169,11 @@ async def analyze_upload(
             return JSONResponse(status_code=400, content={"success": False, "error": "Invalid or empty .mot file"})
 
         diagnosis = optimizer.comprehensive_diagnosis(kinematics, file.filename)
+        if trc_data is not None:
+            try:
+                diagnosis['skeleton_frames'] = _extract_skeleton_frames(trc_data, kinematics)
+            except Exception:
+                pass
         _run_id(file_path, DEFAULT_MODEL, bat_mass_kg, bat_length_m, diagnosis)
         return JSONResponse(content={"filename": file.filename, "success": True, "data": diagnosis})
     except Exception as e:
@@ -155,6 +241,13 @@ def analyze_local(payload: dict):
         trc_data = optimizer.load_trc_file(trc_path) if os.path.exists(trc_path) else None
 
         diagnosis = optimizer.comprehensive_diagnosis(kinematics, filename, trc_data=trc_data)
+
+        # Add skeleton frames for visualization (downsampled key markers during swing window)
+        if trc_data is not None:
+            try:
+                diagnosis['skeleton_frames'] = _extract_skeleton_frames(trc_data, kinematics)
+            except Exception:
+                pass
 
         model_path = payload.get('model_path', DEFAULT_MODEL)
         _run_id(file_path, model_path, bat_mass_kg, bat_length_m, diagnosis)
