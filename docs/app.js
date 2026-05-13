@@ -491,53 +491,134 @@ document.addEventListener('DOMContentLoaded', () => {
     function hideDemoModal() { document.getElementById('demo-modal').classList.add('hidden'); }
     
     // -----------------------------------------
-    // Body SVG Region Highlighting
+    // Body Skeleton Canvas (static marker positions, highlight on metric click)
     // -----------------------------------------
 
-    // Map metric key → SVG region IDs to highlight + color + description
-    const METRIC_REGIONS = {
-        'pelvis_load':                      { regions: ['region-pelvis'], color: '#f59e0b', desc: 'Pelvis — hip rotational energy storage during load.' },
-        'negative_move':                    { regions: ['region-pelvis', 'region-thigh-r', 'region-thigh-l'], color: '#a78bfa', desc: 'Pelvis & legs — backward weight shift before stride.' },
-        'upper_torso_load':                 { regions: ['region-torso', 'region-shoulders'], color: '#8b5cf6', desc: 'Torso & shoulders — upper body coil tension at load.' },
-        'stride_length':                    { regions: ['region-thigh-l', 'region-shin-l', 'region-foot-l'], color: '#fbbf24', desc: 'Lead leg — stride length from load to foot plant.' },
-        'forward_move':                     { regions: ['region-pelvis', 'region-thigh-l'], color: '#fbbf24', desc: 'Pelvis & lead leg — forward linear momentum into the ball.' },
-        'max_hip_shoulder_separation':      { regions: ['region-pelvis', 'region-shoulders'], color: '#10b981', desc: 'Pelvis vs shoulders — X-Factor separation angle.' },
-        'pelvis_rotation_range':            { regions: ['region-pelvis'], color: '#f59e0b', desc: 'Pelvis — total axial rotation from load to contact.' },
-        'upper_torso_rotation_range':       { regions: ['region-torso', 'region-shoulders'], color: '#8b5cf6', desc: 'Torso & shoulders — total rotation from load to contact.' },
-        'pelvis_direction_at_contact':      { regions: ['region-pelvis'], color: '#ef4444', desc: 'Pelvis — alignment at front foot plant. Should be square to pitcher.' },
-        'upper_torso_direction_at_contact': { regions: ['region-torso', 'region-shoulders'], color: '#ef4444', desc: 'Shoulders — alignment at contact.' },
-        'kinetic_chain_efficiency':         { regions: ['region-pelvis', 'region-torso', 'region-arm-r', 'region-forearm-r', 'region-hand-r'], color: '#06b6d4', desc: 'Full kinetic chain — energy flow from pelvis through torso to hands.' },
-        'sequence_quality':                 { regions: ['region-pelvis', 'region-torso', 'region-arm-r'], color: '#06b6d4', desc: 'Proximal-to-distal sequence: pelvis → torso → arm.' },
-        'hand_speed':                       { regions: ['region-forearm-r', 'region-hand-r', 'region-forearm-l', 'region-hand-l'], color: '#10b981', desc: 'Hands & forearms — peak bat/hand speed at contact.' },
-        'follow_through_quality':           { regions: ['region-pelvis', 'region-torso'], color: '#f97316', desc: 'Pelvis & torso — deceleration arc after contact.' },
+    // Hardcoded marker positions for a neutral athletic stance (canvas 220x460)
+    const MARKERS = {
+        Head:       [110, 28],
+        Neck:       [110, 58],
+        RShoulder:  [148, 78],
+        LShoulder:  [72,  78],
+        RElbow:     [168, 138],
+        LElbow:     [52,  138],
+        RWrist:     [178, 198],
+        LWrist:     [42,  198],
+        midHip:     [110, 188],
+        RHip:       [134, 200],
+        LHip:       [86,  200],
+        RKnee:      [138, 298],
+        LKnee:      [82,  298],
+        RAnkle:     [136, 390],
+        LAnkle:     [84,  390],
+        RHeel:      [128, 418],
+        LHeel:      [76,  418],
     };
 
-    function highlightSVGRegions(regionIds, color) {
-        // Reset all
-        document.querySelectorAll('#body-svg .region').forEach(el => {
-            el.style.fill = 'rgba(255,255,255,0.06)';
-            el.style.stroke = 'rgba(255,255,255,0.18)';
-            el.classList.remove('active');
-        });
-        // Highlight selected
-        regionIds.forEach(id => {
-            const el = document.getElementById(id);
-            if (!el) return;
-            el.style.fill = color + '55';
-            el.style.stroke = color;
-            el.classList.add('active');
-        });
+    const BONES = [
+        ['Neck','RShoulder'],['Neck','LShoulder'],
+        ['RShoulder','RElbow'],['RElbow','RWrist'],
+        ['LShoulder','LElbow'],['LElbow','LWrist'],
+        ['Neck','midHip'],
+        ['midHip','RHip'],['midHip','LHip'],
+        ['RHip','RKnee'],['RKnee','RAnkle'],['RAnkle','RHeel'],
+        ['LHip','LKnee'],['LKnee','LAnkle'],['LAnkle','LHeel'],
+    ];
+
+    // Bones to highlight per metric key
+    const METRIC_HIGHLIGHTS = {
+        'pelvis_load':                      { bones: [['midHip','RHip'],['midHip','LHip']], color: '#f59e0b', desc: 'Pelvis — hip rotational energy storage during load.' },
+        'negative_move':                    { bones: [['midHip','RHip'],['midHip','LHip'],['RHip','RKnee'],['LHip','LKnee']], color: '#a78bfa', desc: 'Pelvis & legs — backward weight shift before stride.' },
+        'upper_torso_load':                 { bones: [['Neck','RShoulder'],['Neck','LShoulder'],['Neck','midHip']], color: '#8b5cf6', desc: 'Torso & shoulders — upper body coil tension at load.' },
+        'stride_length':                    { bones: [['LHip','LKnee'],['LKnee','LAnkle'],['LAnkle','LHeel']], color: '#fbbf24', desc: 'Lead leg — stride length from load to foot plant.' },
+        'forward_move':                     { bones: [['midHip','LHip'],['LHip','LKnee']], color: '#fbbf24', desc: 'Pelvis & lead leg — forward linear momentum into the ball.' },
+        'max_hip_shoulder_separation':      { bones: [['midHip','RHip'],['midHip','LHip'],['Neck','RShoulder'],['Neck','LShoulder']], color: '#10b981', desc: 'Pelvis vs shoulders — X-Factor separation angle.' },
+        'pelvis_rotation_range':            { bones: [['midHip','RHip'],['midHip','LHip']], color: '#f59e0b', desc: 'Pelvis — total axial rotation from load to contact.' },
+        'upper_torso_rotation_range':       { bones: [['Neck','RShoulder'],['Neck','LShoulder'],['Neck','midHip']], color: '#8b5cf6', desc: 'Torso & shoulders — total rotation from load to contact.' },
+        'pelvis_direction_at_contact':      { bones: [['midHip','RHip'],['midHip','LHip']], color: '#ef4444', desc: 'Pelvis — alignment at front foot plant. Should be square to pitcher.' },
+        'upper_torso_direction_at_contact': { bones: [['Neck','RShoulder'],['Neck','LShoulder']], color: '#ef4444', desc: 'Shoulders — alignment at contact.' },
+        'kinetic_chain_efficiency':         { bones: [['midHip','RHip'],['midHip','LHip'],['Neck','midHip'],['RShoulder','RElbow'],['RElbow','RWrist']], color: '#06b6d4', desc: 'Full kinetic chain — energy flow from pelvis through torso to hands.' },
+        'sequence_quality':                 { bones: [['midHip','RHip'],['midHip','LHip'],['Neck','midHip'],['RShoulder','RElbow']], color: '#06b6d4', desc: 'Proximal-to-distal sequence: pelvis → torso → arm.' },
+        'hand_speed':                       { bones: [['RShoulder','RElbow'],['RElbow','RWrist'],['LShoulder','LElbow'],['LElbow','LWrist']], color: '#10b981', desc: 'Hands & forearms — peak bat/hand speed at contact.' },
+        'follow_through_quality':           { bones: [['midHip','RHip'],['midHip','LHip'],['Neck','midHip']], color: '#f97316', desc: 'Pelvis & torso — deceleration arc after contact.' },
+    };
+
+    let activeHighlight = null;
+
+    function drawBodyCanvas() {
+        const canvas = document.getElementById('body-canvas');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const hlBones = new Set();
+        let hlColor = '#ffffff';
+        if (activeHighlight) {
+            hlColor = activeHighlight.color;
+            for (const [a, b] of activeHighlight.bones) {
+                hlBones.add(`${a}|${b}`);
+                hlBones.add(`${b}|${a}`);
+            }
+        }
+
+        // Draw head circle
+        const headHL = activeHighlight && (
+            hlBones.has('Neck|RShoulder') || hlBones.has('Neck|LShoulder') || hlBones.has('Neck|midHip')
+        );
+        ctx.beginPath();
+        ctx.arc(MARKERS.Head[0], MARKERS.Head[1], 18, 0, Math.PI * 2);
+        ctx.strokeStyle = headHL ? hlColor : 'rgba(255,255,255,0.25)';
+        ctx.lineWidth = headHL ? 3 : 1.5;
+        ctx.stroke();
+
+        // Draw bones
+        for (const [a, b] of BONES) {
+            const isHL = hlBones.has(`${a}|${b}`);
+            ctx.beginPath();
+            ctx.moveTo(MARKERS[a][0], MARKERS[a][1]);
+            ctx.lineTo(MARKERS[b][0], MARKERS[b][1]);
+            ctx.strokeStyle = isHL ? hlColor : 'rgba(255,255,255,0.25)';
+            ctx.lineWidth = isHL ? 4 : 1.5;
+            ctx.stroke();
+        }
+
+        // Draw joints
+        for (const [name, [x, y]] of Object.entries(MARKERS)) {
+            if (name === 'Head') continue;
+            const isHL = activeHighlight && activeHighlight.bones.some(([a, b]) => a === name || b === name);
+            ctx.beginPath();
+            ctx.arc(x, y, isHL ? 5 : 3, 0, Math.PI * 2);
+            ctx.fillStyle = isHL ? hlColor : 'rgba(255,255,255,0.5)';
+            ctx.fill();
+        }
+
+        // Glow effect on highlighted bones
+        if (activeHighlight) {
+            ctx.shadowColor = hlColor;
+            ctx.shadowBlur = 10;
+            for (const [a, b] of activeHighlight.bones) {
+                ctx.beginPath();
+                ctx.moveTo(MARKERS[a][0], MARKERS[a][1]);
+                ctx.lineTo(MARKERS[b][0], MARKERS[b][1]);
+                ctx.strokeStyle = hlColor;
+                ctx.lineWidth = 4;
+                ctx.stroke();
+            }
+            ctx.shadowBlur = 0;
+        }
     }
 
-    // Hook metric tile clicks to SVG highlight
+    // Hook metric tile clicks to canvas highlight
     function attachSkeletonClickHandlers() {
+        drawBodyCanvas();
         document.querySelectorAll('.dim-tile').forEach(tile => {
             tile.style.cursor = 'pointer';
             tile.addEventListener('click', () => {
                 const key = tile.dataset.dimKey;
-                const hit = METRIC_REGIONS[key];
+                const hit = METRIC_HIGHLIGHTS[key];
                 if (!hit) return;
-                highlightSVGRegions(hit.regions, hit.color);
+                activeHighlight = hit;
+                drawBodyCanvas();
                 document.getElementById('skeleton-label').textContent = tile.querySelector('.dim-label')?.textContent || key;
                 document.getElementById('skeleton-metric-desc').textContent = hit.desc;
                 document.getElementById('skeleton-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
