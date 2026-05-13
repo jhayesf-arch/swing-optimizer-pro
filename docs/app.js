@@ -568,11 +568,11 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="dim-info">
                 <div class="dim-name">${dim.label}</div>
                 <div class="dim-value">${dim.value} ${dim.unit}</div>
+                ${cues}
             </div>
             <div class="dim-stars">${stars}</div>
             <div class="dim-pill ${badgeClass}">${pillLabel}</div>
             <div class="dim-tooltip">${dim.description}</div>
-            ${cues}
         `;
 
         return tile;
