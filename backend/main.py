@@ -134,6 +134,138 @@ def _extract_skeleton_frames(trc_df, mot_df, max_frames: int = 60) -> dict:
     }
 
 
+def _skeleton_from_mot(mot_df, body_height_m: float = 1.83, max_frames: int = 60) -> dict:
+    """
+    Approximate 3D skeleton from .mot joint angles via forward kinematics.
+    Used as fallback when no .trc marker file is available.
+    Coordinate system: X=right, Y=up, Z=forward (anterior).
+    """
+    import numpy as np
+    from scipy.signal import butter, filtfilt
+
+    if 'pelvis_rotation' not in mot_df.columns:
+        return {}
+
+    h = body_height_m
+    # Segment lengths scaled to body height (Winter 2009 anthropometric ratios)
+    L = {
+        'trunk':    h * 0.288,   # pelvis origin to neck
+        'upper_arm': h * 0.186,
+        'forearm':  h * 0.146,
+        'thigh':    h * 0.245,
+        'shank':    h * 0.246,
+        'hip_half': h * 0.095,   # midHip to each hip joint
+        'shoulder_half': h * 0.129,
+    }
+
+    dt = mot_df['time'].diff().mean()
+    fs = 1.0 / dt
+    nyq = 0.5 * fs
+    b, a = butter(4, min(10.0 / nyq, 0.99), btype='low')
+
+    def filt(col):
+        if col in mot_df.columns:
+            return filtfilt(b, a, np.deg2rad(mot_df[col].values))
+        return np.zeros(len(mot_df))
+
+    pelvis_rot   = filt('pelvis_rotation')   # axial (Y)
+    pelvis_tilt  = filt('pelvis_tilt')       # sagittal (X)
+    pelvis_list  = filt('pelvis_list')       # frontal (Z)
+    lumbar_rot   = filt('lumbar_rotation')
+    lumbar_bend  = filt('lumbar_bending') if 'lumbar_bending' in mot_df.columns else np.zeros(len(mot_df))
+
+    hip_flex_r   = filt('hip_flexion_r')
+    hip_flex_l   = filt('hip_flexion_l')
+    knee_r       = filt('knee_angle_r')
+    knee_l       = filt('knee_angle_l')
+    arm_flex_r   = filt('arm_flex_r')
+    arm_flex_l   = filt('arm_flex_l')
+    elbow_r      = filt('elbow_flex_r')
+    elbow_l      = filt('elbow_flex_l')
+
+    # Pelvis translation (already in metres in .mot)
+    px = mot_df['pelvis_tx'].values if 'pelvis_tx' in mot_df.columns else np.zeros(len(mot_df))
+    py = mot_df['pelvis_ty'].values if 'pelvis_ty' in mot_df.columns else np.ones(len(mot_df)) * h * 0.53
+    pz = mot_df['pelvis_tz'].values if 'pelvis_tz' in mot_df.columns else np.zeros(len(mot_df))
+
+    # Find swing window (same logic as _extract_skeleton_frames)
+    pelvis_omega = np.gradient(pelvis_rot, dt)
+    peak = int(np.argmax(np.abs(pelvis_omega)))
+    swing_start = 0
+    peak_sign = np.sign(pelvis_omega[peak])
+    for i in range(peak - 1, -1, -1):
+        if np.sign(pelvis_omega[i]) != peak_sign and abs(pelvis_omega[i]) * 180 / np.pi > 20:
+            swing_start = i
+            break
+    swing_end = min(peak + int(0.3 / dt), len(mot_df) - 1)
+
+    indices = np.arange(swing_start, swing_end + 1)
+    step = max(1, len(indices) // max_frames)
+    indices = indices[::step]
+
+    def Ry(a):
+        c, s = np.cos(a), np.sin(a)
+        return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
+
+    def Rx(a):
+        c, s = np.cos(a), np.sin(a)
+        return np.array([[1, 0, 0], [0, c, -s], [0, s, c]])
+
+    def Rz(a):
+        c, s = np.cos(a), np.sin(a)
+        return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+
+    frames = []
+    for i in indices:
+        R_pelvis = Ry(pelvis_rot[i]) @ Rx(pelvis_tilt[i]) @ Rz(pelvis_list[i])
+        R_trunk  = Ry(pelvis_rot[i] + lumbar_rot[i]) @ Rx(pelvis_tilt[i] + lumbar_bend[i])
+
+        mid_hip = np.array([px[i], py[i], pz[i]])
+        neck    = mid_hip + R_trunk @ np.array([0, L['trunk'], 0])
+
+        r_hip = mid_hip + R_pelvis @ np.array([ L['hip_half'], 0, 0])
+        l_hip = mid_hip + R_pelvis @ np.array([-L['hip_half'], 0, 0])
+
+        r_knee = r_hip + Rx(hip_flex_r[i]) @ np.array([0, -L['thigh'], 0])
+        l_knee = l_hip + Rx(hip_flex_l[i]) @ np.array([0, -L['thigh'], 0])
+        r_ankle = r_knee + Rx(hip_flex_r[i] - knee_r[i]) @ np.array([0, -L['shank'], 0])
+        l_ankle = l_knee + Rx(hip_flex_l[i] - knee_l[i]) @ np.array([0, -L['shank'], 0])
+        r_heel  = r_ankle + np.array([0, -0.02, -0.04])
+        l_heel  = l_ankle + np.array([0, -0.02, -0.04])
+
+        r_shoulder = neck + R_trunk @ np.array([ L['shoulder_half'], 0, 0])
+        l_shoulder = neck + R_trunk @ np.array([-L['shoulder_half'], 0, 0])
+
+        r_elbow = r_shoulder + (Ry(pelvis_rot[i]) @ Rx(arm_flex_r[i])) @ np.array([0, -L['upper_arm'], 0])
+        l_elbow = l_shoulder + (Ry(pelvis_rot[i]) @ Rx(arm_flex_l[i])) @ np.array([0, -L['upper_arm'], 0])
+        r_wrist = r_elbow + (Ry(pelvis_rot[i]) @ Rx(arm_flex_r[i] - elbow_r[i])) @ np.array([0, -L['forearm'], 0])
+        l_wrist = l_elbow + (Ry(pelvis_rot[i]) @ Rx(arm_flex_l[i] - elbow_l[i])) @ np.array([0, -L['forearm'], 0])
+
+        frame = {}
+        for name, pt in [
+            ('midHip', mid_hip), ('Neck', neck),
+            ('RHip', r_hip), ('LHip', l_hip),
+            ('RKnee', r_knee), ('LKnee', l_knee),
+            ('RAnkle', r_ankle), ('LAnkle', l_ankle),
+            ('RHeel', r_heel), ('LHeel', l_heel),
+            ('RShoulder', r_shoulder), ('LShoulder', l_shoulder),
+            ('RElbow', r_elbow), ('LElbow', l_elbow),
+            ('RWrist', r_wrist), ('LWrist', l_wrist),
+        ]:
+            frame[name] = [round(float(pt[0]), 4), round(float(pt[1]), 4), round(float(pt[2]), 4)]
+        frames.append(frame)
+
+    t_contact = mot_df['time'].values[peak]
+    contact_idx = min(range(len(indices)), key=lambda k: abs(mot_df['time'].values[indices[k]] - t_contact))
+
+    return {
+        'markers': list(frames[0].keys()) if frames else [],
+        'frames': frames,
+        'contact_frame': contact_idx,
+        'fps': round(1.0 / (step * dt), 1),
+    }
+
+
 @app.get("/")
 def serve_index():
     return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
@@ -172,6 +304,11 @@ async def analyze_upload(
         if trc_data is not None:
             try:
                 diagnosis['skeleton_frames'] = _extract_skeleton_frames(trc_data, kinematics)
+            except Exception:
+                pass
+        if not diagnosis.get('skeleton_frames'):
+            try:
+                diagnosis['skeleton_frames'] = _skeleton_from_mot(kinematics, body_height_m=height_m)
             except Exception:
                 pass
         _run_id(file_path, DEFAULT_MODEL, bat_mass_kg, bat_length_m, diagnosis)
@@ -246,6 +383,11 @@ def analyze_local(payload: dict):
         if trc_data is not None:
             try:
                 diagnosis['skeleton_frames'] = _extract_skeleton_frames(trc_data, kinematics)
+            except Exception:
+                pass
+        if not diagnosis.get('skeleton_frames'):
+            try:
+                diagnosis['skeleton_frames'] = _skeleton_from_mot(kinematics, body_height_m=height_m)
             except Exception:
                 pass
 
