@@ -346,7 +346,106 @@ document.addEventListener('DOMContentLoaded', () => {
         // Reset advanced panel state
         document.getElementById('advanced-panels').classList.add('hidden');
         document.getElementById('toggle-icon').textContent = '▶';
+
+        saveToHistory({ filename, date: new Date().toLocaleDateString(), score: swingScore, efficiency: effScore, handSpeed: handSpeed.toFixed(1), skill: skillLabels[skillLevel] || skillLevel });
+        renderHistory();
     }
+
+    // -----------------------------------------
+    // Longitudinal History (localStorage)
+    // -----------------------------------------
+    const HISTORY_KEY = 'swingopt_history';
+
+    function saveToHistory(entry) {
+        const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+        history.push(entry);
+        if (history.length > 50) history.shift(); // cap at 50 sessions
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    }
+
+    function renderHistory() {
+        const history = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+        const panel = document.getElementById('history-panel');
+        if (history.length < 2) { panel.style.display = 'none'; return; }
+        panel.style.display = '';
+
+        // Sparkline
+        const canvas = document.getElementById('history-chart');
+        const ctx = canvas.getContext('2d');
+        canvas.width = canvas.offsetWidth || 600;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const scores = history.map(h => h.score);
+        const minS = Math.min(...scores), maxS = Math.max(...scores);
+        const range = maxS - minS || 1;
+        const W = canvas.width, H = canvas.height, pad = 12;
+        ctx.strokeStyle = 'var(--accent, #00d4ff)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        scores.forEach((s, i) => {
+            const x = pad + (i / (scores.length - 1)) * (W - 2 * pad);
+            const y = H - pad - ((s - minS) / range) * (H - 2 * pad);
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        // Dots
+        scores.forEach((s, i) => {
+            const x = pad + (i / (scores.length - 1)) * (W - 2 * pad);
+            const y = H - pad - ((s - minS) / range) * (H - 2 * pad);
+            ctx.beginPath();
+            ctx.arc(x, y, 3, 0, Math.PI * 2);
+            ctx.fillStyle = 'var(--accent, #00d4ff)';
+            ctx.fill();
+        });
+
+        // Table (last 10)
+        const recent = history.slice(-10).reverse();
+        document.getElementById('history-table').innerHTML = `
+            <table style="width:100%;border-collapse:collapse;">
+                <thead><tr style="color:var(--text-muted,#888);text-align:left;">
+                    <th style="padding:4px 8px;">Date</th>
+                    <th style="padding:4px 8px;">File</th>
+                    <th style="padding:4px 8px;">Level</th>
+                    <th style="padding:4px 8px;">Score</th>
+                    <th style="padding:4px 8px;">Efficiency</th>
+                    <th style="padding:4px 8px;">Hand Speed</th>
+                </tr></thead>
+                <tbody>${recent.map(h => `
+                    <tr style="border-top:1px solid rgba(255,255,255,0.07);">
+                        <td style="padding:4px 8px;">${h.date}</td>
+                        <td style="padding:4px 8px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${h.filename}</td>
+                        <td style="padding:4px 8px;">${h.skill}</td>
+                        <td style="padding:4px 8px;font-weight:600;">${h.score}</td>
+                        <td style="padding:4px 8px;">${h.efficiency}</td>
+                        <td style="padding:4px 8px;">${h.handSpeed} mph</td>
+                    </tr>`).join('')}
+                </tbody>
+            </table>`;
+
+        document.getElementById('clear-history').onclick = () => {
+            localStorage.removeItem(HISTORY_KEY);
+            panel.style.display = 'none';
+        };
+    }
+
+    // -----------------------------------------
+    // Drill / Cue Tags per dimension
+    // -----------------------------------------
+    const DIM_CUES = {
+        'negative_move':                    ['Hip hinge load drill', 'Toe tap rhythm'],
+        'pelvis_load':                      ['Hip load & coil', 'Resistance band hip load'],
+        'upper_torso_load':                 ['Shoulder coil drill', 'Bat behind back rotation'],
+        'stride_length':                    ['Stride length marker drill', 'Soft front foot landing'],
+        'forward_move':                     ['Linear momentum drill', 'Step-and-hit tee work'],
+        'max_hip_shoulder_separation':      ['X-Factor stretch drill', 'Hip-shoulder separation tee'],
+        'pelvis_rotation_range':            ['Hip turn drill', 'Pivot & rotate med ball'],
+        'upper_torso_rotation_range':       ['Shoulder turn drill', 'Rotational med ball throw'],
+        'pelvis_direction_at_contact':      ['Hip clearing drill', 'Open hips at contact cue'],
+        'upper_torso_direction_at_contact': ['Shoulder square drill', 'Contact point extension'],
+        'kinetic_chain_efficiency':         ['Whip drill', 'Decelerate hips — fire torso'],
+        'sequence_quality':                 ['Sequence timing drill', 'Pelvis-first cue'],
+        'hand_speed':                       ['Bat speed overload/underload', 'Wrist snap drill'],
+        'follow_through_quality':           ['Full finish drill', 'High hands follow-through'],
+    };
 
     // -----------------------------------------
     // SwingAI Report Renderer
@@ -401,6 +500,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const pillLabel = pillText(dim.badge);
         const stars = renderStars(dim.stars);
 
+        const cues = (dim.badge !== 'excellent' && DIM_CUES[dim.key])
+            ? `<div class="dim-cues">${DIM_CUES[dim.key].map(c => `<span class="dim-cue-tag">${c}</span>`).join('')}</div>`
+            : '';
+
         tile.innerHTML = `
             <div class="dim-badge ${badgeClass}"></div>
             <div class="dim-info">
@@ -410,6 +513,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="dim-stars">${stars}</div>
             <div class="dim-pill ${badgeClass}">${pillLabel}</div>
             <div class="dim-tooltip">${dim.description}</div>
+            ${cues}
         `;
 
         return tile;
