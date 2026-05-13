@@ -91,6 +91,26 @@
                     </div>
                 </div>
 
+                <!-- SWING SKELETON PANEL -->
+                <div class="glass-card panel mt-3 hidden" id="skeleton-panel">
+                    <h3 class="panel-title"><span class="icon">🦴</span> Swing Skeleton — Click a metric to highlight</h3>
+                    <div style="display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
+                        <canvas id="skeleton-canvas" width="320" height="480"
+                            style="background:#0d1117;border-radius:8px;border:1px solid rgba(255,255,255,0.1);flex-shrink:0;"></canvas>
+                        <div style="flex:1;min-width:180px;">
+                            <p class="small text-muted" id="skeleton-label" style="margin-bottom:0.5rem;">No metric selected</p>
+                            <input type="range" id="skeleton-scrubber" min="0" max="59" value="0"
+                                style="width:100%;accent-color:var(--accent);">
+                            <p class="small text-muted" style="margin-top:0.25rem;" id="skeleton-frame-label">Frame 0</p>
+                            <div style="display:flex;gap:0.5rem;margin-top:0.5rem;">
+                                <button class="btn btn-secondary btn-sm" id="skeleton-play">▶ Play</button>
+                                <button class="btn btn-secondary btn-sm" id="skeleton-reset">⏮</button>
+                            </div>
+                            <p class="small text-muted" style="margin-top:1rem;line-height:1.5;" id="skeleton-metric-desc"></p>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 4-PHASE SWINGAI CARDS -->
                 <div class="phase-cards-grid" id="phase-cards-grid">
                     <!-- Populated by JS -->
@@ -123,25 +143,6 @@
                         <div class="glass-card panel">
                             <h3 class="panel-title"><span class="icon">⚡</span> Energy Transfer &amp; Stride</h3>
                             <div class="metrics-grid" id="stride-metrics"></div>
-                        </div>
-                    </div>
-                    <!-- Skeleton Visualization Panel -->
-                    <div class="glass-card panel mt-3 hidden" id="skeleton-panel">
-                        <h3 class="panel-title"><span class="icon">🦴</span> Swing Skeleton — Click a metric to highlight</h3>
-                        <div style="display:flex;gap:1rem;align-items:flex-start;flex-wrap:wrap;">
-                            <canvas id="skeleton-canvas" width="320" height="480"
-                                style="background:#0d1117;border-radius:8px;border:1px solid rgba(255,255,255,0.1);flex-shrink:0;"></canvas>
-                            <div style="flex:1;min-width:180px;">
-                                <p class="small text-muted" id="skeleton-label" style="margin-bottom:0.5rem;">No metric selected</p>
-                                <input type="range" id="skeleton-scrubber" min="0" max="59" value="0"
-                                    style="width:100%;accent-color:var(--accent);">
-                                <p class="small text-muted" style="margin-top:0.25rem;" id="skeleton-frame-label">Frame 0</p>
-                                <div style="display:flex;gap:0.5rem;margin-top:0.5rem;">
-                                    <button class="btn btn-secondary btn-sm" id="skeleton-play">▶ Play</button>
-                                    <button class="btn btn-secondary btn-sm" id="skeleton-reset">⏮</button>
-                                </div>
-                                <p class="small text-muted" style="margin-top:1rem;line-height:1.5;" id="skeleton-metric-desc"></p>
-                            </div>
                         </div>
                     </div>
                 </div>
