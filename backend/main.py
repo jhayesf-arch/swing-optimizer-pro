@@ -301,11 +301,6 @@ async def analyze_upload(
             return JSONResponse(status_code=400, content={"success": False, "error": "Invalid or empty .mot file"})
 
         diagnosis = optimizer.comprehensive_diagnosis(kinematics, file.filename)
-        if trc_data is not None:
-            try:
-                diagnosis['skeleton_frames'] = _extract_skeleton_frames(trc_data, kinematics)
-            except Exception:
-                pass
         if not diagnosis.get('skeleton_frames'):
             try:
                 diagnosis['skeleton_frames'] = _skeleton_from_mot(kinematics, body_height_m=height_m)
