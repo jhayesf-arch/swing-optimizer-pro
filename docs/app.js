@@ -494,25 +494,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // Body Skeleton Canvas (static marker positions, highlight on metric click)
     // -----------------------------------------
 
-    // Hardcoded marker positions for a neutral athletic stance (canvas 220x460)
+    // Hardcoded marker positions — mid-swing contact pose (right-handed batter, front view)
+    // Pelvis open to pitcher, lead arm extended forward, back arm bent, slight squat
     const MARKERS = {
-        Head:       [110, 28],
-        Neck:       [110, 58],
-        RShoulder:  [148, 78],
-        LShoulder:  [72,  78],
-        RElbow:     [168, 138],
-        LElbow:     [52,  138],
-        RWrist:     [178, 198],
-        LWrist:     [42,  198],
-        midHip:     [110, 188],
-        RHip:       [134, 200],
-        LHip:       [86,  200],
-        RKnee:      [138, 298],
-        LKnee:      [82,  298],
-        RAnkle:     [136, 390],
-        LAnkle:     [84,  390],
-        RHeel:      [128, 418],
-        LHeel:      [76,  418],
+        Head:       [118, 32],
+        Neck:       [114, 62],
+        RShoulder:  [145, 82],   // back shoulder (right) — higher, pulled back
+        LShoulder:  [82,  88],   // lead shoulder — lower, rotated forward
+        RElbow:     [162, 148],  // back elbow — bent, tucked
+        LElbow:     [58,  130],  // lead elbow — extended forward
+        RWrist:     [150, 188],  // hands together near contact zone
+        LWrist:     [138, 192],
+        midHip:     [110, 200],
+        RHip:       [136, 208],  // back hip — rotated open
+        LHip:       [84,  208],  // lead hip — clearing
+        RKnee:      [148, 300],  // back knee — bent, weight transferring
+        LKnee:      [78,  292],  // lead knee — braced/extending
+        RAnkle:     [152, 388],  // back foot — heel rising
+        LAnkle:     [72,  385],  // lead foot — planted
+        RHeel:      [142, 408],
+        LHeel:      [64,  408],
     };
 
     const BONES = [
