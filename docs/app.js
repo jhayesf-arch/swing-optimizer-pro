@@ -346,14 +346,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // Reset advanced panel state
         document.getElementById('advanced-panels').classList.add('hidden');
         document.getElementById('toggle-icon').textContent = '▶';
-
-        // Init skeleton visualization if data available
-        if (diagnosis.skeleton_frames && diagnosis.skeleton_frames.frames && diagnosis.skeleton_frames.frames.length > 0) {
-            document.getElementById('skeleton-panel').classList.remove('hidden');
-            initSkeleton(diagnosis.skeleton_frames);
-        } else {
-            document.getElementById('skeleton-panel').classList.add('hidden');
-        }
     }
 
     // -----------------------------------------
@@ -499,161 +491,59 @@ document.addEventListener('DOMContentLoaded', () => {
     function hideDemoModal() { document.getElementById('demo-modal').classList.add('hidden'); }
     
     // -----------------------------------------
-    // Skeleton Visualization
+    // Body SVG Region Highlighting
     // -----------------------------------------
-    const SKELETON_BONES = [
-        ['Neck','RShoulder'],['Neck','LShoulder'],
-        ['RShoulder','RElbow'],['RElbow','RWrist'],
-        ['LShoulder','LElbow'],['LElbow','LWrist'],
-        ['Neck','midHip'],
-        ['midHip','RHip'],['midHip','LHip'],
-        ['RHip','RKnee'],['RKnee','RAnkle'],['RAnkle','RHeel'],
-        ['LHip','LKnee'],['LKnee','LAnkle'],['LAnkle','LHeel'],
-    ];
 
-    // Which markers to highlight per metric key
-    const METRIC_HIGHLIGHTS = {
-        'pelvis_load':                  { segs: [['midHip','RHip'],['midHip','LHip']], color: '#f59e0b', desc: 'Pelvis segment — hip rotational energy storage.' },
-        'upper_torso_load':             { segs: [['Neck','RShoulder'],['Neck','LShoulder'],['Neck','midHip']], color: '#8b5cf6', desc: 'Trunk segment — shoulder coil tension.' },
-        'max_hip_shoulder_separation':  { segs: [['RHip','LHip'],['RShoulder','LShoulder']], color: '#10b981', desc: 'Hip line vs shoulder line — X-Factor separation angle.' },
-        'pelvis_rotation_range':        { segs: [['midHip','RHip'],['midHip','LHip']], color: '#f59e0b', desc: 'Pelvis rotation from load to contact.' },
-        'upper_torso_rotation_range':   { segs: [['Neck','RShoulder'],['Neck','LShoulder']], color: '#8b5cf6', desc: 'Shoulder rotation from load to contact.' },
-        'pelvis_direction_at_contact':  { segs: [['RHip','LHip']], color: '#ef4444', desc: 'Hip alignment at front foot plant — should be square to pitcher.' },
-        'upper_torso_direction_at_contact': { segs: [['RShoulder','LShoulder']], color: '#ef4444', desc: 'Shoulder alignment at contact.' },
-        'kinetic_chain_efficiency':     { segs: [['midHip','RHip'],['Neck','midHip'],['RShoulder','RElbow'],['RElbow','RWrist']], color: '#06b6d4', desc: 'Full kinetic chain — energy flow from pelvis to hands.' },
-        'sequence_quality':             { segs: [['midHip','RHip'],['Neck','midHip'],['RShoulder','RElbow']], color: '#06b6d4', desc: 'Proximal-to-distal sequence: pelvis → torso → arm.' },
-        'hand_speed':                   { segs: [['RElbow','RWrist'],['LElbow','LWrist']], color: '#10b981', desc: 'Wrist/hand segment — peak speed measured here.' },
-        'follow_through_quality':       { segs: [['midHip','RHip'],['midHip','LHip']], color: '#f97316', desc: 'Pelvis deceleration arc after contact.' },
-        'stride_length':                { segs: [['RHip','RKnee'],['LHip','LKnee']], color: '#fbbf24', desc: 'Lead leg stride — forward step distance.' },
-        'negative_move':                { segs: [['midHip','RHip'],['midHip','LHip']], color: '#a78bfa', desc: 'Backward weight shift before stride.' },
+    // Map metric key → SVG region IDs to highlight + color + description
+    const METRIC_REGIONS = {
+        'pelvis_load':                      { regions: ['region-pelvis'], color: '#f59e0b', desc: 'Pelvis — hip rotational energy storage during load.' },
+        'negative_move':                    { regions: ['region-pelvis', 'region-thigh-r', 'region-thigh-l'], color: '#a78bfa', desc: 'Pelvis & legs — backward weight shift before stride.' },
+        'upper_torso_load':                 { regions: ['region-torso', 'region-shoulders'], color: '#8b5cf6', desc: 'Torso & shoulders — upper body coil tension at load.' },
+        'stride_length':                    { regions: ['region-thigh-l', 'region-shin-l', 'region-foot-l'], color: '#fbbf24', desc: 'Lead leg — stride length from load to foot plant.' },
+        'forward_move':                     { regions: ['region-pelvis', 'region-thigh-l'], color: '#fbbf24', desc: 'Pelvis & lead leg — forward linear momentum into the ball.' },
+        'max_hip_shoulder_separation':      { regions: ['region-pelvis', 'region-shoulders'], color: '#10b981', desc: 'Pelvis vs shoulders — X-Factor separation angle.' },
+        'pelvis_rotation_range':            { regions: ['region-pelvis'], color: '#f59e0b', desc: 'Pelvis — total axial rotation from load to contact.' },
+        'upper_torso_rotation_range':       { regions: ['region-torso', 'region-shoulders'], color: '#8b5cf6', desc: 'Torso & shoulders — total rotation from load to contact.' },
+        'pelvis_direction_at_contact':      { regions: ['region-pelvis'], color: '#ef4444', desc: 'Pelvis — alignment at front foot plant. Should be square to pitcher.' },
+        'upper_torso_direction_at_contact': { regions: ['region-torso', 'region-shoulders'], color: '#ef4444', desc: 'Shoulders — alignment at contact.' },
+        'kinetic_chain_efficiency':         { regions: ['region-pelvis', 'region-torso', 'region-arm-r', 'region-forearm-r', 'region-hand-r'], color: '#06b6d4', desc: 'Full kinetic chain — energy flow from pelvis through torso to hands.' },
+        'sequence_quality':                 { regions: ['region-pelvis', 'region-torso', 'region-arm-r'], color: '#06b6d4', desc: 'Proximal-to-distal sequence: pelvis → torso → arm.' },
+        'hand_speed':                       { regions: ['region-forearm-r', 'region-hand-r', 'region-forearm-l', 'region-hand-l'], color: '#10b981', desc: 'Hands & forearms — peak bat/hand speed at contact.' },
+        'follow_through_quality':           { regions: ['region-pelvis', 'region-torso'], color: '#f97316', desc: 'Pelvis & torso — deceleration arc after contact.' },
     };
 
-    let skelData = null, skelFrame = 0, skelTimer = null, skelHighlight = null;
-
-    function initSkeleton(data) {
-        skelData = data;
-        skelFrame = 0;
-        skelHighlight = null;
-        const scrubber = document.getElementById('skeleton-scrubber');
-        scrubber.max = data.frames.length - 1;
-        scrubber.value = 0;
-        document.getElementById('skeleton-label').textContent = 'Click a metric tile to highlight segments';
-        document.getElementById('skeleton-metric-desc').textContent = '';
-        drawSkeleton();
-
-        scrubber.oninput = () => {
-            skelFrame = parseInt(scrubber.value);
-            document.getElementById('skeleton-frame-label').textContent = `Frame ${skelFrame} ${skelFrame === data.contact_frame ? '⚡ contact' : ''}`;
-            drawSkeleton();
-        };
-        document.getElementById('skeleton-play').onclick = togglePlay;
-        document.getElementById('skeleton-reset').onclick = () => {
-            stopPlay(); skelFrame = 0; scrubber.value = 0;
-            document.getElementById('skeleton-frame-label').textContent = 'Frame 0';
-            drawSkeleton();
-        };
+    function highlightSVGRegions(regionIds, color) {
+        const obj = document.getElementById('body-svg');
+        const svgDoc = obj.contentDocument;
+        if (!svgDoc) return;
+        // Reset all
+        svgDoc.querySelectorAll('.region').forEach(el => {
+            el.style.fill = 'rgba(255,255,255,0.06)';
+            el.style.stroke = 'rgba(255,255,255,0.18)';
+            el.classList.remove('active');
+        });
+        // Highlight selected
+        regionIds.forEach(id => {
+            const el = svgDoc.getElementById(id);
+            if (!el) return;
+            el.style.fill = color + '55';
+            el.style.stroke = color;
+            el.classList.add('active');
+        });
     }
 
-    function togglePlay() {
-        if (skelTimer) { stopPlay(); return; }
-        document.getElementById('skeleton-play').textContent = '⏸ Pause';
-        skelTimer = setInterval(() => {
-            skelFrame = (skelFrame + 1) % skelData.frames.length;
-            document.getElementById('skeleton-scrubber').value = skelFrame;
-            document.getElementById('skeleton-frame-label').textContent = `Frame ${skelFrame} ${skelFrame === skelData.contact_frame ? '⚡ contact' : ''}`;
-            drawSkeleton();
-        }, 1000 / (skelData.fps || 15));
-    }
-
-    function stopPlay() {
-        clearInterval(skelTimer); skelTimer = null;
-        document.getElementById('skeleton-play').textContent = '▶ Play';
-    }
-
-    function drawSkeleton() {
-        if (!skelData || !skelData.frames.length) return;
-        const canvas = document.getElementById('skeleton-canvas');
-        const ctx = canvas.getContext('2d');
-        const W = canvas.width, H = canvas.height;
-        ctx.clearRect(0, 0, W, H);
-
-        const frame = skelData.frames[skelFrame];
-        const markers = skelData.markers;
-
-        // Project 3D → 2D: use X (left-right) and Y (vertical) from OpenCap coords
-        // OpenCap: X=left-right, Y=vertical, Z=anterior-posterior
-        // We'll use X and Y for the sagittal-ish view
-        const pts = {};
-        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        for (const m of markers) {
-            if (!frame[m]) continue;
-            const [x, y] = [frame[m][0], frame[m][1]];
-            if (x < minX) minX = x; if (x > maxX) maxX = x;
-            if (y < minY) minY = y; if (y > maxY) maxY = y;
-        }
-        const rangeX = maxX - minX || 1, rangeY = maxY - minY || 1;
-        const pad = 40;
-        for (const m of markers) {
-            if (!frame[m]) continue;
-            pts[m] = [
-                pad + ((frame[m][0] - minX) / rangeX) * (W - 2 * pad),
-                H - pad - ((frame[m][1] - minY) / rangeY) * (H - 2 * pad),
-            ];
-        }
-
-        // Highlighted segments set
-        const hlSegs = new Set();
-        let hlColor = '#00d4ff';
-        if (skelHighlight) {
-            hlColor = skelHighlight.color;
-            for (const [a, b] of skelHighlight.segs) hlSegs.add(`${a}|${b}`);
-        }
-
-        // Draw contact frame marker
-        if (skelFrame === skelData.contact_frame) {
-            ctx.fillStyle = 'rgba(239,68,68,0.15)';
-            ctx.fillRect(0, 0, W, H);
-            ctx.fillStyle = '#ef4444';
-            ctx.font = '11px monospace';
-            ctx.fillText('⚡ CONTACT', 8, 16);
-        }
-
-        // Draw bones
-        for (const [a, b] of SKELETON_BONES) {
-            if (!pts[a] || !pts[b]) continue;
-            const isHL = hlSegs.has(`${a}|${b}`) || hlSegs.has(`${b}|${a}`);
-            ctx.beginPath();
-            ctx.moveTo(pts[a][0], pts[a][1]);
-            ctx.lineTo(pts[b][0], pts[b][1]);
-            ctx.strokeStyle = isHL ? hlColor : 'rgba(255,255,255,0.25)';
-            ctx.lineWidth = isHL ? 4 : 1.5;
-            ctx.stroke();
-        }
-
-        // Draw joints
-        for (const m of markers) {
-            if (!pts[m]) continue;
-            const isHL = skelHighlight && skelHighlight.segs.some(([a, b]) => a === m || b === m);
-            ctx.beginPath();
-            ctx.arc(pts[m][0], pts[m][1], isHL ? 5 : 3, 0, Math.PI * 2);
-            ctx.fillStyle = isHL ? hlColor : 'rgba(255,255,255,0.6)';
-            ctx.fill();
-        }
-    }
-
-    // Hook metric tile clicks to skeleton highlight
+    // Hook metric tile clicks to SVG highlight
     function attachSkeletonClickHandlers() {
         document.querySelectorAll('.dim-tile').forEach(tile => {
             tile.style.cursor = 'pointer';
             tile.addEventListener('click', () => {
                 const key = tile.dataset.dimKey;
-                if (!key || !METRIC_HIGHLIGHTS[key]) return;
-                skelHighlight = METRIC_HIGHLIGHTS[key];
+                const hit = METRIC_REGIONS[key];
+                if (!hit) return;
+                highlightSVGRegions(hit.regions, hit.color);
                 document.getElementById('skeleton-label').textContent = tile.querySelector('.dim-label')?.textContent || key;
-                document.getElementById('skeleton-metric-desc').textContent = skelHighlight.desc;
-                // Scroll to skeleton panel
+                document.getElementById('skeleton-metric-desc').textContent = hit.desc;
                 document.getElementById('skeleton-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                drawSkeleton();
             });
         });
     }
