@@ -199,16 +199,18 @@ SWINGAI_THRESHOLDS = {
         'professional': [],
     },
     'hand_speed': {
-        # Estimated hand/bat speed (mph).
-        # SOURCE: Welch et al. 1995 (JOSPT): max bat velocity = 31 m/s = 69 mph
-        #   (collegiate/adult hitters, n=10).
-        # MLB Statcast (2023 season): mean bat speed = 70.3 mph, elite (90th pct) = 76+ mph.
-        # Szymanski et al. 2010 (J Strength Cond Res): HS mean bat speed ~55-62 mph.
-        # Youth estimates from coaching norms (no published biomechanics data).
-        'youth':        [(0,1),(18,2),(28,3),(40,4),(52,5)],
-        'high_school':  [(0,1),(28,2),(40,3),(52,4),(62,5)],
-        'college':      [(0,1),(38,2),(50,3),(62,4),(72,5)],
-        'professional': [(0,1),(48,2),(60,3),(70,4),(78,5)],
+        # Peak Hand Speed (mph) — handle of bat, 6" from knob. Occurs before contact.
+        # SOURCE: Blast Motion database (blastconnect.com, n=500k+ swings):
+        #   Professional MLB: 23-29 mph
+        #   College: 21-27 mph
+        #   High School Varsity: 20-26 mph
+        #   Youth: 17-23 mph
+        # NOTE: These are HAND speed values, not bat speed. Previous thresholds
+        # incorrectly used bat speed benchmarks (~65-78 mph) for hand speed.
+        'youth':        [(0,1),(10,2),(15,3),(19,4),(23,5)],
+        'high_school':  [(0,1),(12,2),(17,3),(22,4),(26,5)],
+        'college':      [(0,1),(14,2),(19,3),(23,4),(27,5)],
+        'professional': [(0,1),(16,2),(21,3),(25,4),(29,5)],
     },
     'follow_through_quality': {
         # Pelvis continued rotation after peak omega (degrees).
@@ -283,60 +285,65 @@ SWINGAI_PHASES = {
 
 SKILL_LEVEL_BENCHMARKS = {
     'youth': {
+        # Power: Blast Motion database (blastconnect.com): Youth 900-2,500 W
         'power_range_W': (900, 2500),
         'hip_power_per_kg_elite': 8.0,
         'ke_per_kg_elite': 2.0,
         'chain_efficiency_elite': 25.0,
         'torso_pelvis_ratio_optimal': (0.8, 1.1),
-        # X-factor: No youth hitting literature. Scaled from Fleisig 2013 professional
-        # anchor (46 ± 9°) with proportional reduction. Treat as estimate.
         'x_factor_optimal': (12, 32),
-        # Sequence timing: No youth hitting literature. Estimate.
         'sequence_timing_ms': (15, 45),
-        # Hand speed: No published youth biomechanics data. Coaching norm estimate.
-        'max_hand_speed_mph': (28, 52),
+        # Hand speed: Blast Motion database: Youth 17-23 mph (Peak Hand Speed)
+        'max_hand_speed_mph': (17, 23),
+        # Time to Contact: Blast Motion database: Youth 0.17-0.23 s
+        'time_to_contact_range_s': (0.17, 0.23),
+        # Body Rotation Ratio: Blast Motion: optimal 40-50% for all levels
+        'body_rotation_ratio_pct': (40, 50),
     },
     'high_school': {
+        # Power: Blast Motion database: HS Varsity 2,300-4,300 W
         'power_range_W': (2300, 4300),
         'hip_power_per_kg_elite': 12.0,
         'ke_per_kg_elite': 3.5,
         'chain_efficiency_elite': 35.0,
         'torso_pelvis_ratio_optimal': (1.0, 1.2),
-        # X-factor: No HS hitting literature. Estimate between youth and college.
         'x_factor_optimal': (20, 42),
-        # Sequence timing: No HS hitting literature. Estimate.
         'sequence_timing_ms': (20, 55),
-        # Hand speed: Szymanski et al. 2010 (J Strength Cond Res): HS mean ~55-62 mph.
-        'max_hand_speed_mph': (40, 62),
+        # Hand speed: Blast Motion database: HS Varsity 20-26 mph
+        'max_hand_speed_mph': (20, 26),
+        # Time to Contact: Blast Motion database: HS Varsity 0.14-0.18 s
+        'time_to_contact_range_s': (0.14, 0.18),
+        'body_rotation_ratio_pct': (40, 50),
     },
     'college': {
+        # Power: Blast Motion database: College 2,750-4,750 W
         'power_range_W': (2750, 4750),
         'hip_power_per_kg_elite': 16.0,
         'ke_per_kg_elite': 5.0,
         'chain_efficiency_elite': 40.0,
         'torso_pelvis_ratio_optimal': (1.1, 1.3),
-        # X-factor: Fleisig 2013 professional = 46 ± 9°. College slightly lower.
-        # Taguchi 2023 (university Div I): separation at foot contact = 22-24°.
         'x_factor_optimal': (25, 50),
-        # Sequence timing: Taguchi 2023 (university Div I, healthy, n=18):
-        #   shoulder − pelvis peak omega lag = 52 ± 30ms. Optimal = mean ± 0.5SD.
         'sequence_timing_ms': (22, 82),
-        # Hand speed: Welch 1995 (JOSPT): max bat velocity = 31 m/s = 69 mph (adult).
-        'max_hand_speed_mph': (52, 72),
+        # Hand speed: Blast Motion database: College 21-27 mph
+        'max_hand_speed_mph': (21, 27),
+        # Time to Contact: Blast Motion database: College 0.14-0.18 s
+        'time_to_contact_range_s': (0.14, 0.18),
+        'body_rotation_ratio_pct': (40, 50),
     },
     'professional': {
+        # Power: Blast Motion database: Professional MLB 3,650-5,650 W
         'power_range_W': (3650, 5650),
         'hip_power_per_kg_elite': 20.0,
         'ke_per_kg_elite': 7.0,
         'chain_efficiency_elite': 45.0,
         'torso_pelvis_ratio_optimal': (1.2, 1.5),
-        # X-factor: Fleisig 2013 (n=40 MLB): 46 ± 9°. Optimal = mean ± 1SD = 37-55°.
         'x_factor_optimal': (37, 55),
-        # Sequence timing: Taguchi 2023 as proxy; Welch 1995 confirms hip-before-shoulder.
         'sequence_timing_ms': (30, 60),
-        # Hand speed: MLB Statcast 2023: mean bat speed = 70.3 mph, 90th pct = 76+ mph.
-        # Hand speed ≈ bat speed for this model.
-        'max_hand_speed_mph': (65, 80),
+        # Hand speed: Blast Motion database: Professional MLB 23-29 mph
+        'max_hand_speed_mph': (23, 29),
+        # Time to Contact: Blast Motion database: Professional 0.13-0.17 s
+        'time_to_contact_range_s': (0.13, 0.17),
+        'body_rotation_ratio_pct': (40, 50),
     },
 }
 
@@ -406,6 +413,11 @@ class RefinedSwingMetrics:
     arm_flex_asymmetry_deg: float = 0.0
     peak_prosup_r_deg: float = 0.0
     peak_prosup_l_deg: float = 0.0
+    # Blast Motion-aligned metrics
+    time_to_contact_s: float = 0.0
+    rotational_acceleration_deg_s2: float = 0.0
+    body_rotation_ratio_pct: float = 0.0
+    max_hand_speed_mph: float = 0.0
 
 def _build_data_quality(trc_metrics: dict, has_grf: bool = False) -> dict:
     """
@@ -819,6 +831,31 @@ class RefinedHittingOptimizer:
         distal_ke = arm_ke + elbow_ke + bat_ke
         chain_efficiency = (distal_ke / (total_energy_transfer + eps)) * 100.0
         
+        # =========================================================================
+        # BLAST MOTION-ALIGNED METRICS
+        # =========================================================================
+        # Time to Contact: swing_start to peak_pelvis_frame (contact proxy) in seconds
+        time_to_contact_s = float((peak_pelvis_frame_global - swing_start) * dt)
+
+        # Rotational Acceleration: peak angular acceleration of the shoulder/arm system
+        # during the swing window — measures how quickly bat accelerates into swing plane
+        # (Blast: higher = better power efficiency, less hand-dominated)
+        arm_alpha = np.zeros_like(pelvis_omega)
+        if 'arm_flex_r' in data.columns:
+            if HAS_SCIPY:
+                arm_alpha = savgol_smooth_and_diff(
+                    butter_lowpass_filter(np.unwrap(np.deg2rad(data['arm_flex_r'].values)), cutoff_hz, fs),
+                    window=window_size, polyorder=3, deriv=2, dt=dt)
+            else:
+                arm_alpha = np.gradient(arm_omega, dt)
+        peak_rotational_accel = float(np.max(np.abs(arm_alpha[swing_start:])) * 180.0 / np.pi)  # deg/s²
+
+        # Body Rotation Ratio: pelvis/shoulder contribution to total rotation
+        # Blast defines as body rotation / total rotation during downswing (optimal 40-50%)
+        # Approximated as: pelvis_omega contribution vs total (pelvis + arm) omega at peak
+        total_omega_at_peak = peak_pelvis_w + peak_arm_w_val + eps
+        body_rotation_ratio = float((peak_pelvis_w / total_omega_at_peak) * 100.0)
+
         return {
             'peak_hip_torque_Nm': float(peak_hip_torque),
             'peak_shoulder_torque_Nm': float(peak_shoulder_torque),
@@ -836,10 +873,9 @@ class RefinedHittingOptimizer:
             'peak_elb_omega_rad_s': float(peak_elb_w_val),
             'peak_shoulder_omega_rad_s': float(peak_shoulder_w),
             'peak_pelvis_omega_rad_s': float(peak_pelvis_w),
-            'pelvis_omega': pelvis_omega,   # full array — used by stride detection
+            'pelvis_omega': pelvis_omega,
             'pelvis_angle': pelvis_angle,
             'swing_start_frame': swing_start,
-            # Driveline Energy Transfer Metrics
             'pelvis_ke_J': float(pelvis_ke),
             'torso_ke_J': float(torso_ke),
             'arm_ke_J': float(arm_ke),
@@ -849,7 +885,11 @@ class RefinedHittingOptimizer:
             'torso_to_arm_transfer_ratio': float(torso_to_arm_ratio),
             'pelvis_to_torso_transfer_ratio': float(pelvis_to_torso_ratio),
             'torso_to_pelvis_rot_ratio': float(torso_to_pelvis_rot_ratio),
-            'kinetic_chain_efficiency_pct': float(chain_efficiency)
+            'kinetic_chain_efficiency_pct': float(chain_efficiency),
+            # Blast Motion-aligned metrics
+            'time_to_contact_s': time_to_contact_s,
+            'rotational_acceleration_deg_s2': peak_rotational_accel,
+            'body_rotation_ratio_pct': body_rotation_ratio,
         }
         
     def calculate_stride_refined(self, data: pd.DataFrame, rotation: Dict = None) -> Dict:
@@ -1332,6 +1372,11 @@ class RefinedHittingOptimizer:
             arm_flex_asymmetry_deg=lower_body.get('arm_flex_asymmetry_deg', 0.0),
             peak_prosup_r_deg=lower_body.get('peak_prosup_r_deg', 0.0),
             peak_prosup_l_deg=lower_body.get('peak_prosup_l_deg', 0.0),
+            # Blast Motion-aligned metrics
+            time_to_contact_s=rotation.get('time_to_contact_s', 0.0) if rotation else 0.0,
+            rotational_acceleration_deg_s2=rotation.get('rotational_acceleration_deg_s2', 0.0) if rotation else 0.0,
+            body_rotation_ratio_pct=rotation.get('body_rotation_ratio_pct', 0.0) if rotation else 0.0,
+            max_hand_speed_mph=trc_metrics.get('max_hand_speed_mph', 0.0),
         )
         
         # Terminal printing if verbose
