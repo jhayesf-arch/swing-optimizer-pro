@@ -513,18 +513,15 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function highlightSVGRegions(regionIds, color) {
-        const obj = document.getElementById('body-svg');
-        const svgDoc = obj.contentDocument;
-        if (!svgDoc) return;
         // Reset all
-        svgDoc.querySelectorAll('.region').forEach(el => {
+        document.querySelectorAll('#body-svg .region').forEach(el => {
             el.style.fill = 'rgba(255,255,255,0.06)';
             el.style.stroke = 'rgba(255,255,255,0.18)';
             el.classList.remove('active');
         });
         // Highlight selected
         regionIds.forEach(id => {
-            const el = svgDoc.getElementById(id);
+            const el = document.getElementById(id);
             if (!el) return;
             el.style.fill = color + '55';
             el.style.stroke = color;

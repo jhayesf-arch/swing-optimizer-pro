@@ -93,10 +93,34 @@
 
                 <!-- SWING SKELETON PANEL -->
                 <div class="glass-card panel mt-3" id="skeleton-panel">
-                    <h3 class="panel-title"><span class="icon">🦴</span> Body Region — Click a metric to highlight</h3>
+                    <h3 class="panel-title">Body Region — Click a metric to highlight</h3>
                     <div style="display:flex;gap:1.5rem;align-items:flex-start;flex-wrap:wrap;">
-                        <div id="body-svg-container" style="flex-shrink:0;background:#0d1117;border-radius:8px;border:1px solid rgba(255,255,255,0.1);padding:12px;">
-                            <object id="body-svg" data="body.svg" type="image/svg+xml" width="200" height="480" style="display:block;"></object>
+                        <div style="flex-shrink:0;background:#0d1117;border-radius:8px;border:1px solid rgba(255,255,255,0.1);padding:12px;">
+                            <svg id="body-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 480" width="200" height="480">
+                              <defs>
+                                <style>
+                                  .region { fill: rgba(255,255,255,0.06); stroke: rgba(255,255,255,0.18); stroke-width: 1.5; transition: fill 0.25s, stroke 0.25s; }
+                                  .region.active { stroke-width: 2.5; }
+                                </style>
+                              </defs>
+                              <ellipse id="region-head" class="region" cx="100" cy="38" rx="22" ry="26"/>
+                              <rect id="region-neck" class="region" x="91" y="63" width="18" height="16" rx="4"/>
+                              <path id="region-shoulders" class="region" d="M72,79 L128,79 L128,106 L72,106 Z M60,79 Q50,75 44,88 Q40,100 50,108 Q60,112 72,106 L72,79 Z M140,79 Q150,75 156,88 Q160,100 150,108 Q140,112 128,106 L128,79 Z"/>
+                              <path id="region-torso" class="region" d="M72,106 Q68,140 70,170 Q72,190 100,194 Q128,190 130,170 Q132,140 128,106 Z"/>
+                              <path id="region-pelvis" class="region" d="M70,170 Q65,195 68,210 Q75,228 100,230 Q125,228 132,210 Q135,195 130,170 Q115,178 100,178 Q85,178 70,170 Z"/>
+                              <path id="region-arm-r" class="region" d="M50,108 Q38,112 32,130 Q26,150 34,168 Q42,178 52,172 Q58,158 56,138 Q56,120 50,108 Z"/>
+                              <path id="region-arm-l" class="region" d="M150,108 Q162,112 168,130 Q174,150 166,168 Q158,178 148,172 Q142,158 144,138 Q144,120 150,108 Z"/>
+                              <path id="region-forearm-r" class="region" d="M34,168 Q26,182 28,202 Q30,218 40,224 Q50,226 54,212 Q56,196 52,172 Z"/>
+                              <path id="region-forearm-l" class="region" d="M166,168 Q174,182 172,202 Q170,218 160,224 Q150,226 146,212 Q144,196 148,172 Z"/>
+                              <ellipse id="region-hand-r" class="region" cx="36" cy="234" rx="12" ry="14"/>
+                              <ellipse id="region-hand-l" class="region" cx="164" cy="234" rx="12" ry="14"/>
+                              <path id="region-thigh-r" class="region" d="M68,210 Q60,220 58,250 Q56,278 62,296 Q70,308 82,306 Q92,300 92,278 Q92,252 88,228 Q80,218 68,210 Z"/>
+                              <path id="region-thigh-l" class="region" d="M132,210 Q140,220 142,250 Q144,278 138,296 Q130,308 118,306 Q108,300 108,278 Q108,252 112,228 Q120,218 132,210 Z"/>
+                              <path id="region-shin-r" class="region" d="M62,296 Q56,316 58,346 Q60,370 68,382 Q76,388 84,384 Q90,374 90,350 Q90,322 82,306 Z"/>
+                              <path id="region-shin-l" class="region" d="M138,296 Q144,316 142,346 Q140,370 132,382 Q124,388 116,384 Q110,374 110,350 Q110,322 118,306 Z"/>
+                              <path id="region-foot-r" class="region" d="M58,382 Q50,390 48,402 Q48,412 58,414 Q72,416 82,412 Q88,406 84,396 Q80,388 68,384 Z"/>
+                              <path id="region-foot-l" class="region" d="M142,382 Q150,390 152,402 Q152,412 142,414 Q128,416 118,412 Q112,406 116,396 Q120,388 132,384 Z"/>
+                            </svg>
                         </div>
                         <div style="flex:1;min-width:180px;padding-top:8px;">
                             <p class="small text-muted" id="skeleton-label" style="margin-bottom:0.5rem;font-style:italic;">Select a metric tile to highlight the active body region</p>
