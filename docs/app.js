@@ -1,3 +1,58 @@
+const DEMO_DIAGNOSIS = {
+    swing_score: 74,
+    efficiency_score: 82,
+    metrics: {
+        estimated_hand_speed_mph: 68.4, max_hand_speed_mph: 71.2,
+        max_separation_deg: 44.1, peak_hip_power_W: 3820, hip_power_per_kg: 14.2,
+        sequence_timing_ms: 48, kinetic_chain_efficiency_pct: 52.3,
+        torso_to_pelvis_rot_ratio: 1.31, total_energy_transfer_J: 412,
+        stride_efficiency_pct: 94, stride_ratio: 0.74, proper_sequence: true,
+        pelvis_ke_J: 98.4, torso_ke_J: 74.1, arm_ke_J: 61.2, bat_ke_J: 38.7,
+    },
+    findings: [
+        'Optimal Proximal-to-Distal Kinetic Chain demonstrated.',
+        'Elite X-Factor Separation Stretch (44.1°).',
+        'Elite Lower-Half Power Generation.',
+        'Elite Distal Energy Amplification (52.3%).',
+        'Excellent Torso-to-Pelvis Velocity Amplification (1.31).',
+        'Good Total Kinetic Chain Energy (412 J, 15.3 J/kg).',
+        'Efficient Stride Mechanics & Center of Mass Control.',
+    ],
+    recommendations: [
+        'Good foundation. To push toward elite: focus on violent hip deceleration at front foot plant to whip stored energy into the torso and arms.',
+        'Focus on lead-leg bracing at contact and sequential deceleration of the pelvis to whip maximum energy into the hands.',
+    ],
+    swingai_report: {
+        skill_level: 'college',
+        swing_score: 74,
+        phases: {
+            balance_load: { label: 'Balance & Load', icon: '⚖️', avg_stars: 3.7, badge: 'satisfactory', dimensions: [
+                { key: 'negative_move', label: 'Negative Move', value: '0.06', unit: 'm', stars: 4, badge: 'satisfactory', description: 'Good backward weight shift before stride.' },
+                { key: 'pelvis_load', label: 'Pelvis Load', value: '88', unit: 'J', stars: 4, badge: 'satisfactory', description: 'Strong pelvis kinetic energy at load.' },
+                { key: 'upper_torso_load', label: 'Upper Torso Load', value: '52', unit: 'J', stars: 3, badge: 'satisfactory', description: 'Adequate upper torso coil.' },
+            ]},
+            stride: { label: 'Stride', icon: '👣', avg_stars: 4.0, badge: 'satisfactory', dimensions: [
+                { key: 'stride_length', label: 'Stride Length', value: '0.74', unit: 'x Ht', stars: 4, badge: 'satisfactory', description: 'Good stride length relative to height.' },
+                { key: 'forward_move', label: 'Forward Move', value: '94', unit: '%', stars: 4, badge: 'satisfactory', description: 'Efficient forward momentum.' },
+            ]},
+            power_move: { label: 'Power Move', icon: '💥', avg_stars: 4.3, badge: 'excellent', dimensions: [
+                { key: 'max_hip_shoulder_separation', label: 'Max Hip-Shoulder Separation', value: '44.1', unit: '°', stars: 5, badge: 'excellent', description: 'Elite X-Factor separation.' },
+                { key: 'pelvis_rotation_range', label: 'Pelvis Total Rotation Range', value: '68', unit: '°', stars: 4, badge: 'satisfactory', description: 'Good pelvis rotation range.' },
+                { key: 'upper_torso_rotation_range', label: 'Upper Torso Rotation Range', value: '92', unit: '°', stars: 4, badge: 'satisfactory', description: 'Good shoulder rotation range.' },
+            ]},
+            contact: { label: 'Contact & Follow-Through', icon: '🎯', avg_stars: 3.5, badge: 'satisfactory', dimensions: [
+                { key: 'pelvis_direction_at_contact', label: 'Pelvis Direction at Contact', value: '18', unit: '°', stars: 4, badge: 'satisfactory', description: 'Hips well open at contact.' },
+                { key: 'upper_torso_direction_at_contact', label: 'Upper Torso Direction at Contact', value: '28', unit: '°', stars: 3, badge: 'satisfactory', description: 'Shoulders moderately open.' },
+                { key: 'kinetic_chain_efficiency', label: 'Kinetic Chain Efficiency', value: '52.3', unit: '%', stars: 5, badge: 'excellent', description: 'Elite distal energy transfer.' },
+                { key: 'sequence_quality', label: 'Sequence Quality', value: '48', unit: 'ms', stars: 4, badge: 'satisfactory', description: 'Good proximal-to-distal sequence timing.' },
+                { key: 'hand_speed', label: 'Hand / Bat Speed', value: '68.4', unit: 'mph', stars: 4, badge: 'satisfactory', description: 'Above average hand speed for college level.' },
+                { key: 'follow_through_quality', label: 'Follow-Through Quality', value: '42', unit: '°', stars: 3, badge: 'satisfactory', description: 'Adequate follow-through arc.' },
+            ]},
+        },
+    },
+    grf_estimation: {},
+};
+
 document.addEventListener('DOMContentLoaded', () => {
     // -----------------------------------------
     // Elements
@@ -76,6 +131,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     refreshLocalBtn.addEventListener('click', fetchLocalFiles);
+
+    document.getElementById('load-demo').addEventListener('click', () => {
+        renderDashboard(DEMO_DIAGNOSIS, 'demo_swing.mot');
+    });
     
     document.getElementById('btn-cancel-demo').addEventListener('click', hideDemoModal);
     document.getElementById('btn-run-physics').addEventListener('click', () => {
@@ -320,24 +379,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         document.getElementById('rotational-metrics').innerHTML = `
-            ${createMetric('Max Separation', m.max_separation_deg.toFixed(1), '°')}
+            ${createMetric('Max Separation', (m.max_separation_deg || 0).toFixed(1), '°')}
             ${handSpeedHtml}
-            ${createMetric('Peak Hip Power', m.peak_hip_power_W.toFixed(0), 'W')}
-            ${createMetric('Rel. Hip Power', m.hip_power_per_kg.toFixed(1), 'W/kg')}
-            ${createMetric('Sequence Timing', m.sequence_timing_ms.toFixed(0), 'ms')}
-            ${createMetric('Chain Efficiency', m.kinetic_chain_efficiency_pct.toFixed(1), '%')}
-            ${createMetric('Torso/Pelvis Ratio', m.torso_to_pelvis_rot_ratio.toFixed(2), '')}
-            ${createMetric('Total Chain KE', m.total_energy_transfer_J.toFixed(0), 'J')}
+            ${createMetric('Peak Hip Power', (m.peak_hip_power_W || 0).toFixed(0), 'W')}
+            ${createMetric('Rel. Hip Power', (m.hip_power_per_kg || 0).toFixed(1), 'W/kg')}
+            ${createMetric('Sequence Timing', (m.sequence_timing_ms || 0).toFixed(0), 'ms')}
+            ${createMetric('Chain Efficiency', (m.kinetic_chain_efficiency_pct || 0).toFixed(1), '%')}
+            ${createMetric('Torso/Pelvis Ratio', (m.torso_to_pelvis_rot_ratio || 0).toFixed(2), '')}
+            ${createMetric('Total Chain KE', (m.total_energy_transfer_J || 0).toFixed(0), 'J')}
         `;
 
         const grf = diagnosis.grf_estimation || {};
         document.getElementById('stride-metrics').innerHTML = `
-            ${createMetric('Stride Efficiency', m.stride_efficiency_pct.toFixed(0), '%')}
-            ${createMetric('Stride Ratio', m.stride_ratio.toFixed(2), 'x Ht')}
+            ${createMetric('Stride Efficiency', (m.stride_efficiency_pct || 0).toFixed(0), '%')}
+            ${createMetric('Stride Ratio', (m.stride_ratio || 0).toFixed(2), 'x Ht')}
             ${createMetric('Proper Sequence', m.proper_sequence ? 'YES ✅' : 'NO ❌', '', true)}
-            ${createMetric('Pelvis KE', m.pelvis_ke_J.toFixed(1), 'J')}
-            ${createMetric('Torso KE', m.torso_ke_J.toFixed(1), 'J')}
-            ${createMetric('Arm KE', m.arm_ke_J.toFixed(1), 'J')}
+            ${createMetric('Pelvis KE', (m.pelvis_ke_J || 0).toFixed(1), 'J')}
+            ${createMetric('Torso KE', (m.torso_ke_J || 0).toFixed(1), 'J')}
+            ${createMetric('Arm KE', (m.arm_ke_J || 0).toFixed(1), 'J')}
             ${createMetric('Bat KE', (m.bat_ke_J || 0).toFixed(1), 'J')}
             ${grf.peak_grf_vert_BW ? createMetric('Peak GRF Vert', (grf.peak_grf_vert_BW * 100).toFixed(0), '% BW') : ''}
             ${grf.peak_grf_ap_N ? createMetric('Peak GRF AP', grf.peak_grf_ap_N.toFixed(0), 'N') : ''}
