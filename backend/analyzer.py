@@ -974,7 +974,7 @@ class RefinedHittingOptimizer:
             peak_elb_w   = rotation.get('peak_elb_omega_rad_s', 0.0) if rotation else 0.0
 
             if peak_arm_w > 0 or peak_elb_w > 0:
-                hand_speed_mps = peak_arm_w * lever_arm_m
+                hand_speed_mps = (peak_arm_w + peak_elb_w) * lever_arm_m
             else:
                 # Final fallback: derive from shoulder omega × full arm span
                 peak_shoulder_w = rotation.get('peak_shoulder_omega_rad_s', 0.0) if rotation else 0.0
