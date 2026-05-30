@@ -277,6 +277,7 @@ def health():
 @app.post("/api/analyze/upload")
 async def analyze_upload(
     file: UploadFile = File(...),
+    trc_file: UploadFile = File(None),
     height_m: float = Form(1.83),
     weight_kg: float = Form(82.0),
     skill_level: str = Form('high_school'),
@@ -290,6 +291,12 @@ async def analyze_upload(
     with open(file_path, "wb") as f:
         f.write(await file.read())
 
+    trc_path = None
+    if trc_file and trc_file.filename and trc_file.filename.endswith('.trc'):
+        trc_path = os.path.join(TMP_DIR, trc_file.filename)
+        with open(trc_path, "wb") as f:
+            f.write(await trc_file.read())
+
     try:
         optimizer = RefinedHittingOptimizer(
             body_mass_kg=weight_kg, body_height_m=height_m,
@@ -300,7 +307,13 @@ async def analyze_upload(
         if kinematics is None or len(kinematics) == 0:
             return JSONResponse(status_code=400, content={"success": False, "error": "Invalid or empty .mot file"})
 
-        diagnosis = optimizer.comprehensive_diagnosis(kinematics, file.filename)
+        trc_data = optimizer.load_trc_file(trc_path) if trc_path else None
+        diagnosis = optimizer.comprehensive_diagnosis(kinematics, file.filename, trc_data=trc_data)
+        if trc_data is not None:
+            try:
+                diagnosis['skeleton_frames'] = _extract_skeleton_frames(trc_data, kinematics)
+            except Exception:
+                pass
         if not diagnosis.get('skeleton_frames'):
             try:
                 diagnosis['skeleton_frames'] = _skeleton_from_mot(kinematics, body_height_m=height_m)
@@ -314,6 +327,8 @@ async def analyze_upload(
     finally:
         if os.path.exists(file_path):
             os.remove(file_path)
+        if trc_path and os.path.exists(trc_path):
+            os.remove(trc_path)
 
 @app.get("/api/scan-downloads")
 def scan_downloads():

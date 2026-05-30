@@ -47,7 +47,7 @@ const DEMO_DIAGNOSIS = {
                 { key: 'upper_torso_direction_at_contact', label: 'Upper Torso Direction at Contact', value: '28', unit: '°', stars: 3, badge: 'satisfactory', description: 'Shoulders moderately open.' },
                 { key: 'kinetic_chain_efficiency', label: 'Kinetic Chain Efficiency', value: '52.3', unit: '%', stars: 5, badge: 'excellent', description: 'Elite distal energy transfer.' },
                 { key: 'sequence_quality', label: 'Sequence Quality', value: '48', unit: 'ms', stars: 4, badge: 'satisfactory', description: 'Good proximal-to-distal sequence timing.' },
-                { key: 'hand_speed', label: 'Hand / Bat Speed', value: '24.2', unit: 'mph', stars: 4, badge: 'satisfactory', description: 'Above average hand speed for college level (Blast benchmark: 21-27 mph).' },
+                { key: 'hand_speed', label: 'Hand / Bat Speed', value: '24.2', unit: 'mph', stars: 4, badge: 'satisfactory', description: 'Above average hand speed for college level (Blast benchmark: 21-25 mph).' },
                 { key: 'follow_through_quality', label: 'Follow-Through Quality', value: '42', unit: '°', stars: 3, badge: 'satisfactory', description: 'Adequate follow-through arc.' },
             ]},
         },
@@ -61,6 +61,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // -----------------------------------------
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
+    const trcInput = document.getElementById('trc-input');
+    const trcLabel = document.getElementById('trc-label');
     const refreshLocalBtn = document.getElementById('refresh-local');
     const localFilesList = document.getElementById('local-files-list');
     
@@ -129,6 +131,12 @@ document.addEventListener('DOMContentLoaded', () => {
     fileInput.addEventListener('change', (e) => {
         if (e.target.files.length) {
             promptDemographicsForUpload(e.target.files[0]);
+        }
+    });
+
+    trcInput.addEventListener('change', (e) => {
+        if (e.target.files.length) {
+            trcLabel.textContent = `✅ ${e.target.files[0].name}`;
         }
     });
     
@@ -217,7 +225,10 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const formData = new FormData();
         formData.append('file', file);
-        
+
+        const trcFile = trcInput.files[0];
+        if (trcFile) formData.append('trc_file', trcFile);
+
         const demo = getDemographics();
         formData.append('height_m', demo.height_m);
         formData.append('weight_kg', demo.weight_kg);

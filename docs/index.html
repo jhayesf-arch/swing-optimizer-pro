@@ -33,9 +33,16 @@
                         <p>Drag &amp; drop a <strong class="accent">.mot</strong> file here</p>
                         <p class="small">or</p>
                         <label class="btn btn-primary">
-                            Browse File
+                            Browse .mot File
                             <input type="file" id="file-input" accept=".mot" hidden>
                         </label>
+                        <div style="margin-top:10px;">
+                            <label class="btn btn-secondary btn-sm">
+                                + Add .trc File <span class="small text-muted">(optional)</span>
+                                <input type="file" id="trc-input" accept=".trc" hidden>
+                            </label>
+                            <p class="small text-muted" id="trc-label" style="margin-top:4px;"></p>
+                        </div>
                     </div>
                     
                     <!-- Local Downloads Scan -->
