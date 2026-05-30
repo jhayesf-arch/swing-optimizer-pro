@@ -521,12 +521,18 @@ class RefinedHittingOptimizer:
         with open(filepath, 'r') as f:
             lines = f.readlines()
         header_end = 0
+        event_times = {}
         for i, line in enumerate(lines):
             if 'endheader' in line.lower():
                 header_end = i + 1
                 break
+            if '=' in line and any(k in line for k in ('fp_10_time', 'contact_time')):
+                key, val = line.strip().split('=', 1)
+                event_times[key.strip()] = float(val.strip())
         data = pd.read_csv(filepath, sep='\t', skiprows=header_end, skipinitialspace=True)
         data.columns = data.columns.str.strip()
+        # Attach event times as metadata via attrs (pandas 1.0+)
+        data.attrs.update(event_times)
         return data
         
     def load_trc_file(self, filepath: str) -> pd.DataFrame:
@@ -707,21 +713,26 @@ class RefinedHittingOptimizer:
         peak_pelvis_frame_global = int(np.argmax(np.abs(pelvis_omega)))
         swing_start = 0
 
-        # Find the direction of rotation at peak (positive or negative)
-        peak_sign = np.sign(pelvis_omega[peak_pelvis_frame_global])
+        # Use Driveline event timestamp (fp_10_time) when available — eliminates detection variability
+        if 'fp_10_time' in data.attrs:
+            fp_time = data.attrs['fp_10_time']
+            times = data['time'].values
+            swing_start = int(np.argmin(np.abs(times - fp_time)))
+        else:
+            # Find the direction of rotation at peak (positive or negative)
+            peak_sign = np.sign(pelvis_omega[peak_pelvis_frame_global])
 
-        # Walk backward: swing starts at the last frame where omega was opposite sign
-        # (i.e., the last reversal point = local minimum of pelvis angle in swing direction)
-        for i in range(peak_pelvis_frame_global - 1, -1, -1):
-            if np.sign(pelvis_omega[i]) != peak_sign and abs(pelvis_omega[i]) * 180/np.pi > 20.0:
-                swing_start = i
-                break
-        # If no sign reversal found, fall back to last frame below 15% of peak
-        if swing_start == 0:
-            quiet_threshold = abs(pelvis_omega[peak_pelvis_frame_global]) * 0.15
-            for i in range(peak_pelvis_frame_global, -1, -1):
-                if abs(pelvis_omega[i]) < quiet_threshold:
+            # Walk backward: swing starts at the last frame where omega was opposite sign
+            for i in range(peak_pelvis_frame_global - 1, -1, -1):
+                if np.sign(pelvis_omega[i]) != peak_sign and abs(pelvis_omega[i]) * 180/np.pi > 20.0:
                     swing_start = i
+                    break
+            # If no sign reversal found, fall back to last frame below 15% of peak
+            if swing_start == 0:
+                quiet_threshold = abs(pelvis_omega[peak_pelvis_frame_global]) * 0.15
+                for i in range(peak_pelvis_frame_global, -1, -1):
+                    if abs(pelvis_omega[i]) < quiet_threshold:
+                        swing_start = i
                     break
 
         sw = slice(swing_start, None)
