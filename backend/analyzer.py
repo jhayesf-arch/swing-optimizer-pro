@@ -200,16 +200,15 @@ SWINGAI_THRESHOLDS = {
     },
     'hand_speed': {
         # Peak Hand Speed (mph) — handle of bat, 6" from knob. Occurs before contact.
-        # SOURCE: Blast Motion database (blastconnect.com, n=500k+ swings):
-        #   Professional MLB: 23-29 mph
-        #   College: 21-27 mph
-        #   High School Varsity: 20-26 mph
-        #   Youth: 17-23 mph
-        # NOTE: These are HAND speed values, not bat speed. Previous thresholds
-        # incorrectly used bat speed benchmarks (~65-78 mph) for hand speed.
-        'youth':        [(0,1),(10,2),(15,3),(19,4),(23,5)],
-        'high_school':  [(0,1),(12,2),(17,3),(22,4),(26,5)],
-        'college':      [(0,1),(14,2),(19,3),(23,4),(27,5)],
+        # SOURCE: Blast Motion official benchmarks (blastmotion.com):
+        #   Youth:              15-21 mph
+        #   High School (JV):   17-21 mph
+        #   High School (Var):  19-23 mph  ← used for 'high_school'
+        #   College:            21-25 mph
+        #   Pro:                23-29 mph
+        'youth':        [(0,1),(10,2),(15,3),(18,4),(21,5)],
+        'high_school':  [(0,1),(12,2),(17,3),(20,4),(23,5)],
+        'college':      [(0,1),(14,2),(19,3),(22,4),(25,5)],
         'professional': [(0,1),(16,2),(21,3),(25,4),(29,5)],
     },
     'follow_through_quality': {
@@ -734,14 +733,12 @@ class RefinedHittingOptimizer:
         hip_power_per_kg      = peak_hip_power / self.body_mass_kg
         shoulder_power_per_kg = peak_shoulder_power / self.body_mass_kg
 
-        # BUG 1 FIX: X-Factor = max hip-shoulder separation BEFORE peak pelvis omega.
-        # The separation during follow-through is not X-Factor — it's the load position
-        # (just before the pelvis fires) that stores elastic energy in the obliques.
-        # Use lumbar_angle (relative trunk twist) as the separation signal, measured
-        # only in the window from swing_start to peak_pelvis_frame.
+        # X-Factor at peak arm omega (max hand speed frame) — matches Driveline x_factor_hs_y.
+        # This is more result-driven: measures separation still present when hands fire,
+        # which is a better predictor of output than the peak separation during load.
+        # peak_arm_frame is computed below after arm_omega is derived; use a forward reference
+        # by computing arm_omega here first, then revisiting separation after.
         separation_full = lumbar_angle * 180.0 / np.pi
-        pre_peak_sep = separation_full[swing_start:peak_pelvis_frame_global + 1]
-        max_separation = float(np.max(np.abs(pre_peak_sep))) if len(pre_peak_sep) > 0 else float(np.max(np.abs(separation_full[swing_start:])))
         
         # Incorporating the Arms and Elbow details for Kinematics
         arm_omega = np.zeros_like(pelvis_omega)
@@ -776,6 +773,9 @@ class RefinedHittingOptimizer:
         peak_hip_frame      = int(np.argmax(np.abs(p_omega_sw)))
         peak_shoulder_frame = int(np.argmax(np.abs(lumbar_omega_sw)))
         peak_arm_frame      = int(np.argmax(np.abs(arm_omega_sw))) if np.sum(np.abs(arm_omega_sw)) > 0 else peak_shoulder_frame + 1
+
+        # X-Factor at peak arm omega frame (max hand speed proxy) — aligns with Driveline x_factor_hs_y
+        max_separation = float(np.abs(separation_full[swing_start + peak_arm_frame])) if (swing_start + peak_arm_frame) < len(separation_full) else 0.0
 
         sequence_timing_ms = float((peak_shoulder_frame - peak_hip_frame) * dt * 1000.0)
         # BUG 3 FIX: At 60Hz, 1 frame = 16.7ms. Allow ±1 frame tolerance.
@@ -974,8 +974,7 @@ class RefinedHittingOptimizer:
             peak_elb_w   = rotation.get('peak_elb_omega_rad_s', 0.0) if rotation else 0.0
 
             if peak_arm_w > 0 or peak_elb_w > 0:
-                # Elbow extension contributes additively to the hand's linear velocity
-                hand_speed_mps = (peak_arm_w + peak_elb_w) * lever_arm_m
+                hand_speed_mps = peak_arm_w * lever_arm_m
             else:
                 # Final fallback: derive from shoulder omega × full arm span
                 peak_shoulder_w = rotation.get('peak_shoulder_omega_rad_s', 0.0) if rotation else 0.0
