@@ -591,7 +591,8 @@ class RefinedHittingOptimizer:
         
         max_hand_speed = 0.0
         # Find whichever wrist is moving faster (proxy for bat speed)
-        wrist_markers = ['r_mwrist_study', 'L_mwrist_study', 'r_lwrist_study', 'L_lwrist_study', 'RWrist', 'LWrist']
+        wrist_markers = ['r_mwrist_study', 'L_mwrist_study', 'r_lwrist_study', 'L_lwrist_study',
+                         'RWrist', 'LWrist', 'RWRA', 'RWRB', 'LWRA', 'LWRB', 'RFIN', 'LFIN']
         
         for wrist in wrist_markers:
             if f'{wrist}_X' in trc_data.columns:
