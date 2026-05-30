@@ -865,6 +865,24 @@ class RefinedHittingOptimizer:
         total_omega_at_peak = peak_pelvis_w + peak_arm_w_val + eps
         body_rotation_ratio = float((peak_pelvis_w / total_omega_at_peak) * 100.0)
 
+        # ── 3D Angular Velocity Magnitude (matches Driveline's angular_velocity columns) ──
+        def _omega_1d(col):
+            if col not in data.columns:
+                return np.zeros(len(pelvis_omega))
+            arr = np.unwrap(np.deg2rad(data[col].values))
+            if HAS_SCIPY:
+                arr = butter_lowpass_filter(arr, cutoff_hz, fs)
+                return savgol_smooth_and_diff(arr, window=window_size, polyorder=3, deriv=1, dt=dt)
+            return np.gradient(smooth_data(arr, 11), dt)
+
+        pelvis_omega_x = _omega_1d('pelvis_tilt')
+        pelvis_omega_z = _omega_1d('pelvis_list')
+        pelvis_omega_3d = np.sqrt(pelvis_omega**2 + pelvis_omega_x**2 + pelvis_omega_z**2)
+        torso_omega_x = _omega_1d('lumbar_bending')
+        torso_omega_3d = np.sqrt(lumbar_omega**2 + torso_omega_x**2)
+        peak_pelvis_omega_3d = float(np.max(pelvis_omega_3d[swing_start:]))
+        peak_torso_omega_3d  = float(np.max(torso_omega_3d[swing_start:]))
+
         return {
             'peak_hip_torque_Nm': float(peak_hip_torque),
             'peak_shoulder_torque_Nm': float(peak_shoulder_torque),
@@ -882,6 +900,8 @@ class RefinedHittingOptimizer:
             'peak_elb_omega_rad_s': float(peak_elb_w_val),
             'peak_shoulder_omega_rad_s': float(peak_shoulder_w),
             'peak_pelvis_omega_rad_s': float(peak_pelvis_w),
+            'peak_pelvis_omega_3d_deg_s': peak_pelvis_omega_3d * 180.0 / np.pi,
+            'peak_torso_omega_3d_deg_s': peak_torso_omega_3d * 180.0 / np.pi,
             'pelvis_omega': pelvis_omega,
             'pelvis_angle': pelvis_angle,
             'swing_start_frame': swing_start,
