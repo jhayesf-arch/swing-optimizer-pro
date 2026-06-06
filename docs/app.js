@@ -550,7 +550,6 @@ document.addEventListener('DOMContentLoaded', () => {
         card.innerHTML = `
             <div class="phase-header">
                 <div class="phase-header-left">
-                    <span class="phase-icon">${phase.icon}</span>
                     <span class="phase-label">${phase.label}</span>
                 </div>
                 <div class="phase-avg-stars">${phaseStars}</div>

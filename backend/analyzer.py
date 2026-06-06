@@ -262,22 +262,22 @@ SWINGAI_LABELS = {
 SWINGAI_PHASES = {
     'balance_load': {
         'label': 'Balance & Load',
-        'icon': '⚖️',
-        'dimensions': ['negative_move', 'pelvis_load', 'upper_torso_load'],
+        'icon': '',
+        'dimensions': ['pelvis_load', 'upper_torso_load'],
     },
     'stride': {
         'label': 'Stride',
-        'icon': '👣',
-        'dimensions': ['stride_length', 'forward_move'],
+        'icon': '',
+        'dimensions': ['negative_move', 'stride_length', 'forward_move'],
     },
     'power_move': {
         'label': 'Power Move',
-        'icon': '💥',
+        'icon': '',
         'dimensions': ['max_hip_shoulder_separation', 'pelvis_rotation_range', 'upper_torso_rotation_range'],
     },
     'contact': {
         'label': 'Contact & Follow-Through',
-        'icon': '🎯',
+        'icon': '',
         'dimensions': ['pelvis_direction_at_contact', 'upper_torso_direction_at_contact', 'kinetic_chain_efficiency', 'sequence_quality', 'hand_speed', 'follow_through_quality'],
     },
 }
