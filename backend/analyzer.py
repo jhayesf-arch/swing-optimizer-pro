@@ -779,15 +779,23 @@ class RefinedHittingOptimizer:
         lumbar_omega_sw = lumbar_omega[swing_start:]
 
         # Proximal-to-Distal Sequencing — within swing window only.
-        # Use lumbar_omega (relative trunk twist) as the torso sequence marker.
-        # shoulder_omega (absolute thorax) peaks before pelvis because it includes
-        # pelvis_omega, making it an unreliable sequence marker.
-        peak_hip_frame      = int(np.argmax(np.abs(p_omega_sw)))
-        peak_shoulder_frame = int(np.argmax(np.abs(lumbar_omega_sw)))
+        # Use 3D pelvis omega magnitude for pelvis peak (matches Driveline pipeline).
+        # Validated ground truth: ~50ms pelvis-before-torso (Driveline landmarks).
+        def _om1d(col):
+            if col not in data.columns: return np.zeros(len(pelvis_omega))
+            arr = np.unwrap(np.deg2rad(data[col].values))
+            if HAS_SCIPY:
+                return savgol_smooth_and_diff(butter_lowpass_filter(arr, cutoff_hz, fs), window=window_size, polyorder=3, deriv=1, dt=dt)
+            return np.gradient(smooth_data(arr, 11), dt)
+
+        pelvis_om3d = np.sqrt(pelvis_omega**2 + _om1d('pelvis_tilt')**2 + _om1d('pelvis_list')**2)
+        torso_om3d  = np.sqrt(shoulder_omega**2 + _om1d('lumbar_bending')**2)
+
+        peak_hip_frame      = int(np.argmax(pelvis_om3d[swing_start:]))
+        peak_shoulder_frame = int(np.argmax(torso_om3d[swing_start:]))
         peak_arm_frame      = int(np.argmax(np.abs(arm_omega_sw))) if np.sum(np.abs(arm_omega_sw)) > 0 else peak_shoulder_frame + 1
 
         sequence_timing_ms = float((peak_shoulder_frame - peak_hip_frame) * dt * 1000.0)
-        # BUG 3 FIX: At 60Hz, 1 frame = 16.7ms. Allow ±1 frame tolerance.
         frame_tol = 1
         proper_sequence = bool(
             (peak_hip_frame - frame_tol) <= peak_shoulder_frame and
@@ -1157,6 +1165,55 @@ class RefinedHittingOptimizer:
 
         return result
 
+    def _calculate_trc_sequence_timing(self, trc_data: pd.DataFrame, mot_data: pd.DataFrame) -> float:
+        """Compute pelvis-to-torso sequence timing (ms) from TRC marker velocities.
+        Uses hip joint center midpoint for pelvis and thorax proximal marker for torso.
+        Returns positive ms = pelvis peaks before torso (correct sequence)."""
+        from scipy.signal import butter, filtfilt, savgol_filter
+        t = trc_data['Time'].values if 'Time' in trc_data.columns else trc_data['time'].values
+        dt = np.diff(t).mean()
+        fs = 1.0 / dt
+
+        def filt(arr):
+            b, a = butter(4, min(15.0 / (0.5 * fs), 0.99), btype='low')
+            return filtfilt(b, a, arr)
+
+        def speed_mag(cx, cy, cz):
+            w = max(11, int(0.1 * fs) | 1)
+            vx = savgol_filter(filt(cx), w, 3, deriv=1, delta=dt)
+            vy = savgol_filter(filt(cy), w, 3, deriv=1, delta=dt)
+            vz = savgol_filter(filt(cz), w, 3, deriv=1, delta=dt)
+            return np.sqrt(vx**2 + vy**2 + vz**2)
+
+        # Pelvis: midpoint of hip joint centers
+        pelvis_cols = [('RASI','LASI'), ('rhjc','lhjc'), ('RHip','LHip')]
+        pelvis_spd = None
+        for r, l in pelvis_cols:
+            if f'{r}_X' in trc_data.columns and f'{l}_X' in trc_data.columns:
+                cx = (trc_data[f'{r}_X'].values + trc_data[f'{l}_X'].values) / 2
+                cy = (trc_data[f'{r}_Y'].values + trc_data[f'{l}_Y'].values) / 2
+                cz = (trc_data[f'{r}_Z'].values + trc_data[f'{l}_Z'].values) / 2
+                pelvis_spd = speed_mag(cx, cy, cz)
+                break
+
+        # Thorax: CLAV or STRN marker
+        thorax_spd = None
+        for m in ['CLAV', 'STRN', 'C7', 'T10']:
+            if f'{m}_X' in trc_data.columns:
+                thorax_spd = speed_mag(trc_data[f'{m}_X'].values, trc_data[f'{m}_Y'].values, trc_data[f'{m}_Z'].values)
+                break
+
+        if pelvis_spd is None or thorax_spd is None:
+            return None
+
+        # Find swing start from mot fp_10_time, mapped to TRC time base
+        fp_time = mot_data.attrs.get('fp_10_time', t[len(t)//3])
+        fp_idx = int(np.argmin(np.abs(t - fp_time)))
+
+        peak_pelvis = fp_idx + int(np.argmax(pelvis_spd[fp_idx:]))
+        peak_thorax = fp_idx + int(np.argmax(thorax_spd[fp_idx:]))
+        return float((peak_thorax - peak_pelvis) * dt * 1000.0)
+
     def comprehensive_diagnosis(self, kinematics: pd.DataFrame, filename: str, trc_data: pd.DataFrame = None, verbose: bool = False) -> Dict:
         trc_metrics = self.calculate_trc_metrics(trc_data) if trc_data is not None else {'max_hand_speed_mph': 0.0, 'max_hand_speed_mps': 0.0}
         wrist_speed_mps = float(trc_metrics.get('max_hand_speed_mps', 0.0))
@@ -1167,6 +1224,18 @@ class RefinedHittingOptimizer:
         linear_id  = self.calculate_linear_inverse_dynamics(kinematics)
         plant_frame = stride['plant_frame'] if stride else len(kinematics) // 2
         weight_shift = self.calculate_weight_shift(kinematics, plant_frame)
+
+        # Override sequence timing with TRC-derived value when thorax markers are available.
+        # Joint-angle-based sequence timing is unreliable because absolute thorax velocity
+        # cannot be reconstructed from pelvis_rotation + lumbar_rotation alone.
+        if trc_data is not None and rotation is not None:
+            try:
+                seq_ms = self._calculate_trc_sequence_timing(trc_data, kinematics)
+                if seq_ms is not None:
+                    rotation['sequence_timing_ms'] = seq_ms
+                    rotation['proper_sequence'] = bool(seq_ms >= 0)
+            except Exception:
+                pass
 
         # GRF estimation from whole-body CoM (requires TRC markers)
         grf_data = {}
