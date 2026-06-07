@@ -360,6 +360,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // Hide data-warning (no longer needed without exit velo guess)
         document.getElementById('data-warning').classList.add('hidden');
 
+        // ---- PELVIS ANGULAR VELOCITY ----
+        const pelvisOmega = diagnosis.metrics?.peak_pelvis_omega_3d_deg_s || 0;
+        document.getElementById('pelvis-omega-value').textContent = pelvisOmega > 0 ? pelvisOmega.toFixed(0) : '—';
+
         // ---- SWINGAI 4-PHASE CARDS ----
         if (diagnosis.swingai_report) {
             renderSwingAIReport(diagnosis.swingai_report);

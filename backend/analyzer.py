@@ -417,6 +417,7 @@ class RefinedSwingMetrics:
     rotational_acceleration_deg_s2: float = 0.0
     body_rotation_ratio_pct: float = 0.0
     max_hand_speed_mph: float = 0.0
+    peak_pelvis_omega_3d_deg_s: float = 0.0
 
 def _build_data_quality(trc_metrics: dict, has_grf: bool = False) -> dict:
     """
@@ -1474,6 +1475,7 @@ class RefinedHittingOptimizer:
             rotational_acceleration_deg_s2=rotation.get('rotational_acceleration_deg_s2', 0.0) if rotation else 0.0,
             body_rotation_ratio_pct=rotation.get('body_rotation_ratio_pct', 0.0) if rotation else 0.0,
             max_hand_speed_mph=trc_metrics.get('max_hand_speed_mph', 0.0),
+            peak_pelvis_omega_3d_deg_s=rotation.get('peak_pelvis_omega_3d_deg_s', 0.0) if rotation else 0.0,
         )
         
         # Terminal printing if verbose
