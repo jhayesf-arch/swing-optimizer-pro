@@ -665,3 +665,132 @@ header p { color: var(--text-muted); font-size: 1.1rem; }
 
 /* History panel table */
 #history-table td, #history-table th { color: var(--text-primary, #e2e8f0); }
+
+/* ============================================================
+   ✦ UI/UX ENHANCEMENT LAYER (additive — safe to revert)
+   ============================================================ */
+:root {
+    /* Slightly brighter muted tone — improves contrast on dark bg (WCAG AA) */
+    --text-muted: #a4b3c6;
+    /* Reusable design tokens */
+    --ease-out-quint: cubic-bezier(0.16, 1, 0.3, 1);
+    --radius-lg: 20px;
+    --shadow-card: 0 25px 50px -12px rgba(0, 0, 0, 0.55);
+    --shadow-card-hover: 0 30px 60px -12px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255,255,255,0.06);
+    --ring-accent: rgba(0, 240, 255, 0.55);
+}
+
+/* Smooth scrolling + text selection accent */
+html { scroll-behavior: smooth; }
+::selection { background: rgba(14, 165, 233, 0.35); color: #fff; }
+
+/* Global custom scrollbar (was scoped only to .file-list) */
+* { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.18) transparent; }
+body::-webkit-scrollbar { width: 10px; }
+body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 5px; }
+body::-webkit-scrollbar-thumb:hover { background: var(--accent-blue); }
+
+/* Fluid heading — scales gracefully from mobile to desktop */
+h1 { font-size: clamp(2.1rem, 6vw, 3rem); }
+header p { font-size: clamp(0.95rem, 2.5vw, 1.1rem); }
+
+/* Accessible focus ring for keyboard users (no effect on mouse clicks) */
+:focus-visible {
+    outline: 2px solid var(--ring-accent);
+    outline-offset: 3px;
+    border-radius: 6px;
+}
+.btn:focus-visible { outline-offset: 2px; }
+/* Remove the default ugly outline only when our focus-visible ring applies */
+:focus:not(:focus-visible) { outline: none; }
+
+/* Subtle top-light gradient on glass cards for depth + lift on hover */
+.glass-card {
+    background-image: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0) 45%);
+    transition: transform 0.35s var(--ease-out-quint),
+                box-shadow 0.35s var(--ease-out-quint),
+                border-color 0.35s var(--ease-out-quint);
+}
+.panel:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-card-hover);
+    border-color: rgba(255,255,255,0.14);
+}
+/* Hero & modal shouldn't lift on hover (they're focal / fixed) */
+.swing-score-hero:hover, .modal-content:hover { transform: none; }
+.swing-score-hero.glow-border:hover::before { opacity: 0.55; }
+
+/* Button shine sweep + crisper press feedback */
+.btn { position: relative; overflow: hidden; }
+.btn::after {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(120deg, transparent 30%, rgba(255,255,255,0.18) 50%, transparent 70%);
+    transform: translateX(-120%);
+    transition: transform 0.6s var(--ease-out-quint);
+    pointer-events: none;
+}
+.btn:hover::after { transform: translateX(120%); }
+.btn:active { transform: translateY(0) scale(0.98); }
+
+/* File browse label behaves like a button on focus too */
+label.btn { cursor: pointer; }
+
+/* Upload zone: richer hover + idle breathing affordance */
+.upload-zone { cursor: pointer; }
+.upload-zone:hover {
+    border-color: rgba(0, 240, 255, 0.45);
+    background: rgba(0, 240, 255, 0.03);
+}
+.upload-icon { transition: transform 0.4s var(--ease-out-quint); }
+.upload-zone:hover .upload-icon, .upload-zone.dragover .upload-icon { transform: translateY(-4px) scale(1.06); }
+
+/* File list rows: clearer hover + active affordance */
+.file-item:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.25); }
+
+/* Score number larger & glowing inside the ring for stronger focal point */
+.score-number {
+    font-size: 2.4rem;
+    text-shadow: 0 0 18px rgba(0, 240, 255, 0.35);
+}
+.hero-stat-value { letter-spacing: -0.5px; }
+
+/* Phase / dimension tiles: subtle interactive depth */
+.dim-tile { transition: background 0.2s ease, transform 0.2s ease, border-color 0.2s ease; }
+.dim-tile:hover { transform: translateX(2px); border-color: rgba(255,255,255,0.12); }
+
+/* Skill pills: springier active state */
+.skill-pill { transition: all 0.2s var(--ease-out-quint); }
+.skill-pill:active { transform: scale(0.95); }
+
+/* Modal: gentle scale-in entrance (was opacity-only) */
+.modal-content { animation: modal-in 0.32s var(--ease-out-quint) forwards; }
+@keyframes modal-in {
+    from { opacity: 0; transform: translateY(12px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Inputs: clearer hover state before focus */
+.input-dark:hover { border-color: rgba(255,255,255,0.3); }
+
+/* Findings / prescriptions rows: hairline separators for scanability */
+.findings-list li, .recommendation-list li { padding-bottom: 0.1rem; }
+
+/* Respect users who prefer reduced motion — disable decorative motion */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+    }
+    .glow { animation: none !important; }
+}
+
+/* Tighter, more comfortable padding on small screens */
+@media (max-width: 600px) {
+    .container { padding: 1.25rem; }
+    .glass-card { padding: 1.4rem; border-radius: 16px; }
+    header { margin-bottom: 2rem; }
+    .swing-score-hero { padding: 1.5rem; gap: 1.5rem; }
+    .hero-stats { gap: 1.25rem; justify-content: center; }
+}

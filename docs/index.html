@@ -3,6 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#060810">
+    <meta name="color-scheme" content="dark">
     <title>Swing Optimizer Pro — SwingAI-Referenced Biomechanics</title>
     <meta name="description" content="Research-grade baseball hitting biomechanics analysis. Powered by OpenCap motion capture data with SwingAI-inspired 12-dimension scoring.">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Outfit:wght@700;800&display=swap" rel="stylesheet">
@@ -173,7 +175,7 @@
     </div>
 
     <!-- Loading Overlay -->
-    <div class="loading-overlay hidden" id="loading-overlay">
+    <div class="loading-overlay hidden" id="loading-overlay" role="status" aria-live="polite">
         <div class="spinner-container">
             <div class="spinner"></div>
             <h3>Running Biomechanical Analysis...</h3>
@@ -237,9 +239,9 @@
     </div>
 
     <!-- Error Toast -->
-    <div class="error-toast" id="error-toast">
+    <div class="error-toast" id="error-toast" role="alert" aria-live="assertive">
         <span id="error-message">Error message</span>
-        <button id="close-toast">&times;</button>
+        <button id="close-toast" aria-label="Dismiss error">&times;</button>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
