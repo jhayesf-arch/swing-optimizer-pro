@@ -725,7 +725,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(45, W / H, 0.01, 100);
-        camera.position.set(0, 0, 3);
+        camera.position.set(0, 0, 5);
 
         // Orbit controls via mouse drag
         let isDragging = false, prevX = 0, prevY = 0;
@@ -836,11 +836,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         function drawStaticFallback(hlBones, hlColor) {
             // Simple stick figure in T-pose when no 3D data
+            const s = 1.8; // scale
             const pts = {
-                Neck:[0,0.6,0], RShoulder:[0.25,0.5,0], LShoulder:[-0.25,0.5,0],
-                RElbow:[0.45,0.2,0], LElbow:[-0.45,0.2,0], RWrist:[0.55,-0.05,0], LWrist:[-0.55,-0.05,0],
-                midHip:[0,0,0], RHip:[0.12,-0.05,0], LHip:[-0.12,-0.05,0],
-                RKnee:[0.14,-0.45,0], LKnee:[-0.14,-0.45,0], RAnkle:[0.15,-0.85,0], LAnkle:[-0.15,-0.85,0],
+                Neck:[0,0.6*s,0], RShoulder:[0.25*s,0.5*s,0], LShoulder:[-0.25*s,0.5*s,0],
+                RElbow:[0.45*s,0.2*s,0], LElbow:[-0.45*s,0.2*s,0], RWrist:[0.55*s,-0.05*s,0], LWrist:[-0.55*s,-0.05*s,0],
+                midHip:[0,0,0], RHip:[0.12*s,-0.05*s,0], LHip:[-0.12*s,-0.05*s,0],
+                RKnee:[0.14*s,-0.45*s,0], LKnee:[-0.14*s,-0.45*s,0], RAnkle:[0.15*s,-0.85*s,0], LAnkle:[-0.15*s,-0.85*s,0],
             };
             for (const [a,b] of BONE_CONNECTIONS) {
                 if (!pts[a]||!pts[b]) continue;
@@ -855,9 +856,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.normalize());
                 pivot.add(mesh);
             }
-            const headGeo = new THREE.SphereGeometry(0.055,12,12);
+            const headGeo = new THREE.SphereGeometry(0.1,12,12);
             const headMesh = new THREE.Mesh(headGeo, new THREE.MeshBasicMaterial({color:0x4a5568}));
-            headMesh.position.set(0, 0.72, 0);
+            headMesh.position.set(0, 0.72*s, 0);
             pivot.add(headMesh);
         }
 
