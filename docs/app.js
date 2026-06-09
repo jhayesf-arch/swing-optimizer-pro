@@ -710,172 +710,175 @@ document.addEventListener('DOMContentLoaded', () => {
         ['LHip','LKnee'],['LKnee','LAnkle'],
     ];
 
+    // Visual palette for the skeleton (kept brighter than the panel bg for contrast)
+    const SKEL_BONE = 0x7c8db5;     // slate-blue, clearly visible on #0d1117
+    const SKEL_JOINT = 0xaeb9d4;
+    const SKEL_HEAD = 0x8b9bc4;
+    const JOINT_NAMES = ['Neck','RShoulder','LShoulder','RElbow','LElbow','RWrist','LWrist','midHip','RHip','LHip','RKnee','LKnee','RAnkle','LAnkle'];
+
     function init3DSkeleton(skeletonFrames) {
         const container = document.getElementById('skeleton-3d');
         if (!container || typeof THREE === 'undefined') return;
         container.innerHTML = '';
 
-        const W = 260;
-        const H = 460;
+        const W = container.clientWidth || 260;
+        const H = container.clientHeight || 460;
 
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(W, H);
-        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         container.appendChild(renderer.domElement);
 
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(45, W / H, 0.01, 100);
+        const camera = new THREE.PerspectiveCamera(45, W / H, 0.001, 5000);
         camera.position.set(0, 0, 5);
 
-        // Orbit controls via mouse drag
-        let isDragging = false, prevX = 0, prevY = 0;
-        let rotX = 0.2, rotY = 0;
+        // pivot rotates on drag; figure holds the meshes and is recentered each build
         const pivot = new THREE.Group();
+        const figure = new THREE.Group();
+        pivot.add(figure);
         scene.add(pivot);
 
-        renderer.domElement.addEventListener('mousedown', e => { isDragging = true; prevX = e.clientX; prevY = e.clientY; container.style.cursor = 'grabbing'; });
-        renderer.domElement.addEventListener('touchstart', e => { isDragging = true; prevX = e.touches[0].clientX; prevY = e.touches[0].clientY; });
-        window.addEventListener('mouseup', () => { isDragging = false; container.style.cursor = 'grab'; });
-        window.addEventListener('touchend', () => { isDragging = false; });
-        window.addEventListener('mousemove', e => {
-            if (!isDragging) return;
-            rotY += (e.clientX - prevX) * 0.01;
-            rotX += (e.clientY - prevY) * 0.01;
-            prevX = e.clientX; prevY = e.clientY;
-            pivot.rotation.y = rotY; pivot.rotation.x = rotX;
-        });
-        window.addEventListener('touchmove', e => {
-            if (!isDragging) return;
-            rotY += (e.touches[0].clientX - prevX) * 0.01;
-            rotX += (e.touches[0].clientY - prevY) * 0.01;
-            prevX = e.touches[0].clientX; prevY = e.touches[0].clientY;
-            pivot.rotation.y = rotY; pivot.rotation.x = rotX;
-        });
+        let rotX = 0.1, rotY = 0.3;
+        pivot.rotation.set(rotX, rotY, 0);
 
-        // Build pose from first frame (or contact frame) of skeleton_frames
-        const boneMeshes = {};
-        const jointMeshes = {};
+        function render() { renderer.render(scene, camera); }
 
-        function getPose(frames, frameIdx) {
+        // Orbit controls via mouse / touch drag — re-render on move so it updates
+        // even if the rAF loop is throttled (e.g. background tab).
+        let isDragging = false, prevX = 0, prevY = 0;
+        function startDrag(x, y) { isDragging = true; prevX = x; prevY = y; container.style.cursor = 'grabbing'; }
+        function moveDrag(x, y) {
+            if (!isDragging) return;
+            rotY += (x - prevX) * 0.01;
+            rotX = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, rotX + (y - prevY) * 0.01));
+            prevX = x; prevY = y;
+            pivot.rotation.y = rotY; pivot.rotation.x = rotX;
+            render();
+        }
+        function endDrag() { isDragging = false; container.style.cursor = 'grab'; }
+        renderer.domElement.addEventListener('mousedown', e => startDrag(e.clientX, e.clientY));
+        renderer.domElement.addEventListener('touchstart', e => { startDrag(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+        window.addEventListener('mouseup', endDrag);
+        window.addEventListener('touchend', endDrag);
+        window.addEventListener('mousemove', e => moveDrag(e.clientX, e.clientY));
+        window.addEventListener('touchmove', e => { if (isDragging) { moveDrag(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); } }, { passive: false });
+
+        const contactFrame = skeletonFrames?.contact_frame || 0;
+        const frames = skeletonFrames?.frames || null;
+
+        function getPose(frameIdx) {
             if (!frames || !frames.length) return null;
             return frames[Math.min(frameIdx, frames.length - 1)];
         }
 
-        // Detect coordinate scale: TRC markers are in mm (values ~500-2000), mot skeleton in m (values ~0-2)
-        const sampleVals = frames && frames.length ? Object.values(frames[0]).filter(Array.isArray).map(v => Math.abs(v[1])) : [];
-        const maxY = sampleVals.length ? Math.max(...sampleVals) : 0;
-        const scale = maxY > 10 ? 0.001 : 1.0; // mm → m if values are large
+        // Detect coordinate scale once (TRC markers in mm ~hundreds/thousands → m).
+        const sampleVals = frames && frames.length
+            ? Object.values(frames[0]).filter(Array.isArray).flat().map(Math.abs) : [];
+        const maxAbs = sampleVals.length ? Math.max(...sampleVals) : 0;
+        const scale = maxAbs > 10 ? 0.001 : 1.0;
 
         function toV3(pose, name) {
-            const p = pose[name];
-            if (!p) return null;
-            return new THREE.Vector3(p[0] * scale, p[1] * scale, p[2] * scale);
+            const p = pose && pose[name];
+            return p ? new THREE.Vector3(p[0] * scale, p[1] * scale, p[2] * scale) : null;
         }
 
-        function centroid(frames) {
-            if (!frames || !frames.length) return new THREE.Vector3();
-            const pose = frames[0];
-            let cx = 0, cy = 0, cz = 0, n = 0;
-            for (const v of Object.values(pose)) { if (Array.isArray(v)) { cx += v[0]; cy += v[1]; cz += v[2]; n++; } }
-            return new THREE.Vector3(cx / n / 1000, cy / n / 1000, cz / n / 1000);
+        function addBone(va, vb, isHL, hlColor) {
+            const dir = new THREE.Vector3().subVectors(vb, va);
+            const len = dir.length();
+            if (len < 1e-6) return;
+            const r = isHL ? 0.022 : 0.013;
+            const geo = new THREE.CylinderGeometry(r, r, len, 8);
+            const mat = new THREE.MeshBasicMaterial({ color: isHL ? new THREE.Color(hlColor) : SKEL_BONE });
+            const mesh = new THREE.Mesh(geo, mat);
+            mesh.position.copy(va).add(vb).multiplyScalar(0.5);
+            mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+            figure.add(mesh);
         }
 
         function buildSkeleton(pose, hlBones, hlColor) {
-            // Clear pivot
-            while (pivot.children.length) pivot.remove(pivot.children[0]);
+            while (figure.children.length) figure.remove(figure.children[0]);
 
-            if (!pose) {
-                // Fallback: draw static T-pose stick figure
-                drawStaticFallback(hlBones, hlColor);
-                return;
-            }
-
-            const center = new THREE.Vector3();
-            let n = 0;
-            for (const v of Object.values(pose)) { if (Array.isArray(v)) { center.add(new THREE.Vector3(v[0]/1000, v[1]/1000, v[2]/1000)); n++; } }
-            center.divideScalar(n);
+            if (!pose) { drawStaticFallback(hlBones, hlColor); frameCamera(); return; }
 
             for (const [a, b] of BONE_CONNECTIONS) {
                 const va = toV3(pose, a), vb = toV3(pose, b);
                 if (!va || !vb) continue;
-                const key = `${a}|${b}`;
-                const isHL = hlBones && (hlBones.has(key) || hlBones.has(`${b}|${a}`));
-                const color = isHL ? new THREE.Color(hlColor) : new THREE.Color(0x4a5568);
-                const lineW = isHL ? 3 : 1.5;
-
-                const dir = new THREE.Vector3().subVectors(vb, va);
-                const len = dir.length();
-                const mid = new THREE.Vector3().addVectors(va, vb).multiplyScalar(0.5).sub(center);
-
-                const geo = new THREE.CylinderGeometry(isHL ? 0.012 : 0.007, isHL ? 0.012 : 0.007, len, 6);
-                const mat = new THREE.MeshBasicMaterial({ color });
-                const mesh = new THREE.Mesh(geo, mat);
-                mesh.position.copy(mid);
-                mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.normalize());
-                pivot.add(mesh);
+                const isHL = hlBones && (hlBones.has(`${a}|${b}`) || hlBones.has(`${b}|${a}`));
+                addBone(va, vb, isHL, hlColor);
             }
 
-            // Joints
-            const jGeo = new THREE.SphereGeometry(0.018, 8, 8);
-            for (const name of ['Neck','RShoulder','LShoulder','RElbow','LElbow','RWrist','LWrist','midHip','RHip','LHip','RKnee','LKnee','RAnkle','LAnkle']) {
+            const jGeo = new THREE.SphereGeometry(0.025, 12, 12);
+            for (const name of JOINT_NAMES) {
                 const v = toV3(pose, name);
                 if (!v) continue;
                 const isHL = hlBones && [...(hlBones || [])].some(k => k.includes(name));
-                const mat = new THREE.MeshBasicMaterial({ color: isHL ? new THREE.Color(hlColor) : 0x718096 });
-                const mesh = new THREE.Mesh(jGeo, mat);
-                mesh.position.copy(v.clone().sub(center));
-                pivot.add(mesh);
+                const mesh = new THREE.Mesh(jGeo, new THREE.MeshBasicMaterial({ color: isHL ? new THREE.Color(hlColor) : SKEL_JOINT }));
+                mesh.position.copy(v);
+                figure.add(mesh);
             }
 
-            // Head
-            const neck = toV3(pose, 'Neck');
+            // Head: sit it above the neck along the trunk (neck→midHip) axis.
+            const neck = toV3(pose, 'Neck'), hip = toV3(pose, 'midHip');
             if (neck) {
-                const headGeo = new THREE.SphereGeometry(0.055, 12, 12);
-                const headMat = new THREE.MeshBasicMaterial({ color: 0x4a5568, wireframe: false });
-                const headMesh = new THREE.Mesh(headGeo, headMat);
-                headMesh.position.copy(neck.clone().sub(center).add(new THREE.Vector3(0, 0.1, 0)));
-                pivot.add(headMesh);
+                const up = hip ? new THREE.Vector3().subVectors(neck, hip).normalize() : new THREE.Vector3(0, 1, 0);
+                const headGeo = new THREE.SphereGeometry(0.085, 16, 16);
+                const headMesh = new THREE.Mesh(headGeo, new THREE.MeshBasicMaterial({ color: SKEL_HEAD }));
+                headMesh.position.copy(neck).add(up.multiplyScalar(0.12));
+                figure.add(headMesh);
             }
+            frameCamera();
         }
 
         function drawStaticFallback(hlBones, hlColor) {
-            // Simple stick figure in T-pose when no 3D data
-            const figScale = 1.8;
+            // Simple stick figure in T-pose when no 3D data is available.
+            const f = 1.8;
             const pts = {
-                Neck:[0,0.6*figScale,0], RShoulder:[0.25*figScale,0.5*figScale,0], LShoulder:[-0.25*figScale,0.5*figScale,0],
-                RElbow:[0.45*figScale,0.2*figScale,0], LElbow:[-0.45*figScale,0.2*figScale,0], RWrist:[0.55*figScale,-0.05*figScale,0], LWrist:[-0.55*figScale,-0.05*figScale,0],
-                midHip:[0,0,0], RHip:[0.12*figScale,-0.05*figScale,0], LHip:[-0.12*figScale,-0.05*figScale,0],
-                RKnee:[0.14*figScale,-0.45*figScale,0], LKnee:[-0.14*figScale,-0.45*figScale,0], RAnkle:[0.15*figScale,-0.85*figScale,0], LAnkle:[-0.15*figScale,-0.85*figScale,0],
+                Neck:[0,0.6*f,0], RShoulder:[0.25*f,0.5*f,0], LShoulder:[-0.25*f,0.5*f,0],
+                RElbow:[0.45*f,0.2*f,0], LElbow:[-0.45*f,0.2*f,0], RWrist:[0.55*f,-0.05*f,0], LWrist:[-0.55*f,-0.05*f,0],
+                midHip:[0,0,0], RHip:[0.12*f,-0.05*f,0], LHip:[-0.12*f,-0.05*f,0],
+                RKnee:[0.14*f,-0.45*f,0], LKnee:[-0.14*f,-0.45*f,0], RAnkle:[0.15*f,-0.85*f,0], LAnkle:[-0.15*f,-0.85*f,0],
             };
-            for (const [a,b] of BONE_CONNECTIONS) {
-                if (!pts[a]||!pts[b]) continue;
-                const key=`${a}|${b}`;
-                const isHL = hlBones&&(hlBones.has(key)||hlBones.has(`${b}|${a}`));
-                const dir = new THREE.Vector3(...pts[b]).sub(new THREE.Vector3(...pts[a]));
-                const len = dir.length();
-                const mid = new THREE.Vector3(...pts[a]).add(new THREE.Vector3(...pts[b])).multiplyScalar(0.5);
-                const geo = new THREE.CylinderGeometry(isHL?0.012:0.007,isHL?0.012:0.007,len,6);
-                const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({color: isHL?new THREE.Color(hlColor):0x4a5568}));
-                mesh.position.copy(mid);
-                mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.normalize());
-                pivot.add(mesh);
+            for (const [a, b] of BONE_CONNECTIONS) {
+                if (!pts[a] || !pts[b]) continue;
+                const isHL = hlBones && (hlBones.has(`${a}|${b}`) || hlBones.has(`${b}|${a}`));
+                addBone(new THREE.Vector3(...pts[a]), new THREE.Vector3(...pts[b]), isHL, hlColor);
             }
-            const headGeo = new THREE.SphereGeometry(0.1,12,12);
-            const headMesh = new THREE.Mesh(headGeo, new THREE.MeshBasicMaterial({color:0x4a5568}));
-            headMesh.position.set(0, 0.72*figScale, 0);
-            pivot.add(headMesh);
+            const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 16), new THREE.MeshBasicMaterial({ color: SKEL_HEAD }));
+            headMesh.position.set(0, 0.74 * f, 0);
+            figure.add(headMesh);
         }
 
-        const contactFrame = skeletonFrames?.contact_frame || 0;
-        const frames = skeletonFrames?.frames || null;
-        const pose = getPose(frames, contactFrame);
-        buildSkeleton(pose, null, '#ffffff');
+        // Recenter the figure on its bounding box and pull the camera back so the
+        // whole skeleton fills the frame — robust to any units or world offset.
+        function frameCamera() {
+            const savedRot = pivot.rotation.clone();
+            pivot.rotation.set(0, 0, 0);
+            figure.position.set(0, 0, 0);
+            pivot.updateMatrixWorld(true);
 
-        pivot.rotation.y = 0.3;
-        pivot.rotation.x = 0.1;
-        rotY = 0.3; rotX = 0.1;
+            const box = new THREE.Box3().setFromObject(figure);
+            if (box.isEmpty()) { pivot.rotation.copy(savedRot); return; }
 
+            const center = box.getCenter(new THREE.Vector3());
+            figure.position.copy(center).multiplyScalar(-1);
+
+            const sphere = box.getBoundingSphere(new THREE.Sphere());
+            const radius = Math.max(sphere.radius, 0.1);
+            const dist = (radius / Math.sin((camera.fov * Math.PI / 180) / 2)) * 1.15;
+            camera.position.set(0, 0, dist);
+            camera.near = Math.max(dist - radius * 2, 0.001);
+            camera.far = dist + radius * 4;
+            camera.updateProjectionMatrix();
+
+            pivot.rotation.copy(savedRot);
+            pivot.updateMatrixWorld(true);
+            render();
+        }
+
+        const pose = getPose(contactFrame);
         scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+        buildSkeleton(pose, null, '#ffffff');
 
         function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
         animate();
