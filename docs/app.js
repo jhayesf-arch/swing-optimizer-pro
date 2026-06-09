@@ -761,7 +761,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const W = container.clientWidth || 260;
         const H = container.clientHeight || 460;
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        let renderer;
+        try {
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        } catch (err) {
+            console.error('[skeleton] WebGL unavailable:', err);
+            container.innerHTML = '<p class="small text-muted" style="padding:1rem;text-align:center;">3D viewer needs WebGL, which appears to be disabled or unsupported in this browser.</p>';
+            return;
+        }
         renderer.setSize(W, H);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         container.appendChild(renderer.domElement);
@@ -955,11 +962,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const pose = getPose(contactFrame);
+        // Diagnostics so an empty/blank viewer can be traced from the console.
+        console.info('[skeleton] frames:', frames ? frames.length : 0,
+            '| markers in frame 0:', pose ? Object.keys(pose) : '(none)',
+            '| matched joints:', pose ? JOINT_NAMES.filter(n => Array.isArray(pose[n])).length : 0,
+            '| scale:', scale);
+
         // Lighting rig (fixed to the scene, so shading shifts as the figure rotates).
         scene.add(new THREE.AmbientLight(0xb9c4dc, 0.75));
         const keyLight = new THREE.DirectionalLight(0xffffff, 1.0); keyLight.position.set(2, 4, 3); scene.add(keyLight);
         const rimLight = new THREE.DirectionalLight(0x5b8cff, 0.55); rimLight.position.set(-3, 1.5, -2.5); scene.add(rimLight);
-        buildSkeleton(pose, null, '#ffffff');
+
+        try {
+            buildSkeleton(pose, null, '#ffffff');
+        } catch (err) {
+            console.error('[skeleton] build failed, showing reference pose:', err);
+            try { buildSkeleton(null, null, '#ffffff'); } catch (e) { /* give up gracefully */ }
+        }
 
         function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
         animate();
