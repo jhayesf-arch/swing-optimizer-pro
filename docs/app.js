@@ -711,10 +711,43 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
 
     // Visual palette for the skeleton (kept brighter than the panel bg for contrast)
-    const SKEL_BONE = 0x7c8db5;     // slate-blue, clearly visible on #0d1117
-    const SKEL_JOINT = 0xaeb9d4;
-    const SKEL_HEAD = 0x8b9bc4;
+    const SKEL_BONE = 0x8b97b8;     // limb / segment colour
+    const SKEL_JOINT = 0xe2e8f5;    // bright mocap-style joint markers
+    const SKEL_HEAD = 0x9aa6c8;
+    const SKEL_BAT = 0xc9a06a;      // wood bat
     const JOINT_NAMES = ['Neck','RShoulder','LShoulder','RElbow','LElbow','RWrist','LWrist','midHip','RHip','LHip','RKnee','LKnee','RAnkle','LAnkle'];
+
+    // Anatomically-tapered limb radii (metres) keyed by "proximal|distal".
+    const BONE_RADII = {
+        'Neck|midHip':[0.05,0.066],                                   // trunk
+        'Neck|RShoulder':[0.03,0.028],'Neck|LShoulder':[0.03,0.028],  // clavicle
+        'RShoulder|RElbow':[0.034,0.025],'LShoulder|LElbow':[0.034,0.025],
+        'RElbow|RWrist':[0.025,0.018],'LElbow|LWrist':[0.025,0.018],
+        'midHip|RHip':[0.055,0.045],'midHip|LHip':[0.055,0.045],
+        'RHip|RKnee':[0.058,0.04],'LHip|LKnee':[0.058,0.04],          // thigh
+        'RKnee|RAnkle':[0.04,0.026],'LKnee|LAnkle':[0.04,0.026],      // shank
+        'RAnkle|RToe':[0.03,0.02],'LAnkle|LToe':[0.03,0.02],          // foot
+    };
+    const JOINT_RADII = {
+        midHip:0.05, RShoulder:0.04, LShoulder:0.04, RHip:0.044, LHip:0.044,
+        RKnee:0.04, LKnee:0.04, RElbow:0.034, LElbow:0.034,
+        RWrist:0.032, LWrist:0.032, RAnkle:0.036, LAnkle:0.036, Neck:0.034,
+    };
+
+    // Default reference pose: a right-handed hitter at contact (hips fired open,
+    // lead leg braced, hands extended out front, bat through the zone). Metres,
+    // Y up, +Z toward the pitcher. Shown when no captured marker data is present.
+    const RIGHTY_SWING_POSE = {
+        midHip:[0,0.92,0], Neck:[-0.05,1.46,-0.02],
+        RHip:[0.13,0.93,-0.05], LHip:[-0.13,0.91,0.05],
+        RKnee:[0.16,0.48,-0.16], LKnee:[-0.16,0.50,0.10],
+        RAnkle:[0.22,0.07,-0.30], LAnkle:[-0.18,0.05,0.16],
+        RToe:[0.24,0.02,-0.16], LToe:[-0.18,0.03,0.30],
+        RShoulder:[0.18,1.44,-0.10], LShoulder:[-0.20,1.42,0.06],
+        RElbow:[0.20,1.18,-0.02], LElbow:[0.05,1.22,0.14],
+        RWrist:[0.31,1.16,0.18], LWrist:[0.28,1.14,0.18],
+    };
+    const BAT_TIP = [0.64,1.42,0.30];
 
     function init3DSkeleton(skeletonFrames) {
         const container = document.getElementById('skeleton-3d');
@@ -783,17 +816,72 @@ document.addEventListener('DOMContentLoaded', () => {
             return p ? new THREE.Vector3(p[0] * scale, p[1] * scale, p[2] * scale) : null;
         }
 
-        function addBone(va, vb, isHL, hlColor) {
+        const Y_AXIS = new THREE.Vector3(0, 1, 0);
+
+        // A tapered, lit limb segment between two joints (rA = radius at va end).
+        function addBone(va, vb, rA, rB, color, hl) {
             const dir = new THREE.Vector3().subVectors(vb, va);
             const len = dir.length();
             if (len < 1e-6) return;
-            const r = isHL ? 0.022 : 0.013;
-            const geo = new THREE.CylinderGeometry(r, r, len, 8);
-            const mat = new THREE.MeshBasicMaterial({ color: isHL ? new THREE.Color(hlColor) : SKEL_BONE });
+            const k = hl ? 1.5 : 1;
+            const geo = new THREE.CylinderGeometry(rB * k, rA * k, len, 14, 1);
+            const mat = new THREE.MeshStandardMaterial({
+                color, roughness: 0.55, metalness: 0.12,
+                emissive: hl ? new THREE.Color(color) : 0x000000, emissiveIntensity: hl ? 0.45 : 0,
+            });
             const mesh = new THREE.Mesh(geo, mat);
             mesh.position.copy(va).add(vb).multiplyScalar(0.5);
-            mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+            mesh.quaternion.setFromUnitVectors(Y_AXIS, dir.normalize());
             figure.add(mesh);
+        }
+
+        // A spherical joint marker (mocap-style).
+        function addJoint(v, r, color, hl) {
+            const mat = new THREE.MeshStandardMaterial({
+                color, roughness: 0.35, metalness: 0.2,
+                emissive: hl ? new THREE.Color(color) : 0x000000, emissiveIntensity: hl ? 0.55 : 0,
+            });
+            const mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 16), mat);
+            mesh.position.copy(v);
+            figure.add(mesh);
+        }
+
+        // Draw every segment of a pose-like map {jointName: Vector3}, with taper.
+        function addBonesFor(getV, connections, hlBones, hlColor) {
+            for (const [a, b] of connections) {
+                const va = getV(a), vb = getV(b);
+                if (!va || !vb) continue;
+                const isHL = hlBones && (hlBones.has(`${a}|${b}`) || hlBones.has(`${b}|${a}`));
+                const [rA, rB] = BONE_RADII[`${a}|${b}`] || [0.022, 0.018];
+                addBone(va, vb, rA, rB, isHL ? new THREE.Color(hlColor) : SKEL_BONE, isHL);
+            }
+        }
+
+        // Joint markers + a hand bulge at each wrist + an ellipsoid head along the spine.
+        function addJointsAndExtras(getV, hlBones, hlColor) {
+            for (const name of JOINT_NAMES) {
+                const v = getV(name);
+                if (!v) continue;
+                const isHL = hlBones && [...(hlBones || [])].some(k => k.includes(name));
+                addJoint(v, (JOINT_RADII[name] || 0.03) * (isHL ? 1.4 : 1), isHL ? new THREE.Color(hlColor) : SKEL_JOINT, isHL);
+            }
+            // Hands: a small fist just past each wrist along the forearm.
+            for (const [w, e] of [['RWrist', 'RElbow'], ['LWrist', 'LElbow']]) {
+                const vw = getV(w), ve = getV(e);
+                if (!vw) continue;
+                const reach = ve ? new THREE.Vector3().subVectors(vw, ve).normalize().multiplyScalar(0.05) : new THREE.Vector3();
+                addJoint(new THREE.Vector3().addVectors(vw, reach), 0.042, SKEL_JOINT, false);
+            }
+            const neck = getV('Neck'), hip = getV('midHip');
+            if (neck) {
+                const up = hip ? new THREE.Vector3().subVectors(neck, hip).normalize() : Y_AXIS.clone();
+                const head = new THREE.Mesh(new THREE.SphereGeometry(0.092, 22, 22),
+                    new THREE.MeshStandardMaterial({ color: SKEL_HEAD, roughness: 0.5, metalness: 0.1 }));
+                head.scale.set(0.84, 1.08, 0.84);
+                head.quaternion.setFromUnitVectors(Y_AXIS, up);
+                head.position.copy(neck).add(up.clone().multiplyScalar(0.14));
+                figure.add(head);
+            }
         }
 
         function buildSkeleton(pose, hlBones, hlColor) {
@@ -801,52 +889,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (!pose) { drawStaticFallback(hlBones, hlColor); frameCamera(); return; }
 
-            for (const [a, b] of BONE_CONNECTIONS) {
-                const va = toV3(pose, a), vb = toV3(pose, b);
-                if (!va || !vb) continue;
-                const isHL = hlBones && (hlBones.has(`${a}|${b}`) || hlBones.has(`${b}|${a}`));
-                addBone(va, vb, isHL, hlColor);
-            }
-
-            const jGeo = new THREE.SphereGeometry(0.025, 12, 12);
-            for (const name of JOINT_NAMES) {
-                const v = toV3(pose, name);
-                if (!v) continue;
-                const isHL = hlBones && [...(hlBones || [])].some(k => k.includes(name));
-                const mesh = new THREE.Mesh(jGeo, new THREE.MeshBasicMaterial({ color: isHL ? new THREE.Color(hlColor) : SKEL_JOINT }));
-                mesh.position.copy(v);
-                figure.add(mesh);
-            }
-
-            // Head: sit it above the neck along the trunk (neck→midHip) axis.
-            const neck = toV3(pose, 'Neck'), hip = toV3(pose, 'midHip');
-            if (neck) {
-                const up = hip ? new THREE.Vector3().subVectors(neck, hip).normalize() : new THREE.Vector3(0, 1, 0);
-                const headGeo = new THREE.SphereGeometry(0.085, 16, 16);
-                const headMesh = new THREE.Mesh(headGeo, new THREE.MeshBasicMaterial({ color: SKEL_HEAD }));
-                headMesh.position.copy(neck).add(up.multiplyScalar(0.12));
-                figure.add(headMesh);
-            }
+            const getV = (n) => toV3(pose, n);
+            addBonesFor(getV, BONE_CONNECTIONS, hlBones, hlColor);
+            addJointsAndExtras(getV, hlBones, hlColor);
             frameCamera();
         }
 
+        // Add a tapered wooden bat from the hands out to the barrel tip, with a knob.
+        function addBat(getV) {
+            const rw = getV('RWrist'), lw = getV('LWrist');
+            if (!rw || !lw) return;
+            const grip = new THREE.Vector3().addVectors(rw, lw).multiplyScalar(0.5);
+            const tip = getV('BatTip');
+            if (!tip) return;
+            const axis = new THREE.Vector3().subVectors(tip, grip).normalize();
+            const knob = grip.clone().add(axis.clone().multiplyScalar(-0.06));
+            addBone(knob, tip, 0.016, 0.034, new THREE.Color(SKEL_BAT), false); // handle → barrel
+            addJoint(knob, 0.026, SKEL_BAT, false);                              // knob
+            addJoint(tip, 0.034, SKEL_BAT, false);                              // barrel end cap
+        }
+
         function drawStaticFallback(hlBones, hlColor) {
-            // Simple stick figure in T-pose when no 3D data is available.
-            const f = 1.8;
-            const pts = {
-                Neck:[0,0.6*f,0], RShoulder:[0.25*f,0.5*f,0], LShoulder:[-0.25*f,0.5*f,0],
-                RElbow:[0.45*f,0.2*f,0], LElbow:[-0.45*f,0.2*f,0], RWrist:[0.55*f,-0.05*f,0], LWrist:[-0.55*f,-0.05*f,0],
-                midHip:[0,0,0], RHip:[0.12*f,-0.05*f,0], LHip:[-0.12*f,-0.05*f,0],
-                RKnee:[0.14*f,-0.45*f,0], LKnee:[-0.14*f,-0.45*f,0], RAnkle:[0.15*f,-0.85*f,0], LAnkle:[-0.15*f,-0.85*f,0],
-            };
-            for (const [a, b] of BONE_CONNECTIONS) {
-                if (!pts[a] || !pts[b]) continue;
-                const isHL = hlBones && (hlBones.has(`${a}|${b}`) || hlBones.has(`${b}|${a}`));
-                addBone(new THREE.Vector3(...pts[a]), new THREE.Vector3(...pts[b]), isHL, hlColor);
-            }
-            const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 16), new THREE.MeshBasicMaterial({ color: SKEL_HEAD }));
-            headMesh.position.set(0, 0.74 * f, 0);
-            figure.add(headMesh);
+            // Default reference figure: a right-handed swing at contact (with bat).
+            const P = RIGHTY_SWING_POSE;
+            const getV = (n) => (n === 'BatTip' ? new THREE.Vector3(...BAT_TIP) : (P[n] ? new THREE.Vector3(...P[n]) : null));
+            const conns = BONE_CONNECTIONS.concat([['RAnkle', 'RToe'], ['LAnkle', 'LToe']]);
+            addBonesFor(getV, conns, hlBones, hlColor);
+            addJointsAndExtras(getV, hlBones, hlColor);
+            addBat(getV);
         }
 
         // Recenter the figure on its bounding box and pull the camera back so the
@@ -877,7 +947,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const pose = getPose(contactFrame);
-        scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+        // Lighting rig (fixed to the scene, so shading shifts as the figure rotates).
+        scene.add(new THREE.AmbientLight(0xb9c4dc, 0.75));
+        const keyLight = new THREE.DirectionalLight(0xffffff, 1.0); keyLight.position.set(2, 4, 3); scene.add(keyLight);
+        const rimLight = new THREE.DirectionalLight(0x5b8cff, 0.55); rimLight.position.set(-3, 1.5, -2.5); scene.add(rimLight);
         buildSkeleton(pose, null, '#ffffff');
 
         function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
