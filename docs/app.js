@@ -367,6 +367,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // ---- SWINGAI 4-PHASE CARDS ----
         if (diagnosis.swingai_report) {
             renderSwingAIReport(diagnosis.swingai_report);
+            init3DSkeleton(diagnosis.skeleton_frames);
             attachSkeletonClickHandlers();
         }
 
@@ -678,42 +679,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Hardcoded marker positions — mid-swing contact pose (right-handed batter, front view)
     // Pelvis open to pitcher, lead arm extended forward, back arm bent, slight squat
-    const MARKERS = {
-        Head:       [118, 32],
-        Neck:       [114, 62],
-        RShoulder:  [145, 82],   // back shoulder (right) — higher, pulled back
-        LShoulder:  [82,  88],   // lead shoulder — lower, rotated forward
-        RElbow:     [162, 148],  // back elbow — bent, tucked
-        LElbow:     [58,  130],  // lead elbow — extended forward
-        RWrist:     [150, 188],  // hands together near contact zone
-        LWrist:     [138, 192],
-        midHip:     [110, 200],
-        RHip:       [136, 208],  // back hip — rotated open
-        LHip:       [84,  208],  // lead hip — clearing
-        RKnee:      [148, 300],  // back knee — bent, weight transferring
-        LKnee:      [78,  292],  // lead knee — braced/extending
-        RAnkle:     [152, 388],  // back foot — heel rising
-        LAnkle:     [72,  385],  // lead foot — planted
-        RHeel:      [142, 408],
-        LHeel:      [64,  408],
-    };
-
-    const BONES = [
-        ['Neck','RShoulder'],['Neck','LShoulder'],
-        ['RShoulder','RElbow'],['RElbow','RWrist'],
-        ['LShoulder','LElbow'],['LElbow','LWrist'],
-        ['Neck','midHip'],
-        ['midHip','RHip'],['midHip','LHip'],
-        ['RHip','RKnee'],['RKnee','RAnkle'],['RAnkle','RHeel'],
-        ['LHip','LKnee'],['LKnee','LAnkle'],['LAnkle','LHeel'],
-    ];
-
     // Bones to highlight per metric key
     const METRIC_HIGHLIGHTS = {
         'pelvis_load':                      { bones: [['midHip','RHip'],['midHip','LHip']], color: '#f59e0b', desc: 'Pelvis — hip rotational energy storage during load.' },
         'negative_move':                    { bones: [['midHip','RHip'],['midHip','LHip'],['RHip','RKnee'],['LHip','LKnee']], color: '#a78bfa', desc: 'Pelvis & legs — backward weight shift before stride.' },
         'upper_torso_load':                 { bones: [['Neck','RShoulder'],['Neck','LShoulder'],['Neck','midHip']], color: '#8b5cf6', desc: 'Torso & shoulders — upper body coil tension at load.' },
-        'stride_length':                    { bones: [['LHip','LKnee'],['LKnee','LAnkle'],['LAnkle','LHeel']], color: '#fbbf24', desc: 'Lead leg — stride length from load to foot plant.' },
+        'stride_length':                    { bones: [['LHip','LKnee'],['LKnee','LAnkle']], color: '#fbbf24', desc: 'Lead leg — stride length from load to foot plant.' },
         'forward_move':                     { bones: [['midHip','LHip'],['LHip','LKnee']], color: '#fbbf24', desc: 'Pelvis & lead leg — forward linear momentum into the ball.' },
         'max_hip_shoulder_separation':      { bones: [['midHip','RHip'],['midHip','LHip'],['Neck','RShoulder'],['Neck','LShoulder']], color: '#10b981', desc: 'Pelvis vs shoulders — X-Factor separation angle.' },
         'pelvis_rotation_range':            { bones: [['midHip','RHip'],['midHip','LHip']], color: '#f59e0b', desc: 'Pelvis — total axial rotation from load to contact.' },
@@ -726,82 +697,199 @@ document.addEventListener('DOMContentLoaded', () => {
         'follow_through_quality':           { bones: [['midHip','RHip'],['midHip','LHip'],['Neck','midHip']], color: '#f97316', desc: 'Pelvis & torso — deceleration arc after contact.' },
     };
 
-    let activeHighlight = null;
+    // ── 3D SKELETON ─────────────────────────────────────────────────────────
+    let skeletonScene = null;
 
-    function drawBodyCanvas() {
-        const canvas = document.getElementById('body-canvas');
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const BONE_CONNECTIONS = [
+        ['Neck','RShoulder'],['Neck','LShoulder'],
+        ['RShoulder','RElbow'],['RElbow','RWrist'],
+        ['LShoulder','LElbow'],['LElbow','LWrist'],
+        ['Neck','midHip'],
+        ['midHip','RHip'],['midHip','LHip'],
+        ['RHip','RKnee'],['RKnee','RAnkle'],
+        ['LHip','LKnee'],['LKnee','LAnkle'],
+    ];
 
-        const hlBones = new Set();
-        let hlColor = '#ffffff';
-        if (activeHighlight) {
-            hlColor = activeHighlight.color;
-            for (const [a, b] of activeHighlight.bones) {
-                hlBones.add(`${a}|${b}`);
-                hlBones.add(`${b}|${a}`);
+    function init3DSkeleton(skeletonFrames) {
+        const container = document.getElementById('skeleton-3d');
+        if (!container || typeof THREE === 'undefined') return;
+        container.innerHTML = '';
+
+        const W = container.clientWidth || 260;
+        const H = container.clientHeight || 460;
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(W, H);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(renderer.domElement);
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, W / H, 0.01, 100);
+        camera.position.set(0, 0, 3);
+
+        // Orbit controls via mouse drag
+        let isDragging = false, prevX = 0, prevY = 0;
+        let rotX = 0.2, rotY = 0;
+        const pivot = new THREE.Group();
+        scene.add(pivot);
+
+        renderer.domElement.addEventListener('mousedown', e => { isDragging = true; prevX = e.clientX; prevY = e.clientY; container.style.cursor = 'grabbing'; });
+        renderer.domElement.addEventListener('touchstart', e => { isDragging = true; prevX = e.touches[0].clientX; prevY = e.touches[0].clientY; });
+        window.addEventListener('mouseup', () => { isDragging = false; container.style.cursor = 'grab'; });
+        window.addEventListener('touchend', () => { isDragging = false; });
+        window.addEventListener('mousemove', e => {
+            if (!isDragging) return;
+            rotY += (e.clientX - prevX) * 0.01;
+            rotX += (e.clientY - prevY) * 0.01;
+            prevX = e.clientX; prevY = e.clientY;
+            pivot.rotation.y = rotY; pivot.rotation.x = rotX;
+        });
+        window.addEventListener('touchmove', e => {
+            if (!isDragging) return;
+            rotY += (e.touches[0].clientX - prevX) * 0.01;
+            rotX += (e.touches[0].clientY - prevY) * 0.01;
+            prevX = e.touches[0].clientX; prevY = e.touches[0].clientY;
+            pivot.rotation.y = rotY; pivot.rotation.x = rotX;
+        });
+
+        // Build pose from first frame (or contact frame) of skeleton_frames
+        const boneMeshes = {};
+        const jointMeshes = {};
+
+        function getPose(frames, frameIdx) {
+            if (!frames || !frames.length) return null;
+            return frames[Math.min(frameIdx, frames.length - 1)];
+        }
+
+        function toV3(pose, name) {
+            const p = pose[name];
+            if (!p) return null;
+            // Convert from mm to m, flip Y (OpenSim Y-up → Three.js Y-up, Z-forward)
+            return new THREE.Vector3(p[0] / 1000, p[1] / 1000, p[2] / 1000);
+        }
+
+        function centroid(frames) {
+            if (!frames || !frames.length) return new THREE.Vector3();
+            const pose = frames[0];
+            let cx = 0, cy = 0, cz = 0, n = 0;
+            for (const v of Object.values(pose)) { if (Array.isArray(v)) { cx += v[0]; cy += v[1]; cz += v[2]; n++; } }
+            return new THREE.Vector3(cx / n / 1000, cy / n / 1000, cz / n / 1000);
+        }
+
+        function buildSkeleton(pose, hlBones, hlColor) {
+            // Clear pivot
+            while (pivot.children.length) pivot.remove(pivot.children[0]);
+
+            if (!pose) {
+                // Fallback: draw static T-pose stick figure
+                drawStaticFallback(hlBones, hlColor);
+                return;
+            }
+
+            const center = new THREE.Vector3();
+            let n = 0;
+            for (const v of Object.values(pose)) { if (Array.isArray(v)) { center.add(new THREE.Vector3(v[0]/1000, v[1]/1000, v[2]/1000)); n++; } }
+            center.divideScalar(n);
+
+            for (const [a, b] of BONE_CONNECTIONS) {
+                const va = toV3(pose, a), vb = toV3(pose, b);
+                if (!va || !vb) continue;
+                const key = `${a}|${b}`;
+                const isHL = hlBones && (hlBones.has(key) || hlBones.has(`${b}|${a}`));
+                const color = isHL ? new THREE.Color(hlColor) : new THREE.Color(0x4a5568);
+                const lineW = isHL ? 3 : 1.5;
+
+                const dir = new THREE.Vector3().subVectors(vb, va);
+                const len = dir.length();
+                const mid = new THREE.Vector3().addVectors(va, vb).multiplyScalar(0.5).sub(center);
+
+                const geo = new THREE.CylinderGeometry(isHL ? 0.012 : 0.007, isHL ? 0.012 : 0.007, len, 6);
+                const mat = new THREE.MeshBasicMaterial({ color });
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.position.copy(mid);
+                mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.normalize());
+                pivot.add(mesh);
+            }
+
+            // Joints
+            const jGeo = new THREE.SphereGeometry(0.018, 8, 8);
+            for (const name of ['Neck','RShoulder','LShoulder','RElbow','LElbow','RWrist','LWrist','midHip','RHip','LHip','RKnee','LKnee','RAnkle','LAnkle']) {
+                const v = toV3(pose, name);
+                if (!v) continue;
+                const isHL = hlBones && [...(hlBones || [])].some(k => k.includes(name));
+                const mat = new THREE.MeshBasicMaterial({ color: isHL ? new THREE.Color(hlColor) : 0x718096 });
+                const mesh = new THREE.Mesh(jGeo, mat);
+                mesh.position.copy(v.clone().sub(center));
+                pivot.add(mesh);
+            }
+
+            // Head
+            const neck = toV3(pose, 'Neck');
+            if (neck) {
+                const headGeo = new THREE.SphereGeometry(0.055, 12, 12);
+                const headMat = new THREE.MeshBasicMaterial({ color: 0x4a5568, wireframe: false });
+                const headMesh = new THREE.Mesh(headGeo, headMat);
+                headMesh.position.copy(neck.clone().sub(center).add(new THREE.Vector3(0, 0.1, 0)));
+                pivot.add(headMesh);
             }
         }
 
-        // Draw head circle
-        const headHL = activeHighlight && (
-            hlBones.has('Neck|RShoulder') || hlBones.has('Neck|LShoulder') || hlBones.has('Neck|midHip')
-        );
-        ctx.beginPath();
-        ctx.arc(MARKERS.Head[0], MARKERS.Head[1], 18, 0, Math.PI * 2);
-        ctx.strokeStyle = headHL ? hlColor : 'rgba(255,255,255,0.25)';
-        ctx.lineWidth = headHL ? 3 : 1.5;
-        ctx.stroke();
-
-        // Draw bones
-        for (const [a, b] of BONES) {
-            const isHL = hlBones.has(`${a}|${b}`);
-            ctx.beginPath();
-            ctx.moveTo(MARKERS[a][0], MARKERS[a][1]);
-            ctx.lineTo(MARKERS[b][0], MARKERS[b][1]);
-            ctx.strokeStyle = isHL ? hlColor : 'rgba(255,255,255,0.25)';
-            ctx.lineWidth = isHL ? 4 : 1.5;
-            ctx.stroke();
-        }
-
-        // Draw joints
-        for (const [name, [x, y]] of Object.entries(MARKERS)) {
-            if (name === 'Head') continue;
-            const isHL = activeHighlight && activeHighlight.bones.some(([a, b]) => a === name || b === name);
-            ctx.beginPath();
-            ctx.arc(x, y, isHL ? 5 : 3, 0, Math.PI * 2);
-            ctx.fillStyle = isHL ? hlColor : 'rgba(255,255,255,0.5)';
-            ctx.fill();
-        }
-
-        // Glow effect on highlighted bones
-        if (activeHighlight) {
-            ctx.shadowColor = hlColor;
-            ctx.shadowBlur = 10;
-            for (const [a, b] of activeHighlight.bones) {
-                ctx.beginPath();
-                ctx.moveTo(MARKERS[a][0], MARKERS[a][1]);
-                ctx.lineTo(MARKERS[b][0], MARKERS[b][1]);
-                ctx.strokeStyle = hlColor;
-                ctx.lineWidth = 4;
-                ctx.stroke();
+        function drawStaticFallback(hlBones, hlColor) {
+            // Simple stick figure in T-pose when no 3D data
+            const pts = {
+                Neck:[0,0.6,0], RShoulder:[0.25,0.5,0], LShoulder:[-0.25,0.5,0],
+                RElbow:[0.45,0.2,0], LElbow:[-0.45,0.2,0], RWrist:[0.55,-0.05,0], LWrist:[-0.55,-0.05,0],
+                midHip:[0,0,0], RHip:[0.12,-0.05,0], LHip:[-0.12,-0.05,0],
+                RKnee:[0.14,-0.45,0], LKnee:[-0.14,-0.45,0], RAnkle:[0.15,-0.85,0], LAnkle:[-0.15,-0.85,0],
+            };
+            for (const [a,b] of BONE_CONNECTIONS) {
+                if (!pts[a]||!pts[b]) continue;
+                const key=`${a}|${b}`;
+                const isHL = hlBones&&(hlBones.has(key)||hlBones.has(`${b}|${a}`));
+                const dir = new THREE.Vector3(...pts[b]).sub(new THREE.Vector3(...pts[a]));
+                const len = dir.length();
+                const mid = new THREE.Vector3(...pts[a]).add(new THREE.Vector3(...pts[b])).multiplyScalar(0.5);
+                const geo = new THREE.CylinderGeometry(isHL?0.012:0.007,isHL?0.012:0.007,len,6);
+                const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({color: isHL?new THREE.Color(hlColor):0x4a5568}));
+                mesh.position.copy(mid);
+                mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.normalize());
+                pivot.add(mesh);
             }
-            ctx.shadowBlur = 0;
+            const headGeo = new THREE.SphereGeometry(0.055,12,12);
+            const headMesh = new THREE.Mesh(headGeo, new THREE.MeshBasicMaterial({color:0x4a5568}));
+            headMesh.position.set(0, 0.72, 0);
+            pivot.add(headMesh);
         }
+
+        const contactFrame = skeletonFrames?.contact_frame || 0;
+        const frames = skeletonFrames?.frames || null;
+        const pose = getPose(frames, contactFrame);
+        buildSkeleton(pose, null, '#ffffff');
+
+        pivot.rotation.y = 0.3;
+        pivot.rotation.x = 0.1;
+        rotY = 0.3; rotX = 0.1;
+
+        scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+
+        function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
+        animate();
+
+        skeletonScene = { buildSkeleton, pose, frames, contactFrame };
     }
 
-    // Hook metric tile clicks to canvas highlight
     function attachSkeletonClickHandlers() {
-        drawBodyCanvas();
         document.querySelectorAll('.dim-tile').forEach(tile => {
             tile.style.cursor = 'pointer';
             tile.addEventListener('click', () => {
                 const key = tile.dataset.dimKey;
                 const hit = METRIC_HIGHLIGHTS[key];
                 if (!hit) return;
-                activeHighlight = hit;
-                drawBodyCanvas();
+                if (skeletonScene) {
+                    const hlBones = new Set();
+                    for (const [a,b] of hit.bones) { hlBones.add(`${a}|${b}`); hlBones.add(`${b}|${a}`); }
+                    skeletonScene.buildSkeleton(skeletonScene.pose, hlBones, hit.color);
+                }
                 document.getElementById('skeleton-label').textContent = tile.querySelector('.dim-label')?.textContent || key;
                 document.getElementById('skeleton-metric-desc').textContent = hit.desc;
                 document.getElementById('skeleton-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });

@@ -101,10 +101,9 @@
 
                 <!-- SWING SKELETON PANEL -->
                 <div class="glass-card panel mt-3" id="skeleton-panel">
-                    <h3 class="panel-title">Body Region — Click a metric to highlight</h3>
+                    <h3 class="panel-title">3D Skeleton — Drag to rotate</h3>
                     <div style="display:flex;gap:1.5rem;align-items:flex-start;flex-wrap:wrap;">
-                        <canvas id="body-canvas" width="220" height="460"
-                            style="background:#0d1117;border-radius:8px;border:1px solid rgba(255,255,255,0.1);flex-shrink:0;"></canvas>
+                        <div id="skeleton-3d" style="width:260px;height:460px;background:#0d1117;border-radius:8px;border:1px solid rgba(255,255,255,0.1);flex-shrink:0;cursor:grab;"></div>
                         <div style="flex:1;min-width:180px;padding-top:8px;">
                             <p class="small text-muted" id="skeleton-label" style="margin-bottom:0.5rem;font-style:italic;">Select a metric tile to highlight the active body region</p>
                             <p style="margin-top:1rem;line-height:1.6;font-size:0.9rem;" id="skeleton-metric-desc"></p>
@@ -243,6 +242,7 @@
         <button id="close-toast">&times;</button>
     </div>
 
-    <script src="app.js?v=7"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <script src="app.js?v=8"></script>
 </body>
 </html>
