@@ -761,11 +761,15 @@ document.addEventListener('DOMContentLoaded', () => {
             return frames[Math.min(frameIdx, frames.length - 1)];
         }
 
+        // Detect coordinate scale: TRC markers are in mm (values ~500-2000), mot skeleton in m (values ~0-2)
+        const sampleVals = frames && frames.length ? Object.values(frames[0]).filter(Array.isArray).map(v => Math.abs(v[1])) : [];
+        const maxY = sampleVals.length ? Math.max(...sampleVals) : 0;
+        const scale = maxY > 10 ? 0.001 : 1.0; // mm → m if values are large
+
         function toV3(pose, name) {
             const p = pose[name];
             if (!p) return null;
-            // Convert from mm to m, flip Y (OpenSim Y-up → Three.js Y-up, Z-forward)
-            return new THREE.Vector3(p[0] / 1000, p[1] / 1000, p[2] / 1000);
+            return new THREE.Vector3(p[0] * scale, p[1] * scale, p[2] * scale);
         }
 
         function centroid(frames) {
