@@ -367,7 +367,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // ---- SWINGAI 4-PHASE CARDS ----
         if (diagnosis.swingai_report) {
             renderSwingAIReport(diagnosis.swingai_report);
-            init3DSkeleton(diagnosis.skeleton_frames);
+            setTimeout(() => init3DSkeleton(diagnosis.skeleton_frames), 100);
             attachSkeletonClickHandlers();
         }
 
@@ -715,8 +715,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!container || typeof THREE === 'undefined') return;
         container.innerHTML = '';
 
-        const W = container.clientWidth || 260;
-        const H = container.clientHeight || 460;
+        const W = 260;
+        const H = 460;
 
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setSize(W, H);
