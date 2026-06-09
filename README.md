@@ -29,32 +29,6 @@ Swing Optimizer Pro processes OpenSim `.mot` kinematics files from [OpenCap](htt
 
 ---
 
-## Getting Started
-
-### Prerequisites
-
-- Python 3.9+
-
-### Run
-
-```bash
-bash run.sh
-```
-
-This will:
-1. Create a Python virtual environment (first run only)
-2. Install all dependencies from `backend/requirements.txt`
-3. Start the FastAPI server at **http://localhost:8000**
-
-### Usage
-
-1. Open **http://localhost:8000** in your browser
-2. Click any `.mot` file from the Local Downloads panel, or drag-and-drop one
-3. Configure athlete demographics and select **Skill Level**
-4. Click **🚀 Analyze Swing** — results appear in seconds
-
----
-
 ## Project Structure
 
 ```
