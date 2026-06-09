@@ -751,7 +751,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function init3DSkeleton(skeletonFrames) {
         const container = document.getElementById('skeleton-3d');
-        if (!container || typeof THREE === 'undefined') return;
+        if (!container) return;
+        if (typeof THREE === 'undefined') {
+            container.innerHTML = '<p class="small text-muted" style="padding:1rem;text-align:center;">3D viewer unavailable — could not load Three.js (check your connection, then reload).</p>';
+            return;
+        }
         container.innerHTML = '';
 
         const W = container.clientWidth || 260;
@@ -887,11 +891,15 @@ document.addEventListener('DOMContentLoaded', () => {
         function buildSkeleton(pose, hlBones, hlColor) {
             while (figure.children.length) figure.remove(figure.children[0]);
 
-            if (!pose) { drawStaticFallback(hlBones, hlColor); frameCamera(); return; }
-
-            const getV = (n) => toV3(pose, n);
-            addBonesFor(getV, BONE_CONNECTIONS, hlBones, hlColor);
-            addJointsAndExtras(getV, hlBones, hlColor);
+            if (pose) {
+                const getV = (n) => toV3(pose, n);
+                addBonesFor(getV, BONE_CONNECTIONS, hlBones, hlColor);
+                addJointsAndExtras(getV, hlBones, hlColor);
+            }
+            // Safety net: no pose, or captured data had no joints matching the
+            // expected marker names → never leave the box blank, show the
+            // reference right-handed swing instead.
+            if (!figure.children.length) drawStaticFallback(hlBones, hlColor);
             frameCamera();
         }
 
