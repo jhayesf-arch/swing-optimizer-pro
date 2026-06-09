@@ -840,12 +840,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         function drawStaticFallback(hlBones, hlColor) {
             // Simple stick figure in T-pose when no 3D data
-            const s = 1.8; // scale
+            const figScale = 1.8;
             const pts = {
-                Neck:[0,0.6*s,0], RShoulder:[0.25*s,0.5*s,0], LShoulder:[-0.25*s,0.5*s,0],
-                RElbow:[0.45*s,0.2*s,0], LElbow:[-0.45*s,0.2*s,0], RWrist:[0.55*s,-0.05*s,0], LWrist:[-0.55*s,-0.05*s,0],
-                midHip:[0,0,0], RHip:[0.12*s,-0.05*s,0], LHip:[-0.12*s,-0.05*s,0],
-                RKnee:[0.14*s,-0.45*s,0], LKnee:[-0.14*s,-0.45*s,0], RAnkle:[0.15*s,-0.85*s,0], LAnkle:[-0.15*s,-0.85*s,0],
+                Neck:[0,0.6*figScale,0], RShoulder:[0.25*figScale,0.5*figScale,0], LShoulder:[-0.25*figScale,0.5*figScale,0],
+                RElbow:[0.45*figScale,0.2*figScale,0], LElbow:[-0.45*figScale,0.2*figScale,0], RWrist:[0.55*figScale,-0.05*figScale,0], LWrist:[-0.55*figScale,-0.05*figScale,0],
+                midHip:[0,0,0], RHip:[0.12*figScale,-0.05*figScale,0], LHip:[-0.12*figScale,-0.05*figScale,0],
+                RKnee:[0.14*figScale,-0.45*figScale,0], LKnee:[-0.14*figScale,-0.45*figScale,0], RAnkle:[0.15*figScale,-0.85*figScale,0], LAnkle:[-0.15*figScale,-0.85*figScale,0],
             };
             for (const [a,b] of BONE_CONNECTIONS) {
                 if (!pts[a]||!pts[b]) continue;
@@ -862,7 +862,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const headGeo = new THREE.SphereGeometry(0.1,12,12);
             const headMesh = new THREE.Mesh(headGeo, new THREE.MeshBasicMaterial({color:0x4a5568}));
-            headMesh.position.set(0, 0.72*s, 0);
+            headMesh.position.set(0, 0.72*figScale, 0);
             pivot.add(headMesh);
         }
 
