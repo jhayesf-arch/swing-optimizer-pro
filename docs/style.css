@@ -794,3 +794,128 @@ label.btn { cursor: pointer; }
     .swing-score-hero { padding: 1.5rem; gap: 1.5rem; }
     .hero-stats { gap: 1.25rem; justify-content: center; }
 }
+
+/* ============================================================
+   ✦ SKELETON STAGE — centered viewport
+   ============================================================ */
+.skeleton-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.25rem;
+    margin-top: 0.5rem;
+}
+.skeleton-viewport {
+    width: min(340px, 100%);
+    height: 480px;
+    border-radius: 16px;
+    background:
+        radial-gradient(130% 95% at 50% 16%, #1a2233 0%, #0d1117 58%, #080b12 100%);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        inset 0 -60px 90px -50px rgba(0, 0, 0, 0.7),
+        0 18px 40px -18px rgba(0, 0, 0, 0.6);
+    cursor: grab;
+    position: relative;
+    overflow: hidden;
+    transition: box-shadow 0.4s var(--ease-out-quint), border-color 0.4s var(--ease-out-quint);
+}
+.skeleton-viewport:hover {
+    border-color: rgba(14, 165, 233, 0.3);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        inset 0 -60px 90px -50px rgba(0, 0, 0, 0.7),
+        0 22px 50px -18px rgba(0, 0, 0, 0.65),
+        0 0 0 1px rgba(14, 165, 233, 0.12);
+}
+.skeleton-viewport:active { cursor: grabbing; }
+.skeleton-viewport canvas { display: block; }
+.skeleton-caption { max-width: 460px; text-align: center; }
+.skeleton-caption #skeleton-metric-desc { margin-top: 0.75rem; line-height: 1.6; font-size: 0.9rem; }
+
+.panel-hint {
+    margin-left: auto;
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    opacity: 0.75;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 0.2rem 0.55rem;
+    border-radius: 20px;
+}
+
+/* ============================================================
+   ✦ PROFESSIONAL MOTION LAYER (subtle, transform/opacity only)
+   ============================================================ */
+
+/* Tabular figures so animated counters don't jitter the layout */
+.score-number, .hero-stat-value, #pelvis-omega-value, .metric-value,
+.energy-node-val, .bench-val { font-variant-numeric: tabular-nums; }
+
+/* Staggered entrance for the result panels when the section reveals */
+@keyframes rise-in { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+#results-section:not(.hidden) > * { animation: rise-in 0.55s var(--ease-out-quint) both; }
+#results-section:not(.hidden) > *:nth-child(2) { animation-delay: 0.06s; }
+#results-section:not(.hidden) > *:nth-child(3) { animation-delay: 0.12s; }
+#results-section:not(.hidden) > *:nth-child(4) { animation-delay: 0.18s; }
+#results-section:not(.hidden) > *:nth-child(5) { animation-delay: 0.24s; }
+#results-section:not(.hidden) > *:nth-child(n+6) { animation-delay: 0.30s; }
+
+/* Score ring — soft breathing glow so the hero metric draws the eye */
+@keyframes ring-pulse {
+    0%, 100% { filter: drop-shadow(0 0 5px currentColor); }
+    50%      { filter: drop-shadow(0 0 12px currentColor); }
+}
+.ring-fill { animation: ring-pulse 3.2s ease-in-out infinite; }
+
+/* Phase cards: lift + accent border on hover */
+.phase-card { transition: transform 0.3s var(--ease-out-quint), box-shadow 0.3s var(--ease-out-quint), border-color 0.3s var(--ease-out-quint); }
+.phase-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(14, 165, 233, 0.28);
+    box-shadow: 0 26px 50px -14px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(14, 165, 233, 0.12);
+}
+
+/* Dimension tiles: clearer interactive depth + marker dot pulse on hover */
+.dim-tile { transition: background 0.2s ease, transform 0.2s var(--ease-out-quint), border-color 0.2s ease, box-shadow 0.2s ease; }
+.dim-tile:hover { box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28); }
+.dim-tile:hover .dim-badge { animation: dot-pulse 1.4s ease-in-out infinite; }
+@keyframes dot-pulse {
+    0%, 100% { box-shadow: 0 0 6px currentColor; }
+    50%      { box-shadow: 0 0 12px currentColor, 0 0 2px currentColor; }
+}
+
+/* Advanced physics panel: smooth slide/fade when expanded */
+@keyframes expand-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+.advanced-panels:not(.hidden) { animation: expand-in 0.4s var(--ease-out-quint) both; }
+#toggle-icon { display: inline-block; transition: transform 0.3s var(--ease-out-quint); }
+#toggle-icon.open { transform: rotate(90deg); }
+
+/* Findings / prescription rows: gentle staggered reveal */
+.findings-list li, .recommendation-list li { animation: rise-in 0.5s var(--ease-out-quint) both; }
+.findings-list li:nth-child(2), .recommendation-list li:nth-child(2) { animation-delay: 0.05s; }
+.findings-list li:nth-child(3), .recommendation-list li:nth-child(3) { animation-delay: 0.10s; }
+.findings-list li:nth-child(4), .recommendation-list li:nth-child(4) { animation-delay: 0.15s; }
+.findings-list li:nth-child(n+5), .recommendation-list li:nth-child(n+5) { animation-delay: 0.20s; }
+
+/* Animated sheen across the accent gradient text (slow, subtle) */
+.accent {
+    background-size: 200% auto;
+    animation: accent-shift 6s ease-in-out infinite;
+}
+@keyframes accent-shift { 0%, 100% { background-position: 0% center; } 50% { background-position: 100% center; } }
+
+/* Skill badge in the hero gets a subtle entrance pop */
+.skill-badge { transition: transform 0.2s var(--ease-out-quint); }
+
+/* Honor reduced-motion: silence the ambient/looping decorative motion */
+@media (prefers-reduced-motion: reduce) {
+    .ring-fill, .dim-tile:hover .dim-badge, .accent { animation: none !important; }
+    #results-section:not(.hidden) > *,
+    .findings-list li, .recommendation-list li,
+    .advanced-panels:not(.hidden) { animation: none !important; }
+}

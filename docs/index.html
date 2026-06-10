@@ -103,12 +103,12 @@
 
                 <!-- SWING SKELETON PANEL -->
                 <div class="glass-card panel mt-3" id="skeleton-panel">
-                    <h3 class="panel-title">3D Skeleton — Drag to rotate</h3>
-                    <div style="display:flex;gap:1.5rem;align-items:flex-start;flex-wrap:wrap;">
-                        <div id="skeleton-3d" style="width:260px;height:460px;background:#0d1117;border-radius:8px;border:1px solid rgba(255,255,255,0.1);flex-shrink:0;cursor:grab;"></div>
-                        <div style="flex:1;min-width:180px;padding-top:8px;">
-                            <p class="small text-muted" id="skeleton-label" style="margin-bottom:0.5rem;font-style:italic;">Select a metric tile to highlight the active body region</p>
-                            <p style="margin-top:1rem;line-height:1.6;font-size:0.9rem;" id="skeleton-metric-desc"></p>
+                    <h3 class="panel-title">3D Skeleton <span class="panel-hint">⟲ drag to rotate</span></h3>
+                    <div class="skeleton-stage">
+                        <div id="skeleton-3d" class="skeleton-viewport"></div>
+                        <div class="skeleton-caption">
+                            <p class="small text-muted" id="skeleton-label" style="font-style:italic;">Select a metric tile to highlight the active body region</p>
+                            <p id="skeleton-metric-desc"></p>
                         </div>
                     </div>
                 </div>
@@ -245,6 +245,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-    <script src="app.js?v=12"></script>
+    <script src="app.js?v=13"></script>
 </body>
 </html>

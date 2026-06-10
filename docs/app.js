@@ -172,7 +172,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const icon = document.getElementById('toggle-icon');
         const isHidden = panels.classList.contains('hidden');
         panels.classList.toggle('hidden');
-        icon.textContent = isHidden ? '▼' : '▶';
+        icon.textContent = '▶';
+        icon.classList.toggle('open', isHidden);
     });
 
     // Auto-Recalculate on Demographic Change (local files only)
@@ -329,6 +330,23 @@ document.addEventListener('DOMContentLoaded', () => {
             el.style.animation = null; 
         });
         
+        // Smoothly count a number up to its target (respects reduced-motion).
+        function animateCount(el, target, decimals) {
+            if (!el) return;
+            target = Number(target) || 0;
+            decimals = decimals || 0;
+            const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            if (reduce) { el.textContent = target.toFixed(decimals); return; }
+            const duration = 900, start = performance.now();
+            (function tick(now) {
+                const t = Math.min((now - start) / duration, 1);
+                const eased = 1 - Math.pow(1 - t, 3); // easeOutCubic
+                el.textContent = (target * eased).toFixed(decimals);
+                if (t < 1) requestAnimationFrame(tick);
+                else el.textContent = target.toFixed(decimals);
+            })(start);
+        }
+
         // ---- SWING SCORE HERO ----
         document.getElementById('filename-display').textContent = filename;
         const swingScore = diagnosis.swing_score || 0;
@@ -345,9 +363,9 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (swingScore >= 45) ringFill.classList.add('clr-yellow');
         else ringFill.classList.add('clr-red');
 
-        document.getElementById('swing-score-number').textContent = swingScore.toFixed(0);
-        document.getElementById('exit-velo-number').textContent = handSpeed.toFixed(1);
-        document.getElementById('efficiency-number').textContent = effScore;
+        animateCount(document.getElementById('swing-score-number'), swingScore, 0);
+        animateCount(document.getElementById('exit-velo-number'), handSpeed, 1);
+        animateCount(document.getElementById('efficiency-number'), effScore, 0);
 
         // Skill badge
         const skillLabels = {
@@ -362,7 +380,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // ---- PELVIS ANGULAR VELOCITY ----
         const pelvisOmega = diagnosis.metrics?.peak_pelvis_omega_3d_deg_s || 0;
-        document.getElementById('pelvis-omega-value').textContent = pelvisOmega > 0 ? pelvisOmega.toFixed(0) : '—';
+        const pelvisEl = document.getElementById('pelvis-omega-value');
+        if (pelvisOmega > 0) animateCount(pelvisEl, pelvisOmega, 0); else pelvisEl.textContent = '—';
 
         // ---- SWINGAI 4-PHASE CARDS ----
         if (diagnosis.swingai_report) {
@@ -425,7 +444,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Reset advanced panel state
         document.getElementById('advanced-panels').classList.add('hidden');
-        document.getElementById('toggle-icon').textContent = '▶';
+        const toggleIcon = document.getElementById('toggle-icon');
+        toggleIcon.textContent = '▶';
+        toggleIcon.classList.remove('open');
 
         saveToHistory({ filename, date: new Date().toLocaleDateString(), score: swingScore, efficiency: effScore, handSpeed: handSpeed.toFixed(1), skill: skillLabels[skillLevel] || skillLevel });
         renderHistory();
