@@ -392,7 +392,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pelvisOmega > 0) animateCount(pelvisEl, pelvisOmega, 0); else pelvisEl.textContent = '—';
 
         // ---- KINEMATIC SEQUENCE ----
-        renderKinematicSequence(diagnosis.kinematic_sequence);
+        // Prefer the backend's computed sequence; otherwise derive it client-side
+        // from the per-frame skeleton joints already in the response.
+        renderKinematicSequence(diagnosis.kinematic_sequence || computeSequenceFromSkeleton(diagnosis.skeleton_frames));
 
         // ---- SWINGAI 4-PHASE CARDS ----
         if (diagnosis.swingai_report) {
@@ -563,6 +565,60 @@ document.addEventListener('DOMContentLoaded', () => {
     const KINE_COLORS = { 'Pelvis': '#38bdf8', 'Torso': '#34d399', 'Lead Arm': '#fbbf24', 'Hands/Bat': '#f472b6' };
     const KINE_ORDER = ['Pelvis', 'Torso', 'Lead Arm', 'Hands/Bat'];
     let lastKineSeq = null;
+
+    // Fallback: derive a kinematic sequence from the 3D skeleton frames
+    // (per-frame joint positions) when the backend didn't supply one. Each
+    // segment's rotation about the vertical axis is differentiated into deg/s.
+    function computeSequenceFromSkeleton(sk) {
+        if (!sk || !Array.isArray(sk.frames) || sk.frames.length < 5) return null;
+        const frames = sk.frames;
+        const fps = (sk.fps && sk.fps > 0) ? sk.fps : 60;
+        const dt = 1 / fps;
+        const segs = {
+            'Pelvis': ['LHip', 'RHip'],
+            'Torso': ['LShoulder', 'RShoulder'],
+            'Lead Arm': ['LShoulder', 'LElbow'],
+            'Hands/Bat': ['LElbow', 'LWrist'],
+        };
+        const horizAngle = (f, a, b) => {
+            const pa = f[a], pb = f[b];
+            if (!pa || !pb) return null;
+            return Math.atan2(pb[2] - pa[2], pb[0] - pa[0]); // rotation about vertical (Y up)
+        };
+        const series = {}, peaks = {}, present = [];
+        for (const k in segs) {
+            const [a, b] = segs[k];
+            const ang = [];
+            let ok = true;
+            for (const f of frames) { const v = horizAngle(f, a, b); if (v === null) { ok = false; break; } ang.push(v); }
+            if (!ok) continue;
+            for (let i = 1; i < ang.length; i++) {
+                while (ang[i] - ang[i - 1] > Math.PI) ang[i] -= 2 * Math.PI;
+                while (ang[i] - ang[i - 1] < -Math.PI) ang[i] += 2 * Math.PI;
+            }
+            const w = ang.map((_, i) => {
+                let d;
+                if (i === 0) d = (ang[1] - ang[0]) / dt;
+                else if (i === ang.length - 1) d = (ang[i] - ang[i - 1]) / dt;
+                else d = (ang[i + 1] - ang[i - 1]) / (2 * dt);
+                return Math.abs(d * 180 / Math.PI);
+            });
+            const sm = w.map((_, i) => (w[Math.max(0, i - 1)] + w[i] + w[Math.min(w.length - 1, i + 1)]) / 3);
+            series[k] = sm.map(x => Math.round(x));
+            present.push(k);
+        }
+        if (!present.length) return null;
+        const time_ms = frames.map((_, i) => Math.round(i * dt * 1000));
+        for (const k of present) {
+            let pi = 0;
+            for (let i = 1; i < series[k].length; i++) if (series[k][i] > series[k][pi]) pi = i;
+            peaks[k] = { t_ms: time_ms[pi], value: series[k][pi] };
+        }
+        const cf = sk.contact_frame;
+        const contact_ms = (cf != null && time_ms[cf] != null) ? time_ms[cf]
+            : (peaks['Hands/Bat'] || peaks['Lead Arm'] || peaks['Pelvis']).t_ms;
+        return { time_ms, series, peaks, contact_ms, units: 'deg/s' };
+    }
 
     function renderKinematicSequence(seq) {
         const panel = document.getElementById('kinematic-panel');

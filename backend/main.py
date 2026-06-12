@@ -98,8 +98,13 @@ def _kinematic_sequence(mot_df, max_points: int = 72) -> dict:
     if pelvis is None:
         return {}
     lumbar = filt(col('lumbar_rotation'))
-    arm = filt(col('arm_rot_l') if 'arm_rot_l' in mot_df.columns
-               else ('arm_flex_l' in mot_df.columns and col('arm_flex_l')) or col('arm_flex_r'))
+    # Lead side = left for a right-handed hitter; fall back across available columns.
+    if 'arm_rot_l' in mot_df.columns:
+        arm = filt(col('arm_rot_l'))
+    elif 'arm_flex_l' in mot_df.columns:
+        arm = filt(col('arm_flex_l'))
+    else:
+        arm = filt(col('arm_flex_r'))
     elbow = filt(col('elbow_flex_l') if 'elbow_flex_l' in mot_df.columns else col('elbow_flex_r'))
 
     pelvis_a = pelvis
