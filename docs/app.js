@@ -55,6 +55,24 @@ const DEMO_DIAGNOSIS = {
     grf_estimation: {},
 };
 
+// Representative proximal-to-distal kinematic sequence for the demo swing.
+// (Real analyses receive this from the backend as diagnosis.kinematic_sequence.)
+DEMO_DIAGNOSIS.kinematic_sequence = (function () {
+    const peaks = { 'Pelvis': [118, 705], 'Torso': [140, 930], 'Lead Arm': [158, 1120], 'Hands/Bat': [173, 1325] };
+    const widths = { 'Pelvis': 50, 'Torso': 44, 'Lead Arm': 37, 'Hands/Bat': 31 };
+    const time_ms = [], series = { 'Pelvis': [], 'Torso': [], 'Lead Arm': [], 'Hands/Bat': [] };
+    for (let t = 0; t <= 215; t += 3) {
+        time_ms.push(t);
+        for (const k in peaks) {
+            const [pt, pv] = peaks[k], w = widths[k];
+            series[k].push(Math.round(pv * Math.exp(-((t - pt) ** 2) / (2 * w * w))));
+        }
+    }
+    const peakObj = {};
+    for (const k in peaks) peakObj[k] = { t_ms: peaks[k][0], value: peaks[k][1] };
+    return { time_ms, series, peaks: peakObj, contact_ms: 173, units: 'deg/s' };
+})();
+
 document.addEventListener('DOMContentLoaded', () => {
     // -----------------------------------------
     // Elements
@@ -63,9 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileInput = document.getElementById('file-input');
     const trcInput = document.getElementById('trc-input');
     const trcLabel = document.getElementById('trc-label');
-    const refreshLocalBtn = document.getElementById('refresh-local');
-    const localFilesList = document.getElementById('local-files-list');
-    
+
     const uploadSection = document.getElementById('upload-section');
     const resultsSection = document.getElementById('results-section');
     const btnBack = document.getElementById('btn-back');
@@ -82,11 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // -----------------------------------------
     // State
     // -----------------------------------------
-    let currentLocalFilepath = null;
-    let currentLocalFilename = null;
     let pendingUploadFile = null;
-    let pendingLocalFilepath = null;
-    let pendingLocalFilename = null;
     let selectedSkillLevel = 'high_school';
     let lastAnalysis = null;
 
@@ -94,7 +106,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Init
     // -----------------------------------------
     checkBackendHealth();
-    fetchLocalFiles();
     initSkillPills();
 
     // -----------------------------------------
@@ -137,11 +148,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     trcInput.addEventListener('change', (e) => {
         if (e.target.files.length) {
-            trcLabel.textContent = `✅ ${e.target.files[0].name}`;
+            trcLabel.textContent = `✓ ${e.target.files[0].name}`;
         }
     });
-    
-    refreshLocalBtn.addEventListener('click', fetchLocalFiles);
 
     document.getElementById('load-demo').addEventListener('click', () => {
         renderDashboard(DEMO_DIAGNOSIS, 'demo_swing.mot');
@@ -152,17 +161,13 @@ document.addEventListener('DOMContentLoaded', () => {
         hideDemoModal();
         if (pendingUploadFile) {
             handleUpload(pendingUploadFile);
-        } else if (pendingLocalFilepath) {
-            analyzeLocalFile(pendingLocalFilepath, pendingLocalFilename);
         }
     });
-    
+
     btnBack.addEventListener('click', () => {
         resultsSection.classList.add('hidden');
         uploadSection.classList.remove('hidden');
         fileInput.value = '';
-        currentLocalFilepath = null;
-        currentLocalFilename = null;
     });
     
     closeToast.addEventListener('click', hideError);
@@ -251,15 +256,6 @@ document.addEventListener('DOMContentLoaded', () => {
         window.print();
     }
 
-    // Auto-Recalculate on Demographic Change (local files only)
-    ['height-ft', 'height-in', 'weight-lbs'].forEach(id => {
-        document.getElementById(id).addEventListener('change', () => {
-            if (currentLocalFilepath && !resultsSection.classList.contains('hidden')) {
-                analyzeLocalFile(currentLocalFilepath, currentLocalFilename);
-            }
-        });
-    });
-
     // -----------------------------------------
     // API Calls
     // -----------------------------------------
@@ -275,22 +271,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function fetchLocalFiles() {
-        localFilesList.innerHTML = '<div class="loading-spinner"></div><p class="small text-muted mt-2">Scanning...</p>';
-        try {
-            const response = await fetch(`${API_BASE}/api/scan-downloads`);
-            const data = await response.json();
-            if (data.success) {
-                renderLocalFiles(data.files);
-            } else {
-                throw new Error(data.error || "Failed to scan local files");
-            }
-        } catch (err) {
-            localFilesList.innerHTML = `<p class="small text-muted">Scan failed. Is backend running?</p>`;
-            console.error(err);
-        }
-    }
-    
     async function handleUpload(file) {
         if (!file.name.endsWith('.mot')) {
             showError("Please upload a .mot file");
@@ -339,59 +319,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    async function analyzeLocalFile(filepath, filename) {
-        showLoading();
-        const demo = getDemographics();
-        const payload = JSON.stringify({ filepath, filename, height_m: demo.height_m, weight_kg: demo.weight_kg, skill_level: selectedSkillLevel, bat_mass_kg: demo.bat_mass_kg, bat_length_m: demo.bat_length_m });
-        const doLocal = () => fetch(`${API_BASE}/api/analyze/local`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload });
-        try {
-            let response;
-            try {
-                response = await doLocal();
-            } catch (_) {
-                await new Promise(r => setTimeout(r, 5000));
-                response = await doLocal();
-            }
-            let data;
-            try { data = await response.json(); }
-            catch (_) { throw new Error(`Server error (HTTP ${response.status})`); }
-
-            if (data.success) {
-                currentLocalFilepath = filepath;
-                currentLocalFilename = filename;
-                renderDashboard(data.data, data.filename);
-            } else {
-                showError(data.error || "Analysis failed");
-                hideLoading();
-            }
-        } catch (err) {
-            showError("Network error — backend may still be waking up. Please try again in a moment.");
-            console.error(err);
-            hideLoading();
-        }
-    }
-
     // -----------------------------------------
     // Rendering
     // -----------------------------------------
-    function renderLocalFiles(files) {
-        if (!files || files.length === 0) {
-            localFilesList.innerHTML = '<p class="small text-muted">No .mot files found in ~/Downloads</p>';
-            return;
-        }
-        
-        localFilesList.innerHTML = '';
-        files.forEach(f => {
-            const div = document.createElement('div');
-            div.className = 'file-item';
-            div.innerHTML = `
-                <span class="file-name">${f.filename}</span>
-                <span class="file-action">▶</span>
-            `;
-            div.addEventListener('click', () => promptDemographicsForLocal(f.filepath, f.filename));
-            localFilesList.appendChild(div);
-        });
-    }
     
     function renderDashboard(diagnosis, filename) {
         hideLoading();
@@ -460,6 +390,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const pelvisOmega = diagnosis.metrics?.peak_pelvis_omega_3d_deg_s || 0;
         const pelvisEl = document.getElementById('pelvis-omega-value');
         if (pelvisOmega > 0) animateCount(pelvisEl, pelvisOmega, 0); else pelvisEl.textContent = '—';
+
+        // ---- KINEMATIC SEQUENCE ----
+        renderKinematicSequence(diagnosis.kinematic_sequence);
 
         // ---- SWINGAI 4-PHASE CARDS ----
         if (diagnosis.swingai_report) {
@@ -625,6 +558,136 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // -----------------------------------------
+    // Kinematic Sequence Chart (Canvas 2D)
+    // -----------------------------------------
+    const KINE_COLORS = { 'Pelvis': '#38bdf8', 'Torso': '#34d399', 'Lead Arm': '#fbbf24', 'Hands/Bat': '#f472b6' };
+    const KINE_ORDER = ['Pelvis', 'Torso', 'Lead Arm', 'Hands/Bat'];
+    let lastKineSeq = null;
+
+    function renderKinematicSequence(seq) {
+        const panel = document.getElementById('kinematic-panel');
+        if (!seq || !seq.series || !seq.time_ms || !seq.time_ms.length) {
+            lastKineSeq = null;
+            panel.style.display = 'none';
+            return;
+        }
+        panel.style.display = '';
+        lastKineSeq = seq;
+
+        // Legend
+        const present = KINE_ORDER.filter(k => Array.isArray(seq.series[k]));
+        document.getElementById('kinematic-legend').innerHTML = present.map(k => {
+            const pk = seq.peaks && seq.peaks[k];
+            const detail = pk ? ` <span class="kine-peak">${Math.round(pk.value)}°/s @ ${Math.round(pk.t_ms)}ms</span>` : '';
+            return `<span class="kine-chip"><span class="kine-dot" style="background:${KINE_COLORS[k]}"></span>${k}${detail}</span>`;
+        }).join('');
+
+        // Caption: is the sequence proper proximal-to-distal?
+        const times = present.map(k => seq.peaks && seq.peaks[k] ? seq.peaks[k].t_ms : null).filter(t => t != null);
+        let proper = times.length === present.length;
+        for (let i = 1; i < times.length; i++) if (times[i] <= times[i - 1]) proper = false;
+        const cap = document.getElementById('kinematic-caption');
+        cap.innerHTML = proper
+            ? '<span class="val-good" style="font-weight:700;">✓ Proper sequence</span> <span class="text-muted">— segments peak in order, building speed up the chain.</span>'
+            : '<span class="val-warn" style="font-weight:700;">⚠ Sequence flag</span> <span class="text-muted">— segments do not peak strictly proximal-to-distal; energy may leak out of the chain.</span>';
+
+        const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (reduce) { drawKine(1); return; }
+        const start = performance.now(), dur = 900;
+        (function step(now) {
+            const p = Math.min((now - start) / dur, 1);
+            drawKine(1 - Math.pow(1 - p, 3));
+            if (p < 1 && lastKineSeq === seq) requestAnimationFrame(step);
+        })(start);
+    }
+
+    function drawKine(progress) {
+        const seq = lastKineSeq;
+        const canvas = document.getElementById('kinematic-chart');
+        if (!seq || !canvas) return;
+        const wrap = canvas.parentElement;
+        const cssW = wrap.clientWidth || 600, cssH = 300;
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = cssW * dpr; canvas.height = cssH * dpr;
+        canvas.style.width = cssW + 'px'; canvas.style.height = cssH + 'px';
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, cssW, cssH);
+
+        const padL = 46, padR = 14, padT = 14, padB = 32;
+        const plotW = cssW - padL - padR, plotH = cssH - padT - padB;
+        const present = KINE_ORDER.filter(k => Array.isArray(seq.series[k]));
+        const tMax = seq.time_ms[seq.time_ms.length - 1] || 1;
+        let vMax = 0;
+        present.forEach(k => seq.series[k].forEach(v => { if (v > vMax) vMax = v; }));
+        vMax = vMax * 1.08 || 1;
+        const X = t => padL + (t / tMax) * plotW;
+        const Y = v => padT + plotH - (v / vMax) * plotH;
+        const css = getComputedStyle(document.documentElement);
+        const muted = (css.getPropertyValue('--text-muted') || '#94a3b8').trim();
+
+        // Gridlines + Y labels (deg/s)
+        ctx.font = '10px Inter, sans-serif'; ctx.textBaseline = 'middle';
+        const ySteps = 4;
+        for (let i = 0; i <= ySteps; i++) {
+            const v = (vMax / ySteps) * i, y = Y(v);
+            ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(cssW - padR, y); ctx.stroke();
+            ctx.fillStyle = muted; ctx.textAlign = 'right';
+            ctx.fillText(Math.round(v), padL - 6, y);
+        }
+        // X labels (ms)
+        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        const xSteps = 5;
+        for (let i = 0; i <= xSteps; i++) {
+            const t = (tMax / xSteps) * i;
+            ctx.fillStyle = muted; ctx.fillText(Math.round(t), X(t), cssH - padB + 8);
+        }
+        ctx.fillText('Time (ms)', padL + plotW / 2, cssH - 12);
+        ctx.save(); ctx.translate(12, padT + plotH / 2); ctx.rotate(-Math.PI / 2);
+        ctx.fillText('Angular velocity (°/s)', 0, 0); ctx.restore();
+
+        // Contact line
+        if (seq.contact_ms != null) {
+            const cx = X(seq.contact_ms);
+            ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+            ctx.beginPath(); ctx.moveTo(cx, padT); ctx.lineTo(cx, padT + plotH); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = muted; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+            ctx.fillText('contact', cx, padT + 1);
+        }
+
+        const tReveal = tMax * progress;
+        present.forEach(k => {
+            const data = seq.series[k], times = seq.time_ms;
+            ctx.strokeStyle = KINE_COLORS[k]; ctx.lineWidth = 2.2;
+            ctx.lineJoin = 'round'; ctx.beginPath();
+            let started = false;
+            for (let i = 0; i < times.length; i++) {
+                if (times[i] > tReveal) break;
+                const x = X(times[i]), y = Y(data[i]);
+                if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            // Peak marker (once revealed)
+            const pk = seq.peaks && seq.peaks[k];
+            if (pk && pk.t_ms <= tReveal) {
+                ctx.fillStyle = KINE_COLORS[k];
+                ctx.beginPath(); ctx.arc(X(pk.t_ms), Y(pk.value), 3.5, 0, Math.PI * 2); ctx.fill();
+                ctx.strokeStyle = 'rgba(8,11,18,0.9)'; ctx.lineWidth = 1.5; ctx.stroke();
+            }
+        });
+    }
+
+    // Redraw on resize (debounced) so the chart stays crisp & responsive.
+    let kineResizeTimer = null;
+    window.addEventListener('resize', () => {
+        if (!lastKineSeq) return;
+        clearTimeout(kineResizeTimer);
+        kineResizeTimer = setTimeout(() => drawKine(1), 150);
+    });
+
+    // -----------------------------------------
     // SwingAI Report Renderer
     // -----------------------------------------
     const PHASE_ORDER = ['balance_load', 'stride', 'power_move', 'contact'];
@@ -756,17 +819,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         pendingUploadFile = file;
-        pendingLocalFilepath = null;
         showDemoModal();
     }
-    
-    function promptDemographicsForLocal(filepath, filename) {
-        pendingUploadFile = null;
-        pendingLocalFilepath = filepath;
-        pendingLocalFilename = filename;
-        showDemoModal();
-    }
-    
+
     function showDemoModal() { document.getElementById('demo-modal').classList.remove('hidden'); }
     function hideDemoModal() { document.getElementById('demo-modal').classList.add('hidden'); }
     

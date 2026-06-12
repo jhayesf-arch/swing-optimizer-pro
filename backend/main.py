@@ -1,5 +1,4 @@
 import os
-import glob
 from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -59,6 +58,88 @@ _SKEL_MARKERS = [
     'midHip', 'RHip', 'LHip', 'RKnee', 'LKnee', 'RAnkle', 'LAnkle',
     'RHeel', 'LHeel',
 ]
+
+
+def _kinematic_sequence(mot_df, max_points: int = 72) -> dict:
+    """
+    Approximate proximal-to-distal kinematic sequence: segment angular velocity
+    (deg/s) vs time, derived from .mot joint angles via an axial-rotation proxy
+    (pelvis -> +lumbar -> +lead arm -> +elbow). Intended for visualization, not
+    as a validated segment-velocity measurement. Lead side assumed left (RH hitter).
+    """
+    import numpy as np
+    from scipy.signal import butter, filtfilt
+
+    if 'pelvis_rotation' not in mot_df.columns or 'time' not in mot_df.columns:
+        return {}
+    t = mot_df['time'].values.astype(float)
+    if len(t) < 8:
+        return {}
+    dt = float(np.median(np.diff(t)))
+    if dt <= 0:
+        return {}
+    nyq = 0.5 / dt
+    b, a = butter(4, min(12.0 / nyq, 0.99), btype='low')
+
+    def col(name):
+        return mot_df[name].values.astype(float) if name in mot_df.columns else None
+
+    def filt(x):
+        if x is None:
+            return None
+        x = np.unwrap(np.deg2rad(x))
+        try:
+            x = filtfilt(b, a, x)
+        except Exception:
+            pass
+        return x  # radians
+
+    pelvis = filt(col('pelvis_rotation'))
+    if pelvis is None:
+        return {}
+    lumbar = filt(col('lumbar_rotation'))
+    arm = filt(col('arm_rot_l') if 'arm_rot_l' in mot_df.columns
+               else ('arm_flex_l' in mot_df.columns and col('arm_flex_l')) or col('arm_flex_r'))
+    elbow = filt(col('elbow_flex_l') if 'elbow_flex_l' in mot_df.columns else col('elbow_flex_r'))
+
+    pelvis_a = pelvis
+    torso_a = pelvis + lumbar if lumbar is not None else None
+    base = torso_a if torso_a is not None else pelvis
+    arm_a = base + arm if arm is not None else None
+    hand_a = (arm_a + elbow) if (arm_a is not None and elbow is not None) else None
+
+    def omega(angle):
+        if angle is None:
+            return None
+        return np.abs(np.rad2deg(np.gradient(angle, dt)))  # deg/s magnitude
+
+    raw = {'Pelvis': omega(pelvis_a), 'Torso': omega(torso_a),
+           'Lead Arm': omega(arm_a), 'Hands/Bat': omega(hand_a)}
+    raw = {k: v for k, v in raw.items() if v is not None and np.nanmax(v) > 1e-6}
+    if 'Pelvis' not in raw:
+        return {}
+
+    pelw = raw['Pelvis']
+    peak = int(np.argmax(pelw))
+    start = max(0, peak - int(0.30 / dt))
+    end = min(len(t) - 1, peak + int(0.20 / dt))
+    if end - start < 4:
+        start, end = 0, len(t) - 1
+    idx = np.arange(start, end + 1)
+    idx = idx[::max(1, len(idx) // max_points)]
+    t0 = t[start]
+
+    time_ms = [round(float((t[i] - t0) * 1000.0), 1) for i in idx]
+    out_series, peaks = {}, {}
+    for k, v in raw.items():
+        out_series[k] = [int(round(float(v[i]))) for i in idx]
+        pj = int(np.argmax(v[start:end + 1])) + start
+        peaks[k] = {'t_ms': round(float((t[pj] - t0) * 1000.0), 1), 'value': int(round(float(v[pj])))}
+
+    contact = peaks.get('Hands/Bat') or peaks.get('Lead Arm') or peaks['Pelvis']
+    return {'time_ms': time_ms, 'series': out_series, 'peaks': peaks,
+            'contact_ms': contact['t_ms'], 'units': 'deg/s'}
+
 
 def _extract_skeleton_frames(trc_df, mot_df, max_frames: int = 60) -> dict:
     """
@@ -319,6 +400,10 @@ async def analyze_upload(
                 diagnosis['skeleton_frames'] = _skeleton_from_mot(kinematics, body_height_m=height_m)
             except Exception:
                 pass
+        try:
+            diagnosis['kinematic_sequence'] = _kinematic_sequence(kinematics)
+        except Exception:
+            pass
         _run_id(file_path, DEFAULT_MODEL, bat_mass_kg, bat_length_m, diagnosis)
         return JSONResponse(content={"filename": file.filename, "success": True, "data": diagnosis})
     except Exception as e:
@@ -329,85 +414,6 @@ async def analyze_upload(
             os.remove(file_path)
         if trc_path and os.path.exists(trc_path):
             os.remove(trc_path)
-
-@app.get("/api/scan-downloads")
-def scan_downloads():
-    try:
-        downloads_path = os.path.expanduser("~/Downloads")
-        mot_files = glob.glob(os.path.join(downloads_path, "**/*.mot"), recursive=True)
-        return JSONResponse(content={"success": True, "files": [
-            {"filename": os.path.basename(f), "filepath": f} for f in mot_files
-        ]})
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
-
-@app.post("/api/analyze/local")
-def analyze_local(payload: dict):
-    if "filepath" not in payload:
-        return JSONResponse(status_code=400, content={"success": False, "error": "Filepath required"})
-
-    file_path = payload["filepath"]
-    filename = payload.get("filename", os.path.basename(file_path))
-
-    if not os.path.exists(file_path):
-        return JSONResponse(status_code=404, content={"success": False, "error": "File not found"})
-
-    try:
-        height_m    = float(payload.get('height_m', 1.83))
-        weight_kg   = float(payload.get('weight_kg', 82.0))
-        skill_level = str(payload.get('skill_level', 'high_school'))
-        bat_mass_kg = float(payload.get('bat_mass_kg', 0.88))
-        bat_length_m = float(payload.get('bat_length_m', 0.864))
-
-        optimizer = RefinedHittingOptimizer(
-            body_mass_kg=weight_kg, body_height_m=height_m,
-            skill_level=skill_level,
-            bat_mass_kg=bat_mass_kg, bat_length_m=bat_length_m
-        )
-        kinematics = optimizer.load_mot_file(file_path)
-
-        trc_name = os.path.basename(file_path).replace('.mot', '.trc')
-        # 1. Standard OpenCap folder structure: .../OpenSimData/Kinematics/ -> .../MarkerData/
-        trc_path = file_path.replace('Kinematics', 'MarkerData').replace('.mot', '.trc')
-        if not os.path.exists(trc_path):
-            # 2. Walk up from the .mot file's directory looking for a sibling MarkerData/ folder
-            search_dir = os.path.dirname(file_path)
-            for _ in range(4):  # up to 4 levels up
-                candidate = os.path.join(search_dir, 'MarkerData', trc_name)
-                if os.path.exists(candidate):
-                    trc_path = candidate
-                    break
-                search_dir = os.path.dirname(search_dir)
-        if not os.path.exists(trc_path):
-            # 3. Broad search under ~/Desktop and ~/Downloads as last resort
-            for search_root in [os.path.expanduser('~/Desktop'), os.path.expanduser('~/Downloads')]:
-                for dirpath, _, fnames in os.walk(search_root):
-                    if trc_name in fnames and 'MarkerData' in dirpath:
-                        trc_path = os.path.join(dirpath, trc_name)
-                        break
-        trc_data = optimizer.load_trc_file(trc_path) if os.path.exists(trc_path) else None
-
-        diagnosis = optimizer.comprehensive_diagnosis(kinematics, filename, trc_data=trc_data)
-
-        # Add skeleton frames for visualization (downsampled key markers during swing window)
-        if trc_data is not None:
-            try:
-                diagnosis['skeleton_frames'] = _extract_skeleton_frames(trc_data, kinematics)
-            except Exception:
-                pass
-        if not diagnosis.get('skeleton_frames'):
-            try:
-                diagnosis['skeleton_frames'] = _skeleton_from_mot(kinematics, body_height_m=height_m)
-            except Exception:
-                pass
-
-        model_path = payload.get('model_path', DEFAULT_MODEL)
-        _run_id(file_path, model_path, bat_mass_kg, bat_length_m, diagnosis)
-
-        return JSONResponse(content={"filename": filename, "success": True, "data": diagnosis})
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
 
 @app.get("/style.css")
 def serve_css():
