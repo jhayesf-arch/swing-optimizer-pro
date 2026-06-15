@@ -446,7 +446,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('stride-metrics').innerHTML = `
             ${createMetric('Stride Efficiency', (m.stride_efficiency_pct || 0).toFixed(0), '%')}
             ${createMetric('Stride Ratio', (m.stride_ratio || 0).toFixed(2), 'x Ht')}
-            ${createMetric('Proper Sequence', m.proper_sequence ? 'YES ✅' : 'NO ❌', '', true)}
+            ${createMetric('Proper Sequence', m.proper_sequence ? 'Yes' : 'No', '', true)}
             ${createMetric('Pelvis KE', (m.pelvis_ke_J || 0).toFixed(1), 'J')}
             ${createMetric('Torso KE', (m.torso_ke_J || 0).toFixed(1), 'J')}
             ${createMetric('Arm KE', (m.arm_ke_J || 0).toFixed(1), 'J')}
