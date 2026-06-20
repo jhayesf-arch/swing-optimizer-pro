@@ -968,6 +968,10 @@ label.btn { cursor: pointer; }
 .pr-table th { text-align: left; color: #5b6473; font-weight: 600; border-bottom: 1.5px solid #cdd5e0; padding: 5px 6px; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.5px; }
 .pr-table td { padding: 5px 6px; border-bottom: 1px solid #eef1f6; }
 .pr-table tr.phase-row td { background: #eef4fb; font-weight: 700; color: #0b1220; text-transform: uppercase; font-size: 10px; letter-spacing: 0.6px; }
+.pr-adv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px 16px; margin-bottom: 6px; }
+.pr-adv-item { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; border-bottom: 1px solid #eef1f6; padding: 3px 0; }
+.pr-adv-item span { color: #5b6473; }
+.pr-adv-item b { color: #0b1220; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pr-cols { display: flex; gap: 24px; margin-top: 4px; }
 .pr-cols > div { flex: 1; }
 .pr-cols ul { margin: 0; padding-left: 16px; font-size: 11.5px; line-height: 1.5; }

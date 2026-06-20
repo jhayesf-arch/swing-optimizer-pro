@@ -217,6 +217,33 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         const list = arr => (arr || []).map(x => `<li>${esc(x)}</li>`).join('') || '<li>—</li>';
 
+        // Advanced Physics — mirror the on-screen advanced panel.
+        const grf = diagnosis.grf_estimation || {};
+        const advRows = [
+            ['Max Hip-Shoulder Separation', num(m.max_separation_deg, 1), '°'],
+            ['Peak Hip Power', num(m.peak_hip_power_W, 0), 'W'],
+            ['Relative Hip Power', num(m.hip_power_per_kg, 1), 'W/kg'],
+            ['Sequence Timing', num(m.sequence_timing_ms, 0), 'ms'],
+            ['Kinetic Chain Efficiency', num(m.kinetic_chain_efficiency_pct, 1), '%'],
+            ['Torso / Pelvis Ratio', num(m.torso_to_pelvis_rot_ratio, 2), ''],
+            ['Total Chain Energy', num(m.total_energy_transfer_J, 0), 'J'],
+            ['Time to Contact', m.time_to_contact_s ? (m.time_to_contact_s * 1000).toFixed(0) : '—', 'ms'],
+            ['Rotational Accel', m.rotational_acceleration_deg_s2 ? (m.rotational_acceleration_deg_s2 / 1000).toFixed(1) : '—', 'k°/s²'],
+            ['Body Rotation Ratio', num(m.body_rotation_ratio_pct, 1), '%'],
+            ['Stride Efficiency', num(m.stride_efficiency_pct, 0), '%'],
+            ['Stride Ratio', num(m.stride_ratio, 2), 'x Ht'],
+            ['Proper Sequence', m.proper_sequence ? 'Yes' : 'No', ''],
+            ['Pelvis KE', num(m.pelvis_ke_J, 1), 'J'],
+            ['Torso KE', num(m.torso_ke_J, 1), 'J'],
+            ['Arm KE', num(m.arm_ke_J, 1), 'J'],
+            ['Bat KE', num(m.bat_ke_J, 1), 'J'],
+        ];
+        if (grf.peak_grf_vert_BW) advRows.push(['Peak GRF Vertical', (grf.peak_grf_vert_BW * 100).toFixed(0), '% BW']);
+        if (grf.peak_grf_ap_N) advRows.push(['Peak GRF Ant-Post', num(grf.peak_grf_ap_N, 0), 'N']);
+        const advHtml = advRows
+            .map(([l, v, u]) => `<div class="pr-adv-item"><span>${esc(l)}</span><b>${esc(v)}${u ? (' ' + esc(u)) : ''}</b></div>`)
+            .join('');
+
         const html = `
           <div class="pr-page">
             <div class="pr-head">
@@ -241,6 +268,8 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
             <h3 class="pr-h3">12-Dimension Breakdown</h3>
             <table class="pr-table"><thead><tr><th>Dimension</th><th style="text-align:right;">Value</th><th>Rating</th><th>Status</th></tr></thead><tbody>${dimsHtml}</tbody></table>
+            <h3 class="pr-h3">Advanced Physics</h3>
+            <div class="pr-adv">${advHtml}</div>
             <div class="pr-cols">
               <div><h3 class="pr-h3">Mechanical Findings</h3><ul>${list(diagnosis.findings)}</ul></div>
               <div><h3 class="pr-h3">Prescriptions</h3><ul>${list(diagnosis.recommendations)}</ul></div>
