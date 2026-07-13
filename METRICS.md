@@ -46,12 +46,14 @@ A plain-English explanation of every number in your swing report. No biomechanic
 
 Every dimension shows a **percentile** — where you rank *at your level* (youth / high school / college / pro). 50th = dead average; 80th = better than 4 of 5 hitters. The **Overall Percentile** at the top blends all dimensions. The **Coaching Focus** panel turns this into action: a body heatmap colors your weakest links (red = needs work, green = strength), and **Your Top Priorities** ranks the fixes with the biggest bat‑speed payoff first, each with a specific cue and drill.
 
-**Two ways percentiles are computed — the report tells you which:**
+**How percentiles are computed — the report tells you which mode is active:**
 
-- **vs research** (default) — percentiles are *estimated* from published benchmarks (Blast Motion, Fleisig, Escamilla, etc.). Good directionally, but not a measured rank against real hitters. Only Hand/Bat Speed is anchored to fully level‑stratified data.
-- **vs your library** — real percentiles computed from *your own* `.mot`/`.trc` files, grouped by level. A "72nd percentile" then literally means "better than 72% of the college swings you've logged." Tiles marked **·lib** and the hero note tell you this is active.
+- **Research‑guided (default)** — percentiles are *estimated* from published benchmarks (Blast Motion, Fleisig, Escamilla, etc.). Good directionally, but not a measured rank against real hitters. Only Hand/Bat Speed is anchored to fully level‑stratified data.
+- **Blended (library + research)** — once you've built a library of *your own* swings, percentiles blend your cohort with the research benchmark using **empirical‑Bayes shrinkage**: your cohort's weight is `n / (n + 25)`, and the research benchmark carries the rest. So research still **anchors** the number (and dominates small cohorts), and your own data takes over as you log more swings — the benchmarks are never abandoned. Tiles show **·blend**; hover any bar to see the split (e.g. *"78th pct — blend of your library (68th, n=20) and research (86th); 44% library"*).
 
-To switch to library‑based ranking, build a cohort from the swings on your machine:
+The blend constant (`COHORT_SHRINKAGE`, default 25) lives in `analyzer.py` — lower it to trust your library sooner, raise it to lean on research longer. A level still needs ≥ `COHORT_MIN_N` (5) swings before its data blends in at all.
+
+To start blending, build a cohort from the swings on your machine:
 
 ```
 # 1) List your swing files (fill in level + height/weight in the CSV it writes)
