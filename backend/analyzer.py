@@ -393,7 +393,11 @@ DRILL_LIBRARY = {
 # level. When present, percentiles are computed against real swings at the same
 # level instead of being estimated from research benchmarks.
 # ---------------------------------------------------------------------------
-COHORT_MIN_N = 5  # minimum swings in a level before its empirical percentiles are trusted
+COHORT_MIN_N = 5  # minimum swings in a level before its empirical data is blended in at all
+# Empirical-Bayes shrinkage constant. The user's cohort gets weight n/(n+K) and the
+# research benchmark gets the remainder, so research guidance anchors small cohorts and
+# is never fully abandoned. K=25 => a 25-swing cohort is a 50/50 blend.
+COHORT_SHRINKAGE = 25.0
 _COHORT_MODEL = None
 _COHORT_LOADED = False
 
@@ -2137,24 +2141,34 @@ class RefinedHittingOptimizer:
             weighted_sum += normalized * weight
             total_weight += weight
 
-            # Cohort percentile — prefer the user's own level-grouped library,
-            # falling back to research-benchmark estimation when the cohort is thin.
-            emp_pct, emp_n = self._empirical_percentile(dim_key, dims[dim_key]['value'])
+            val = dims[dim_key]['value']
+            # Research-guided benchmark percentile — always computed; it is the prior.
+            bench_pct = self._percentile_for(dim_key, val)
+            if bench_pct is None:
+                bench_pct = _STAR_PCT.get(stars, 50.0)
+            dims[dim_key]['percentile_benchmark'] = int(round(bench_pct))
+
+            # Empirical percentile from the user's own level cohort, if populated.
+            emp_pct, emp_n = self._empirical_percentile(dim_key, val)
             if emp_pct is not None:
-                pct = emp_pct
+                # Empirical-Bayes shrinkage toward the research benchmark: cohort weight
+                # grows with n, so research still anchors small cohorts (never abandoned).
+                w = emp_n / (emp_n + COHORT_SHRINKAGE)
+                pct = w * emp_pct + (1.0 - w) * bench_pct
                 dims[dim_key]['percentile_n'] = int(emp_n)
+                dims[dim_key]['percentile_library'] = int(round(emp_pct))
+                dims[dim_key]['percentile_weight'] = round(w, 2)
                 n_empirical += 1
             else:
-                pct = self._percentile_for(dim_key, dims[dim_key]['value'])
-                if pct is None:
-                    pct = _STAR_PCT.get(stars, 50.0)
-            dims[dim_key]['percentile'] = int(pct)
+                pct = bench_pct
+
+            dims[dim_key]['percentile'] = int(round(pct))
             pct_weighted_sum += pct * weight
             pct_weight += weight
 
         swing_score = round(weighted_sum / total_weight, 1) if total_weight > 0 else 0.0
         overall_percentile = int(round(pct_weighted_sum / pct_weight)) if pct_weight > 0 else 50
-        percentile_basis = 'library' if n_empirical > 0 else 'benchmark'
+        percentile_basis = 'blended' if n_empirical > 0 else 'benchmark'
 
         # ------------------------------------------------------------------
         # PRESCRIPTION ENGINE — rank weak dimensions by bat-speed impact and

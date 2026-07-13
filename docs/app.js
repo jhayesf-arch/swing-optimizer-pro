@@ -435,12 +435,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const libDims = diagnosis.swingai_report?.percentile_library_dims || 0;
         const opLabel = document.getElementById('overall-pct-label');
         const note = document.getElementById('pct-basis-note');
-        if (basis === 'library') {
-            if (opLabel) opLabel.textContent = 'Overall Percentile (vs your library)';
-            if (note) note.innerHTML = `<span class="val-good">●</span> Ranked against <strong>your own swing library</strong> at this level (${libDims}/15 metrics). Build or grow it with <code>build_cohort.py</code>.`;
+        if (basis === 'blended') {
+            if (opLabel) opLabel.textContent = 'Overall Percentile (library + research)';
+            if (note) note.innerHTML = `<span class="val-good">●</span> Blended ranking: <strong>your own library</strong> anchored by research benchmarks (${libDims}/15 metrics use your swings; your data's weight grows as you log more). Grow it with <code>build_cohort.py</code>.`;
         } else {
             if (opLabel) opLabel.textContent = 'Overall Percentile (vs research)';
-            if (note) note.innerHTML = `Percentiles are <strong>estimated from research benchmarks</strong>. Build a library of your own swings (<code>build_cohort.py</code>) to rank against real hitters at your level.`;
+            if (note) note.innerHTML = `Percentiles are <strong>research‑guided benchmarks</strong>. Build a library of your own swings (<code>build_cohort.py</code>) and they blend in — weighted by cohort size — to rank against real hitters at your level.`;
         }
 
         // Skill badge
@@ -990,16 +990,17 @@ document.addEventListener('DOMContentLoaded', () => {
             ? `<div class="dim-cues">${DIM_CUES[dim.key].map(c => `<span class="dim-cue-tag">${c}</span>`).join('')}</div>`
             : '';
 
-        const pctTitle = (typeof dim.percentile_n === 'number')
-            ? `${dim.percentile}th percentile — vs ${dim.percentile_n} swings in your library at this level`
-            : `${dim.percentile}th percentile — estimated from research benchmarks`;
+        const blended = (typeof dim.percentile_weight === 'number');
+        const pctTitle = blended
+            ? `${dim.percentile}th pct — blend of your library (${dim.percentile_library}th, n=${dim.percentile_n}) and research (${dim.percentile_benchmark}th); ${Math.round(dim.percentile_weight * 100)}% library`
+            : `${dim.percentile}th percentile — research benchmark estimate`;
         const pctBar = (typeof dim.percentile === 'number')
             ? `<div class="dim-pct" title="${pctTitle}">
                    <div class="dim-pct-track">
                        <span class="dim-pct-median"></span>
                        <span class="dim-pct-fill ${badgeClass}" style="width:${Math.max(2, Math.min(100, dim.percentile))}%"></span>
                    </div>
-                   <span class="dim-pct-label">${dim.percentile}<sup>th</sup> pct${(typeof dim.percentile_n === 'number') ? ' <span class="dim-pct-lib">·lib</span>' : ''}</span>
+                   <span class="dim-pct-label">${dim.percentile}<sup>th</sup> pct${blended ? ' <span class="dim-pct-lib">·blend</span>' : ''}</span>
                </div>`
             : '';
 
