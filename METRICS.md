@@ -73,7 +73,7 @@ To avoid re‑running by hand, keep an `athletes.json` mapping each athlete's fo
 python backend/build_cohort.py auto      # reads athletes.json, regroups by level
 ```
 
-On macOS you can fully automate it with a `launchd` agent that watches those folders and runs `auto` on change (event‑driven, no polling). Point its `WatchPaths` at each athlete's folder (and the `OpenSimData/Kinematics` + `MarkerData` subfolders), and its `ProgramArguments` at `build_cohort.py auto`. Use a scipy‑enabled Python so the cohort numerics match live analysis. `athletes.json` is gitignored (it holds demographics).
+On macOS you can fully automate it with a `launchd` agent that runs `build_cohort.py auto --if-changed`, triggered two ways: `WatchPaths` on `athletes.json` (so **adding an athlete rebuilds immediately**) plus a `StartInterval` poll (e.g. 180s) that catches new swings for existing athletes. `--if-changed` makes the poll cheap — it exits without work unless a `.mot`/`.trc` (or the config) is newer than the model. Because the agent references only `athletes.json` and `build_cohort.py` — never individual athlete folders — **you never edit the plist again; adding an athlete is one line in `athletes.json`.** Use a scipy‑enabled Python so the cohort numerics match live analysis. `athletes.json` is gitignored (it holds demographics).
 
 ---
 
