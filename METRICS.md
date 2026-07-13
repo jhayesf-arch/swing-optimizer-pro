@@ -73,7 +73,11 @@ To avoid re‑running by hand, keep an `athletes.json` mapping each athlete's fo
 python backend/build_cohort.py auto      # reads athletes.json, regroups by level
 ```
 
-On macOS you can fully automate it with a `launchd` agent that runs `build_cohort.py auto --if-changed`, triggered two ways: `WatchPaths` on `athletes.json` (so **adding an athlete rebuilds immediately**) plus a `StartInterval` poll (e.g. 180s) that catches new swings for existing athletes. `--if-changed` makes the poll cheap — it exits without work unless a `.mot`/`.trc` (or the config) is newer than the model. Because the agent references only `athletes.json` and `build_cohort.py` — never individual athlete folders — **you never edit the plist again; adding an athlete is one line in `athletes.json`.** Use a scipy‑enabled Python so the cohort numerics match live analysis. `athletes.json` is gitignored (it holds demographics).
+On macOS you can fully automate it with a `launchd` agent that runs `build_cohort.py auto --if-changed`, triggered two ways: `WatchPaths` on `athletes.json` (so **adding/editing an athlete rebuilds immediately**) plus a `StartInterval` poll (e.g. 180s) that catches new swings for existing athletes. `--if-changed` makes the poll cheap — it exits without work unless a `.mot`/`.trc` (or the config) is newer than the model. Because the agent references only `athletes.json` and `build_cohort.py` — never individual athlete folders — **you never edit the plist again.** Use a scipy‑enabled Python so the cohort numerics match live analysis.
+
+**Auto‑discovery.** Add a `discover_roots` list to the config (e.g. `["~/Downloads"]`) and any *new* folder under those roots that contains `.mot` files is auto‑registered as a stub entry flagged `needs_demographics`. Stubs are **held out of the cohort** until you fill in their level + height/weight (guessed body size would distort the physics) — so a new folder is captured automatically, and you only supply the demographics.
+
+**Backup.** `athletes.json` and `cohort_percentiles.json` hold athlete demographics, so they're gitignored in this (public) repo. Keep them in a separate **private** repo instead: store the real files there and symlink them back into `backend/`, and have the launchd wrapper `git commit && git push` that private repo after each rebuild. Your config and model are then versioned and backed up, and new discovered athletes sync automatically.
 
 ---
 
