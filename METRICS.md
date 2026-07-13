@@ -63,6 +63,16 @@ python backend/build_cohort.py build --manifest cohort_manifest.csv
 
 Each level needs at least 5 swings before its empirical percentiles are trusted; levels below that automatically fall back to the research estimate. Re‑run `build` whenever you add swings.
 
+### Automatic rebuilds
+
+To avoid re‑running by hand, keep an `athletes.json` mapping each athlete's folder to their level + height/weight, then rebuild with a single command (no manifest):
+
+```
+python backend/build_cohort.py auto      # reads athletes.json, regroups by level
+```
+
+On macOS you can fully automate it with a `launchd` agent that watches those folders and runs `auto` on change (event‑driven, no polling). Point its `WatchPaths` at each athlete's folder (and the `OpenSimData/Kinematics` + `MarkerData` subfolders), and its `ProgramArguments` at `build_cohort.py auto`. Use a scipy‑enabled Python so the cohort numerics match live analysis. `athletes.json` is gitignored (it holds demographics).
+
 ---
 
 ## Kinematic Sequence chart
