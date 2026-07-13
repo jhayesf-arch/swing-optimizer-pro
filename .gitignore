@@ -36,10 +36,12 @@ Thumbs.db
 # CSV output files
 refined_swing_comparison.csv
 
-# Cohort percentile model + manifest (contain athlete demographics — keep private)
+# Cohort percentile model + manifest + athlete config (contain athlete demographics — keep private)
 cohort_percentiles.json
 backend/cohort_percentiles.json
 cohort_manifest.csv
+athletes.json
+backend/athletes.json
 *.mot
 
 # Logs

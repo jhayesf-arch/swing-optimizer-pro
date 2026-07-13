@@ -26,6 +26,23 @@ Two steps:
 
 Place cohort_percentiles.json next to analyzer.py (the default --out) and the
 backend will use it automatically. Set COHORT_MODEL_PATH to override the location.
+
+Automation (no manual manifest): keep an athletes.json that maps each folder to
+its athlete's level + demographics, then just run:
+
+        python build_cohort.py auto            # reads athletes.json, rebuilds
+
+Any new .mot/.trc dropped into a listed folder is picked up on the next run,
+so this command is what a file-watcher (e.g. a macOS launchd agent) should call.
+athletes.json format:
+
+    {
+      "cohort_out": "cohort_percentiles.json",
+      "athletes": [
+        {"dir": "~/Downloads/kike_swing_data_monocular", "athlete": "kike",
+         "level": "high_school", "height_in": 68, "weight_lb": 150}
+      ]
+    }
 """
 import argparse
 import csv
@@ -80,63 +97,38 @@ def cmd_init(args):
     return 0
 
 
-def cmd_build(args):
-    with open(args.manifest, newline='') as f:
-        rows = list(csv.DictReader(f))
+def _run_swing(buckets, mot, trc, level, h_m, w_kg, bat_kg, bat_m):
+    """Analyze one swing and fold its dimension values into buckets[level][dim].
+    Returns None on success or an error string to report as skipped."""
+    try:
+        opt = RefinedHittingOptimizer(body_mass_kg=w_kg, body_height_m=h_m,
+                                      skill_level=level, bat_mass_kg=bat_kg, bat_length_m=bat_m)
+        kin = opt.load_mot_file(mot)
+        if kin is None or len(kin) == 0:
+            return "empty/invalid .mot"
+        trc_data = opt.load_trc_file(trc) if trc and os.path.exists(trc) else None
+        diag = opt.comprehensive_diagnosis(kin, os.path.basename(mot), trc_data=trc_data)
+        dims = diag.get('swingai_report', {}).get('dimensions', {})
+        for key, d in dims.items():
+            val = d.get('value')
+            if isinstance(val, (int, float)):
+                buckets.setdefault(level, {}).setdefault(key, []).append(round(float(val), 3))
+        return None
+    except Exception as e:
+        return f"error: {e}"
 
-    # level -> dim_key -> [values]
-    buckets = {}
-    processed = 0
-    skipped = []
-    for i, row in enumerate(rows, start=2):  # 2 = first data row (after header)
-        mot = (row.get('mot_file') or '').strip()
-        level = (row.get('level') or '').strip().lower()
-        if not mot:
-            continue
-        if level not in VALID_LEVELS:
-            skipped.append((mot, f"level '{level}' is blank/invalid"))
-            continue
 
-        # Demographics: prefer metric, else convert imperial.
-        h_m = _num(row, 'height_m') or (_num(row, 'height_in') and _num(row, 'height_in') * 0.0254)
-        w_kg = _num(row, 'weight_kg') or (_num(row, 'weight_lb') and _num(row, 'weight_lb') * 0.453592)
-        if not h_m or not w_kg:
-            skipped.append((mot, "missing height/weight"))
-            continue
-
-        bat_kg = (_num(row, 'bat_oz') or 31.0) * 0.0283495
-        bat_m = (_num(row, 'bat_in') or 34.0) * 0.0254
-        trc = (row.get('trc_file') or '').strip()
-
-        try:
-            opt = RefinedHittingOptimizer(body_mass_kg=w_kg, body_height_m=h_m,
-                                          skill_level=level, bat_mass_kg=bat_kg, bat_length_m=bat_m)
-            kin = opt.load_mot_file(mot)
-            if kin is None or len(kin) == 0:
-                skipped.append((mot, "empty/invalid .mot"))
-                continue
-            trc_data = opt.load_trc_file(trc) if trc and os.path.exists(trc) else None
-            diag = opt.comprehensive_diagnosis(kin, os.path.basename(mot), trc_data=trc_data)
-            dims = diag.get('swingai_report', {}).get('dimensions', {})
-            for key, d in dims.items():
-                val = d.get('value')
-                if isinstance(val, (int, float)):
-                    buckets.setdefault(level, {}).setdefault(key, []).append(round(float(val), 3))
-            processed += 1
-        except Exception as e:
-            skipped.append((mot, f"error: {e}"))
-
-    # Assemble compact model: sorted value list + n per (level, dim).
+def _write_model(buckets, processed, out, skipped):
+    """Serialize buckets to the compact cohort model and print a summary."""
     model = {'_meta': {'source': 'user_library', 'files_processed': processed}}
     for level, dims in buckets.items():
         model[level] = {}
         for key, vals in dims.items():
             model[level][key] = {'n': len(vals), 'values': sorted(vals)}
-
-    with open(args.out, 'w') as f:
+    with open(out, 'w') as f:
         json.dump(model, f, indent=1)
 
-    print(f"Processed {processed} swing(s) -> {args.out}")
+    print(f"Processed {processed} swing(s) -> {out}")
     for level in sorted(k for k in model if k != '_meta'):
         dims = model[level]
         sample_n = max((d['n'] for d in dims.values()), default=0)
@@ -147,6 +139,78 @@ def cmd_build(args):
             print(f"  - {os.path.basename(mot)}: {why}")
         if len(skipped) > 20:
             print(f"  ... and {len(skipped) - 20} more")
+
+
+def _pair_trc(root):
+    """Index every .trc under root by lowercased filename stem (for cross-subfolder pairing)."""
+    idx = {}
+    for trc in glob.glob(os.path.join(root, '**', '*.trc'), recursive=True):
+        idx.setdefault(os.path.splitext(os.path.basename(trc))[0].lower(), trc)
+    return idx
+
+
+def cmd_build(args):
+    with open(args.manifest, newline='') as f:
+        rows = list(csv.DictReader(f))
+
+    buckets, processed, skipped = {}, 0, []
+    for row in rows:
+        mot = (row.get('mot_file') or '').strip()
+        level = (row.get('level') or '').strip().lower()
+        if not mot:
+            continue
+        if level not in VALID_LEVELS:
+            skipped.append((mot, f"level '{level}' is blank/invalid"))
+            continue
+        h_m = _num(row, 'height_m') or (_num(row, 'height_in') and _num(row, 'height_in') * 0.0254)
+        w_kg = _num(row, 'weight_kg') or (_num(row, 'weight_lb') and _num(row, 'weight_lb') * 0.453592)
+        if not h_m or not w_kg:
+            skipped.append((mot, "missing height/weight"))
+            continue
+        bat_kg = (_num(row, 'bat_oz') or 31.0) * 0.0283495
+        bat_m = (_num(row, 'bat_in') or 34.0) * 0.0254
+        err = _run_swing(buckets, mot, (row.get('trc_file') or '').strip(), level, h_m, w_kg, bat_kg, bat_m)
+        if err:
+            skipped.append((mot, err))
+        else:
+            processed += 1
+
+    _write_model(buckets, processed, args.out, skipped)
+    return 0
+
+
+def cmd_auto(args):
+    """Rebuild the cohort with no manual manifest, driven by an athletes config
+    that maps each folder to its athlete demographics. Ideal for automation:
+    drop new .mot/.trc files into a known folder and re-run this command."""
+    with open(args.config) as f:
+        cfg = json.load(f)
+    out = args.out or cfg.get('cohort_out') or os.path.join(os.path.dirname(__file__), 'cohort_percentiles.json')
+
+    buckets, processed, skipped = {}, 0, []
+    for a in cfg.get('athletes', []):
+        d = os.path.expanduser(a['dir'])
+        level = str(a.get('level', '')).strip().lower()
+        if level not in VALID_LEVELS:
+            skipped.append((d, f"level '{level}' invalid"))
+            continue
+        h_m = a.get('height_m') or (a.get('height_in') and float(a['height_in']) * 0.0254)
+        w_kg = a.get('weight_kg') or (a.get('weight_lb') and float(a['weight_lb']) * 0.453592)
+        if not h_m or not w_kg:
+            skipped.append((d, "missing height/weight"))
+            continue
+        bat_kg = float(a.get('bat_oz', 31.0)) * 0.0283495
+        bat_m = float(a.get('bat_in', 34.0)) * 0.0254
+        trc_idx = _pair_trc(d)
+        for mot in sorted(glob.glob(os.path.join(d, '**', '*.mot'), recursive=True)):
+            trc = trc_idx.get(os.path.splitext(os.path.basename(mot))[0].lower(), '')
+            err = _run_swing(buckets, mot, trc, level, h_m, w_kg, bat_kg, bat_m)
+            if err:
+                skipped.append((mot, err))
+            else:
+                processed += 1
+
+    _write_model(buckets, processed, out, skipped)
     return 0
 
 
@@ -164,6 +228,12 @@ def main():
     pb.add_argument('--out', default=os.path.join(os.path.dirname(__file__), 'cohort_percentiles.json'),
                     help='Output JSON model (default: alongside analyzer.py).')
     pb.set_defaults(func=cmd_build)
+
+    pa = sub.add_parser('auto', help='Rebuild from an athletes config (no manual manifest). Good for automation.')
+    pa.add_argument('--config', default=os.path.join(os.path.dirname(__file__), 'athletes.json'),
+                    help='JSON mapping each athlete folder to level + demographics (default: athletes.json).')
+    pa.add_argument('--out', default=None, help='Output JSON model (default: config cohort_out or cohort_percentiles.json).')
+    pa.set_defaults(func=cmd_auto)
 
     args = p.parse_args()
     sys.exit(args.func(args))
