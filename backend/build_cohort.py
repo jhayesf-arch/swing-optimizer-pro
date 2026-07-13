@@ -186,6 +186,26 @@ def cmd_auto(args):
     with open(args.config) as f:
         cfg = json.load(f)
     out = args.out or cfg.get('cohort_out') or os.path.join(os.path.dirname(__file__), 'cohort_percentiles.json')
+    dirs = [os.path.expanduser(a['dir']) for a in cfg.get('athletes', []) if a.get('dir')]
+
+    # Cheap change-detection so a file-watcher can poll frequently without cost:
+    # skip the rebuild unless some .mot/.trc (or the config) is newer than the model.
+    if getattr(args, 'if_changed', False) and os.path.exists(out):
+        newest = 0.0
+        for d in dirs:
+            for ext in ('mot', 'trc'):
+                for f in glob.glob(os.path.join(d, '**', '*.' + ext), recursive=True):
+                    try:
+                        newest = max(newest, os.path.getmtime(f))
+                    except OSError:
+                        pass
+        try:
+            newest = max(newest, os.path.getmtime(args.config))
+        except OSError:
+            pass
+        if newest <= os.path.getmtime(out):
+            print("cohort up to date — nothing changed, skipping rebuild")
+            return 0
 
     buckets, processed, skipped = {}, 0, []
     for a in cfg.get('athletes', []):
@@ -233,6 +253,8 @@ def main():
     pa.add_argument('--config', default=os.path.join(os.path.dirname(__file__), 'athletes.json'),
                     help='JSON mapping each athlete folder to level + demographics (default: athletes.json).')
     pa.add_argument('--out', default=None, help='Output JSON model (default: config cohort_out or cohort_percentiles.json).')
+    pa.add_argument('--if-changed', dest='if_changed', action='store_true',
+                    help='Skip the rebuild unless a .mot/.trc file (or the config) is newer than the existing model. For frequent polling by a watcher.')
     pa.set_defaults(func=cmd_auto)
 
     args = p.parse_args()
