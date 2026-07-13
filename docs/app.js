@@ -27,30 +27,41 @@ const DEMO_DIAGNOSIS = {
     swingai_report: {
         skill_level: 'college',
         swing_score: 74,
+        overall_percentile: 71,
+        percentile_basis: 'benchmark',
+        percentile_library_dims: 0,
+        lead_leg_block: { lead_leg_block_deg: 19.4, lead_side: 'l', lead_knee_peak_flex_deg: 46.1, lead_knee_flex_at_contact_deg: 26.7 },
         phases: {
             balance_load: { label: 'Balance & Load', icon: '⚖️', avg_stars: 3.7, badge: 'satisfactory', dimensions: [
-                { key: 'negative_move', label: 'Negative Move', value: '0.06', unit: 'm', stars: 4, badge: 'satisfactory', description: 'Good backward weight shift before stride.' },
-                { key: 'pelvis_load', label: 'Pelvis Load', value: '88', unit: 'J', stars: 4, badge: 'satisfactory', description: 'Strong pelvis kinetic energy at load.' },
-                { key: 'upper_torso_load', label: 'Upper Torso Load', value: '52', unit: 'J', stars: 3, badge: 'satisfactory', description: 'Adequate upper torso coil.' },
+                { key: 'negative_move', label: 'Negative Move', value: '0.06', unit: 'm', stars: 4, percentile: 74, badge: 'satisfactory', description: 'Good backward weight shift before stride.' },
+                { key: 'pelvis_load', label: 'Pelvis Load', value: '88', unit: 'J', stars: 4, percentile: 78, badge: 'satisfactory', description: 'Strong pelvis kinetic energy at load.' },
+                { key: 'upper_torso_load', label: 'Upper Torso Load', value: '52', unit: 'J', stars: 3, percentile: 58, badge: 'satisfactory', description: 'Adequate upper torso coil.' },
             ]},
             stride: { label: 'Stride', icon: '👣', avg_stars: 4.0, badge: 'satisfactory', dimensions: [
-                { key: 'stride_length', label: 'Stride Length', value: '0.74', unit: 'x Ht', stars: 4, badge: 'satisfactory', description: 'Good stride length relative to height.' },
-                { key: 'forward_move', label: 'Forward Move', value: '94', unit: '%', stars: 4, badge: 'satisfactory', description: 'Efficient forward momentum.' },
+                { key: 'stride_length', label: 'Stride Length', value: '0.74', unit: 'x Ht', stars: 4, percentile: 76, badge: 'satisfactory', description: 'Good stride length relative to height.' },
+                { key: 'forward_move', label: 'Forward Move', value: '94', unit: '%', stars: 4, percentile: 73, badge: 'satisfactory', description: 'Efficient forward momentum.' },
             ]},
             power_move: { label: 'Power Move', icon: '💥', avg_stars: 4.3, badge: 'excellent', dimensions: [
-                { key: 'max_hip_shoulder_separation', label: 'Max Hip-Shoulder Separation', value: '44.1', unit: '°', stars: 5, badge: 'excellent', description: 'Elite X-Factor separation.' },
-                { key: 'pelvis_rotation_range', label: 'Pelvis Total Rotation Range', value: '68', unit: '°', stars: 4, badge: 'satisfactory', description: 'Good pelvis rotation range.' },
-                { key: 'upper_torso_rotation_range', label: 'Upper Torso Rotation Range', value: '92', unit: '°', stars: 4, badge: 'satisfactory', description: 'Good shoulder rotation range.' },
+                { key: 'max_hip_shoulder_separation', label: 'Max Hip-Shoulder Separation', value: '44.1', unit: '°', stars: 5, percentile: 88, badge: 'excellent', description: 'Elite X-Factor separation.' },
+                { key: 'pelvis_rotation_range', label: 'Pelvis Total Rotation Range', value: '68', unit: '°', stars: 4, percentile: 79, badge: 'satisfactory', description: 'Good pelvis rotation range.' },
+                { key: 'upper_torso_rotation_range', label: 'Upper Torso Rotation Range', value: '92', unit: '°', stars: 4, percentile: 75, badge: 'satisfactory', description: 'Good shoulder rotation range.' },
             ]},
             contact: { label: 'Contact & Follow-Through', icon: '🎯', avg_stars: 3.5, badge: 'satisfactory', dimensions: [
-                { key: 'pelvis_direction_at_contact', label: 'Pelvis Direction at Contact', value: '18', unit: '°', stars: 4, badge: 'satisfactory', description: 'Hips well open at contact.' },
-                { key: 'upper_torso_direction_at_contact', label: 'Upper Torso Direction at Contact', value: '28', unit: '°', stars: 3, badge: 'satisfactory', description: 'Shoulders moderately open.' },
-                { key: 'kinetic_chain_efficiency', label: 'Kinetic Chain Efficiency', value: '52.3', unit: '%', stars: 5, badge: 'excellent', description: 'Elite distal energy transfer.' },
-                { key: 'sequence_quality', label: 'Sequence Quality', value: '48', unit: 'ms', stars: 4, badge: 'satisfactory', description: 'Good proximal-to-distal sequence timing.' },
-                { key: 'hand_speed', label: 'Hand / Bat Speed', value: '24.2', unit: 'mph', stars: 4, badge: 'satisfactory', description: 'Above average hand speed for college level (Blast benchmark: 21-25 mph).' },
-                { key: 'follow_through_quality', label: 'Follow-Through Quality', value: '42', unit: '°', stars: 3, badge: 'satisfactory', description: 'Adequate follow-through arc.' },
+                { key: 'pelvis_direction_at_contact', label: 'Pelvis Direction at Contact', value: '18', unit: '°', stars: 4, percentile: 72, badge: 'satisfactory', description: 'Hips well open at contact.' },
+                { key: 'upper_torso_direction_at_contact', label: 'Upper Torso Direction at Contact', value: '28', unit: '°', stars: 3, percentile: 55, badge: 'satisfactory', description: 'Shoulders moderately open.' },
+                { key: 'lead_leg_block', label: 'Lead-Leg Block', value: '19.4', unit: '° ext', stars: 3, percentile: 52, badge: 'satisfactory', description: 'Lead (front) knee straightening from foot plant to contact. A firm, extending front leg posts up and whips energy into the barrel (Driveline OBP).' },
+                { key: 'kinetic_chain_efficiency', label: 'Kinetic Chain Efficiency', value: '52.3', unit: '%', stars: 5, percentile: 86, badge: 'excellent', description: 'Elite distal energy transfer.' },
+                { key: 'sequence_quality', label: 'Sequence Quality', value: '48', unit: 'ms', stars: 4, percentile: 74, badge: 'satisfactory', description: 'Good proximal-to-distal sequence timing.' },
+                { key: 'hand_speed', label: 'Hand / Bat Speed', value: '24.2', unit: 'mph', stars: 4, percentile: 77, badge: 'satisfactory', description: 'Above average hand speed for college level (Blast benchmark: 21-25 mph).' },
+                { key: 'follow_through_quality', label: 'Follow-Through Quality', value: '42', unit: '°', stars: 3, percentile: 61, badge: 'satisfactory', description: 'Adequate follow-through arc.' },
             ]},
         },
+        prescriptions: [
+            { priority: 1, key: 'upper_torso_direction_at_contact', label: 'Upper Torso Direction at Contact', stars: 3, percentile: 55, impact: 0.14, cue: 'Let the chest arrive slightly behind the hips', drill: 'Connection-ball tee work to keep the torso stacked and sequenced behind the pelvis into contact.', why: 'Shoulders that fly open early spend separation too soon; too closed and the barrel drags.' },
+            { priority: 2, key: 'lead_leg_block', label: 'Lead-Leg Block', stars: 3, percentile: 52, impact: 0.14, cue: 'Post up on a firm, straightening front leg', drill: 'Rear-foot-elevated split squats for front-leg strength + "step-back / walkaway" swings to feel the lead knee brace and extend into contact.', why: 'Lead-knee extension into contact is one of the strongest bat-speed correlates in the OpenBiomechanics dataset — a soft front leg leaks energy that should whip into the barrel.' },
+            { priority: 3, key: 'upper_torso_load', label: 'Upper Torso Load', stars: 3, percentile: 58, impact: 0.08, cue: 'Keep the barrel back as the hips start', drill: 'Counter-rotation "show-the-number" drills against a light band to deepen trunk coil.', why: 'Insufficient trunk coil shrinks the stretch across the core and caps how much the torso can whip.' },
+            { priority: 4, key: 'follow_through_quality', label: 'Follow-Through Quality', stars: 3, percentile: 61, impact: 0.08, cue: 'Let the finish be long and loose', drill: 'Full-extension finish swings; exhale and decelerate smoothly rather than stopping the barrel abruptly.', why: 'An abrupt stop after contact means energy was braked by the body instead of delivered to the ball.' },
+        ],
     },
     grf_estimation: {},
 };
@@ -207,15 +218,22 @@ document.addEventListener('DOMContentLoaded', () => {
         ['balance_load', 'stride', 'power_move', 'contact'].forEach(k => {
             const ph = rep.phases && rep.phases[k];
             if (!ph) return;
-            dimsHtml += `<tr class="phase-row"><td colspan="4">${esc(ph.label)}</td></tr>`;
+            dimsHtml += `<tr class="phase-row"><td colspan="5">${esc(ph.label)}</td></tr>`;
             (ph.dimensions || []).forEach(d => {
+                const pctTxt = (typeof d.percentile === 'number') ? d.percentile + 'th' : '—';
                 dimsHtml += `<tr><td>${esc(d.label)}</td>`
                     + `<td style="text-align:right;white-space:nowrap;">${esc(d.value)} ${esc(d.unit || '')}</td>`
+                    + `<td style="text-align:right;white-space:nowrap;">${pctTxt}</td>`
                     + `<td style="color:#e0a800;letter-spacing:1px;white-space:nowrap;">${stars(d.stars || 0)}</td>`
                     + `<td style="color:${badgeColor(d.badge)};text-transform:capitalize;">${esc((d.badge || '').replace('-', ' '))}</td></tr>`;
             });
         });
         const list = arr => (arr || []).map(x => `<li>${esc(x)}</li>`).join('') || '<li>—</li>';
+
+        // Structured prescriptions from the prescription engine (fall back to free-text recs).
+        const rxHtml = (rep.prescriptions && rep.prescriptions.length)
+            ? rep.prescriptions.map(p => `<li><b>${esc(p.label)}</b> <span style="color:#b6791b;">(${esc(p.percentile)}th pct)</span> — ${esc(p.cue)}. <i>Drill:</i> ${esc(p.drill)}</li>`).join('')
+            : list(diagnosis.recommendations);
 
         // Advanced Physics — mirror the on-screen advanced panel.
         const grf = diagnosis.grf_estimation || {};
@@ -267,12 +285,12 @@ document.addEventListener('DOMContentLoaded', () => {
               <div class="pr-stat"><div>${pelvis}</div><span>Pelvis Vel (°/s)</span></div>
             </div>
             <h3 class="pr-h3">12-Dimension Breakdown</h3>
-            <table class="pr-table"><thead><tr><th>Dimension</th><th style="text-align:right;">Value</th><th>Rating</th><th>Status</th></tr></thead><tbody>${dimsHtml}</tbody></table>
+            <table class="pr-table"><thead><tr><th>Dimension</th><th style="text-align:right;">Value</th><th style="text-align:right;">Pct</th><th>Rating</th><th>Status</th></tr></thead><tbody>${dimsHtml}</tbody></table>
             <h3 class="pr-h3">Advanced Physics</h3>
             <div class="pr-adv">${advHtml}</div>
             <div class="pr-cols">
               <div><h3 class="pr-h3">Mechanical Findings</h3><ul>${list(diagnosis.findings)}</ul></div>
-              <div><h3 class="pr-h3">Prescriptions</h3><ul>${list(diagnosis.recommendations)}</ul></div>
+              <div><h3 class="pr-h3">Prescriptions</h3><ul>${rxHtml}</ul></div>
             </div>
             <div class="pr-foot">Generated by Swing Optimizer Pro · For performance training use only — not a medical diagnosis.</div>
           </div>`;
@@ -404,6 +422,27 @@ document.addEventListener('DOMContentLoaded', () => {
         animateCount(document.getElementById('exit-velo-number'), handSpeed, 1);
         animateCount(document.getElementById('efficiency-number'), effScore, 0);
 
+        // Overall cohort percentile + basis (your own library vs research benchmarks)
+        const overallPct = diagnosis.swingai_report?.overall_percentile;
+        const opEl = document.getElementById('overall-pct-number');
+        if (typeof overallPct === 'number') {
+            animateCount(opEl, overallPct, 0);
+            opEl.classList.remove('accent');
+            opEl.classList.add(overallPct >= 65 ? 'val-good' : overallPct >= 40 ? 'val-warn' : 'val-bad');
+        } else { opEl.textContent = '--'; }
+
+        const basis = diagnosis.swingai_report?.percentile_basis;
+        const libDims = diagnosis.swingai_report?.percentile_library_dims || 0;
+        const opLabel = document.getElementById('overall-pct-label');
+        const note = document.getElementById('pct-basis-note');
+        if (basis === 'library') {
+            if (opLabel) opLabel.textContent = 'Overall Percentile (vs your library)';
+            if (note) note.innerHTML = `<span class="val-good">●</span> Ranked against <strong>your own swing library</strong> at this level (${libDims}/15 metrics). Build or grow it with <code>build_cohort.py</code>.`;
+        } else {
+            if (opLabel) opLabel.textContent = 'Overall Percentile (vs research)';
+            if (note) note.innerHTML = `Percentiles are <strong>estimated from research benchmarks</strong>. Build a library of your own swings (<code>build_cohort.py</code>) to rank against real hitters at your level.`;
+        }
+
         // Skill badge
         const skillLabels = {
             youth: 'Youth', high_school: 'High School',
@@ -428,6 +467,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // ---- SWINGAI 4-PHASE CARDS ----
         if (diagnosis.swingai_report) {
             renderSwingAIReport(diagnosis.swingai_report);
+            renderCoachingFocus(diagnosis.swingai_report);
             setTimeout(() => init3DSkeleton(diagnosis.skeleton_frames), 100);
             attachSkeletonClickHandlers();
         }
@@ -676,6 +716,8 @@ document.addEventListener('DOMContentLoaded', () => {
             ? '<span class="val-good" style="font-weight:700;">✓ Proper sequence</span> <span class="text-muted">— segments peak in order, building speed up the chain.</span>'
             : '<span class="val-warn" style="font-weight:700;">⚠ Sequence flag</span> <span class="text-muted">— segments do not peak strictly proximal-to-distal; energy may leak out of the chain.</span>';
 
+        renderSequenceTimeline(seq, present);
+
         const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         if (reduce) { drawKine(1); return; }
         const start = performance.now(), dur = 900;
@@ -684,6 +726,42 @@ document.addEventListener('DOMContentLoaded', () => {
             drawKine(1 - Math.pow(1 - p, 3));
             if (p < 1 && lastKineSeq === seq) requestAnimationFrame(step);
         })(start);
+    }
+
+    // Compact proximal-to-distal peak-order timeline: each segment's peak on a
+    // shared time axis, with the timing gaps that make the "whip" legible.
+    function renderSequenceTimeline(seq, present) {
+        const host = document.getElementById('kine-timeline');
+        if (!host) return;
+        const pts = present
+            .map(k => ({ k, t: seq.peaks && seq.peaks[k] ? seq.peaks[k].t_ms : null }))
+            .filter(p => p.t != null);
+        if (pts.length < 2) { host.innerHTML = ''; return; }
+
+        const times = pts.map(p => p.t);
+        const min = Math.min(...times), max = Math.max(...times);
+        const span = Math.max(1, max - min);
+        const pad = 6; // % padding each side
+        const pos = t => pad + (1 - (2 * pad) / 100) * ((t - min) / span) * 100;
+
+        const ordered = [...pts].sort((a, b) => a.t - b.t);
+        const dots = pts.map(p => {
+            const left = pos(p.t);
+            return `<div class="kine-tl-dot" style="left:${left}%;">
+                        <span class="kine-tl-mark" style="background:${KINE_COLORS[p.k]}"></span>
+                        <span class="kine-tl-lbl">${p.k}</span>
+                        <span class="kine-tl-t">${Math.round(p.t)}ms</span>
+                    </div>`;
+        }).join('');
+        // Gap chips between consecutive peaks.
+        let gaps = '';
+        for (let i = 1; i < ordered.length; i++) {
+            const mid = (pos(ordered[i - 1].t) + pos(ordered[i].t)) / 2;
+            const gap = Math.round(ordered[i].t - ordered[i - 1].t);
+            const bad = gap <= 0;
+            gaps += `<span class="kine-tl-gap ${bad ? 'bad' : ''}" style="left:${mid}%;">${bad ? '↺' : '+' + gap + 'ms'}</span>`;
+        }
+        host.innerHTML = `<div class="kine-tl-track">${gaps}${dots}</div>`;
     }
 
     function drawKine(progress) {
@@ -789,6 +867,90 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // Map each body region (in body.svg) to the dimensions that load it.
+    const REGION_DIMS = {
+        'region-pelvis':   ['pelvis_load', 'pelvis_rotation_range', 'pelvis_direction_at_contact', 'negative_move'],
+        'region-torso':    ['upper_torso_load', 'upper_torso_rotation_range', 'upper_torso_direction_at_contact', 'max_hip_shoulder_separation'],
+        'region-shoulders':['max_hip_shoulder_separation', 'upper_torso_rotation_range', 'sequence_quality'],
+        'region-arm-r':    ['kinetic_chain_efficiency', 'hand_speed'],
+        'region-arm-l':    ['kinetic_chain_efficiency', 'hand_speed'],
+        'region-forearm-r':['hand_speed', 'kinetic_chain_efficiency'],
+        'region-forearm-l':['hand_speed', 'kinetic_chain_efficiency'],
+        'region-hand-r':   ['hand_speed'],
+        'region-hand-l':   ['hand_speed'],
+        'region-thigh-r':  ['stride_length', 'forward_move'],
+        'region-thigh-l':  ['stride_length', 'forward_move'],
+        'region-shin-r':   ['forward_move', 'follow_through_quality'],
+        'region-shin-l':   ['forward_move', 'follow_through_quality'],
+        'region-foot-r':   ['stride_length'],
+        'region-foot-l':   ['stride_length'],
+    };
+
+    let _bodySvgCache = null;
+
+    async function renderCoachingFocus(report) {
+        const panel = document.getElementById('focus-panel');
+        if (!panel) return;
+        const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+        // Flatten dimensions → percentile lookup.
+        const pct = {};
+        Object.values(report.phases || {}).forEach(ph =>
+            (ph.dimensions || []).forEach(d => { if (typeof d.percentile === 'number') pct[d.key] = d.percentile; }));
+
+        // Attribute the lead-leg block to the detected lead side's leg segments.
+        const leadSide = (report.lead_leg_block && report.lead_leg_block.lead_side) || 'l';
+        const regionDims = JSON.parse(JSON.stringify(REGION_DIMS));
+        ['thigh', 'shin', 'foot'].forEach(seg => {
+            const key = `region-${seg}-${leadSide}`;
+            if (regionDims[key] && typeof pct['lead_leg_block'] === 'number') regionDims[key] = ['lead_leg_block', ...regionDims[key]];
+        });
+
+        // Inject the body SVG once, then colour regions by average percentile.
+        const host = document.getElementById('body-heatmap');
+        try {
+            if (!_bodySvgCache) _bodySvgCache = await (await fetch('body.svg')).text();
+            host.innerHTML = _bodySvgCache;
+        } catch (e) { host.innerHTML = ''; }
+
+        Object.entries(regionDims).forEach(([regionId, keys]) => {
+            const el = host.querySelector('#' + regionId);
+            if (!el) return;
+            const vals = keys.map(k => pct[k]).filter(v => typeof v === 'number');
+            if (!vals.length) return;
+            const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+            const c = avg < 40 ? [239, 68, 68] : avg < 65 ? [245, 158, 11] : [16, 185, 129];
+            el.style.fill = `rgba(${c[0]},${c[1]},${c[2]},${0.18 + 0.45 * (1 - Math.min(avg, 100) / 130)})`;
+            el.style.stroke = `rgba(${c[0]},${c[1]},${c[2]},0.9)`;
+            el.dataset.pct = Math.round(avg);
+            el.querySelector && (el.innerHTML += '');
+            el.setAttribute('title', `${Math.round(avg)}th pct`);
+        });
+
+        // Top-priorities list from the prescription engine.
+        const list = document.getElementById('priorities-list');
+        list.innerHTML = '';
+        const rx = (report.prescriptions || []).slice(0, 4);
+        if (!rx.length) {
+            list.innerHTML = '<li class="priority-empty">No major weaknesses flagged — every dimension is on target. Keep reinforcing your strengths.</li>';
+        } else {
+            rx.forEach(p => {
+                const li = document.createElement('li');
+                li.className = 'priority-item';
+                li.innerHTML = `
+                    <div class="priority-rank">${p.priority}</div>
+                    <div class="priority-body">
+                        <div class="priority-title">${esc(p.label)} <span class="priority-pct">${p.percentile}<sup>th</sup> pct</span></div>
+                        <div class="priority-cue">${esc(p.cue)}</div>
+                        <div class="priority-drill"><strong>Drill:</strong> ${esc(p.drill)}</div>
+                        <div class="priority-why">${esc(p.why)}</div>
+                    </div>`;
+                list.appendChild(li);
+            });
+        }
+        panel.classList.remove('hidden');
+    }
+
     function buildPhaseCard(phase, index) {
         const card = document.createElement('div');
         card.className = 'phase-card';
@@ -828,11 +990,25 @@ document.addEventListener('DOMContentLoaded', () => {
             ? `<div class="dim-cues">${DIM_CUES[dim.key].map(c => `<span class="dim-cue-tag">${c}</span>`).join('')}</div>`
             : '';
 
+        const pctTitle = (typeof dim.percentile_n === 'number')
+            ? `${dim.percentile}th percentile — vs ${dim.percentile_n} swings in your library at this level`
+            : `${dim.percentile}th percentile — estimated from research benchmarks`;
+        const pctBar = (typeof dim.percentile === 'number')
+            ? `<div class="dim-pct" title="${pctTitle}">
+                   <div class="dim-pct-track">
+                       <span class="dim-pct-median"></span>
+                       <span class="dim-pct-fill ${badgeClass}" style="width:${Math.max(2, Math.min(100, dim.percentile))}%"></span>
+                   </div>
+                   <span class="dim-pct-label">${dim.percentile}<sup>th</sup> pct${(typeof dim.percentile_n === 'number') ? ' <span class="dim-pct-lib">·lib</span>' : ''}</span>
+               </div>`
+            : '';
+
         tile.innerHTML = `
             <div class="dim-badge ${badgeClass}"></div>
             <div class="dim-info">
                 <div class="dim-name">${dim.label}</div>
                 <div class="dim-value">${dim.value} ${dim.unit}</div>
+                ${pctBar}
                 ${cues}
             </div>
             <div class="dim-stars">${stars}</div>

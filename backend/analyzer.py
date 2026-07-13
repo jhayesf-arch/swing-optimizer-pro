@@ -3,7 +3,7 @@ import glob
 import numpy as np
 import pandas as pd
 from dataclasses import dataclass, asdict
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 
 try:
     from scipy.signal import savgol_filter, butter, filtfilt
@@ -222,7 +222,26 @@ SWINGAI_THRESHOLDS = {
         'college':      [(0,1),(18,2),(30,3),(45,4),(60,5)],
         'professional': [(0,1),(20,2),(35,3),(50,4),(65,5)],
     },
+    'lead_leg_block': {
+        # Lead-knee extension from front-foot plant to contact (degrees straightened).
+        # A firm, extending ("blocking") front leg posts up and redirects linear
+        # momentum into rotation — one of the strongest bat-speed / exit-velocity
+        # correlates in the Driveline OpenBiomechanics Project (OBP) hitting dataset.
+        # SOURCE: OpenBiomechanics Project (baseball hitting); Driveline Baseball,
+        #   "Hitting Biomechanics" (2022) — lead-knee extension velocity & ROM
+        #   correlate to bat speed. No fully level-stratified public table exists;
+        #   youth/HS/college scaled proportionally from the pro anchor. Treat as an
+        #   approximate benchmark (relative-to-cohort), not a hard percentile.
+        'youth':        [(0,1),(5,2),(12,3),(20,4),(28,5)],
+        'high_school':  [(0,1),(8,2),(16,3),(24,4),(32,5)],
+        'college':      [(0,1),(10,2),(18,3),(28,4),(36,5)],
+        'professional': [(0,1),(12,2),(22,3),(32,4),(42,5)],
+    },
 }
+
+# Percentile anchors for each of the 5 star-boundary thresholds (per dimension).
+# Used to translate a raw value into an approximate cohort percentile (0-100).
+PERCENTILE_ANCHORS = [5.0, 25.0, 50.0, 75.0, 92.0]
 
 # Dimension weights for Swing Score (must sum to 1.0)
 SWINGAI_WEIGHTS = {
@@ -240,7 +259,9 @@ SWINGAI_WEIGHTS = {
     'sequence_quality': 0.10,
     'hand_speed': 0.13,  # Most reliable discriminator — directly measured from TRC
     'follow_through_quality': 0.04,
+    'lead_leg_block': 0.07,  # OBP: lead-knee extension is a top bat-speed correlate
 }
+# NOTE: weights need not sum to 1.0 — build_swingai_report normalises by total weight.
 
 SWINGAI_LABELS = {
     'negative_move': 'Negative Move',
@@ -257,6 +278,7 @@ SWINGAI_LABELS = {
     'sequence_quality': 'Sequence Quality',
     'hand_speed': 'Hand / Bat Speed',
     'follow_through_quality': 'Follow-Through Quality',
+    'lead_leg_block': 'Lead-Leg Block',
 }
 
 SWINGAI_PHASES = {
@@ -278,9 +300,123 @@ SWINGAI_PHASES = {
     'contact': {
         'label': 'Contact & Follow-Through',
         'icon': '',
-        'dimensions': ['pelvis_direction_at_contact', 'upper_torso_direction_at_contact', 'kinetic_chain_efficiency', 'sequence_quality', 'hand_speed', 'follow_through_quality'],
+        'dimensions': ['pelvis_direction_at_contact', 'upper_torso_direction_at_contact', 'lead_leg_block', 'kinetic_chain_efficiency', 'sequence_quality', 'hand_speed', 'follow_through_quality'],
     },
 }
+
+# Dimensions where a LOWER value is better (deviation-from-square metrics).
+INVERT_DIMS = {'pelvis_direction_at_contact', 'upper_torso_direction_at_contact'}
+
+# Prescription library — each weak dimension maps to a concrete cue + drill + rationale.
+# Modeled on Driveline's "constraint → intent → drill" coaching structure.
+DRILL_LIBRARY = {
+    'negative_move': {
+        'cue': 'Gather back before you go forward',
+        'drill': 'Slow "load-and-hold" reps: coil into the rear hip, pause 1s, then stride. Builds a repeatable rearward load.',
+        'why': 'Without a rearward gather there is no stretch to unload — you start the swing already leaking forward.',
+    },
+    'pelvis_load': {
+        'cue': 'Coil into the back hip',
+        'drill': 'Banded hip-hinge coils and rear-hip loaded med-ball scoop tosses to store elastic energy in the pelvis.',
+        'why': 'A quiet pelvis at load means less rotational energy available to release through contact.',
+    },
+    'upper_torso_load': {
+        'cue': 'Keep the barrel back as the hips start',
+        'drill': 'Counter-rotation "show-the-number" drills against a light band to deepen trunk coil.',
+        'why': 'Insufficient trunk coil shrinks the stretch across the core and caps how much the torso can whip.',
+    },
+    'stride_length': {
+        'cue': 'Stride to a firm, athletic base',
+        'drill': 'Line/tee stride-length drill: mark a target ~70-85% of height and repeat the stride to plant.',
+        'why': 'Stride length sets how much forward momentum you can convert into ground force and rotation.',
+    },
+    'forward_move': {
+        'cue': 'Move forward, then stop hard',
+        'drill': 'Walk-through swings that decelerate into a braced front side at plant.',
+        'why': 'Momentum that never stops never converts to rotation — the front side must catch and redirect it.',
+    },
+    'max_hip_shoulder_separation': {
+        'cue': 'Let the hips open while the shoulders wait',
+        'drill': 'Hip-lead separation drill with a dowel across the shoulders; fire the pelvis first, feel the X-Factor stretch.',
+        'why': 'Hip-shoulder separation stores elastic energy in the trunk — the biggest single lever on rotational speed.',
+    },
+    'pelvis_rotation_range': {
+        'cue': 'Clear the hips fully to contact',
+        'drill': '90/90 hip mobility work + rotational cable chops to expand usable pelvis rotation range.',
+        'why': 'A short pelvis arc limits the runway the torso and arms have to accelerate over.',
+    },
+    'upper_torso_rotation_range': {
+        'cue': 'Finish the shoulder turn through the ball',
+        'drill': 'Thoracic rotation drills (open-book, side-lying windmills) plus full-turn dry swings.',
+        'why': 'Restricted trunk rotation truncates the whip and pulls the barrel off the ball early.',
+    },
+    'pelvis_direction_at_contact': {
+        'cue': 'Get the hips open (square to the pitcher) at contact',
+        'drill': 'Front-hip "clearance" reps against a wall; feel the belt buckle face the pitcher at contact.',
+        'why': 'Blocked, closed hips at contact trap energy in the lower half instead of releasing it into the barrel.',
+    },
+    'upper_torso_direction_at_contact': {
+        'cue': 'Let the chest arrive slightly behind the hips',
+        'drill': 'Connection-ball tee work to keep the torso stacked and sequenced behind the pelvis into contact.',
+        'why': 'Shoulders that fly open early spend separation too soon; too closed and the barrel drags.',
+    },
+    'lead_leg_block': {
+        'cue': 'Post up on a firm, straightening front leg',
+        'drill': 'Rear-foot-elevated split squats for front-leg strength + "step-back / walkaway" swings to feel the lead knee brace and extend into contact.',
+        'why': 'Lead-knee extension into contact is one of the strongest bat-speed correlates in the OpenBiomechanics dataset — a soft front leg leaks energy that should whip into the barrel.',
+    },
+    'kinetic_chain_efficiency': {
+        'cue': 'Slow the hips so the hands can fly',
+        'drill': 'Overload/underload rotational throws that train proximal deceleration and distal acceleration (the "whip").',
+        'why': 'Efficiency is about the hand-off: energy must pass hips → torso → hands, not stall in the big segments.',
+    },
+    'sequence_quality': {
+        'cue': 'Fire from the ground up: hips, then torso, then hands',
+        'drill': 'Step-behind and pause-load drills that exaggerate pelvis-first sequencing with a clean 30-60ms lag.',
+        'why': 'Out-of-order or simultaneous firing collapses the kinetic chain — the #1 predictor of velocity in Driveline OBP work.',
+    },
+    'hand_speed': {
+        'cue': 'Whip the barrel, don’t push it',
+        'drill': 'Overload/underload bat speed training (heavy + light bats) plus max-intent dry swings.',
+        'why': 'Hand speed is the primary output of the kinetic chain and the most reliable proxy for power.',
+    },
+    'follow_through_quality': {
+        'cue': 'Let the finish be long and loose',
+        'drill': 'Full-extension finish swings; exhale and decelerate smoothly rather than stopping the barrel abruptly.',
+        'why': 'An abrupt stop after contact means energy was braked by the body instead of delivered to the ball.',
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Empirical cohort-percentile model (optional).
+# Built by build_cohort.py from the user's OWN library of swings, grouped by
+# level. When present, percentiles are computed against real swings at the same
+# level instead of being estimated from research benchmarks.
+# ---------------------------------------------------------------------------
+COHORT_MIN_N = 5  # minimum swings in a level before its empirical percentiles are trusted
+_COHORT_MODEL = None
+_COHORT_LOADED = False
+
+
+def load_cohort_model(path: str = None):
+    """Load the level-grouped cohort-percentile model, if present. Idempotent."""
+    global _COHORT_MODEL, _COHORT_LOADED
+    import json
+    p = path or os.environ.get('COHORT_MODEL_PATH') or os.path.join(os.path.dirname(__file__), 'cohort_percentiles.json')
+    try:
+        with open(p) as f:
+            _COHORT_MODEL = json.load(f)
+    except Exception:
+        _COHORT_MODEL = None
+    _COHORT_LOADED = True
+    return _COHORT_MODEL
+
+
+def get_cohort_model():
+    if not _COHORT_LOADED:
+        load_cohort_model()
+    return _COHORT_MODEL
+
 
 SKILL_LEVEL_BENCHMARKS = {
     'youth': {
@@ -1535,7 +1671,7 @@ class RefinedHittingOptimizer:
             for finding in findings:
                 print(f"   {finding}")
 
-        swingai_report = self.build_swingai_report(rotation, stride, trc_metrics)
+        swingai_report = self.build_swingai_report(rotation, stride, trc_metrics, lower_body)
 
         return {
             "metrics": asdict(metrics),
@@ -1582,7 +1718,115 @@ class RefinedHittingOptimizer:
         else:
             return 'off_target'
 
-    def build_swingai_report(self, rotation: Dict, stride: Dict, trc_metrics: Dict) -> Dict:
+    def calculate_lead_leg_block(self, lower_body: Dict, rotation: Dict, stride: Dict) -> Dict:
+        """Lead-leg block: how much the front knee EXTENDS (straightens) from front-foot
+        plant to contact. A firm, extending lead leg posts up and redirects momentum into
+        rotation — a top bat-speed correlate in the Driveline OpenBiomechanics dataset.
+
+        Handedness is not encoded in the .mot, so the lead leg is inferred as the leg that
+        is more extended (less flexed) at contact. Returns {} if knee arrays are unavailable.
+        """
+        knee_r = lower_body.get('knee_r') if lower_body else None
+        knee_l = lower_body.get('knee_l') if lower_body else None
+        if knee_r is None or knee_l is None or rotation is None:
+            return {}
+        # Work in flexion magnitude so the result is independent of the model's sign convention.
+        fr = np.abs(np.asarray(knee_r, dtype=float))
+        fl = np.abs(np.asarray(knee_l, dtype=float))
+        n = min(len(fr), len(fl))
+        if n < 3:
+            return {}
+
+        plant = stride.get('plant_frame', n // 3) if stride else n // 3
+        plant = int(min(max(plant, 0), n - 2))
+
+        # Contact proxy = peak pelvis angular velocity (consistent with the rest of the report).
+        pom = rotation.get('pelvis_omega')
+        if pom is not None and len(pom) >= n:
+            contact = int(np.argmax(np.abs(np.asarray(pom[:n]))))
+        else:
+            contact = min(n - 1, plant + max(1, (n - plant) // 2))
+        if contact <= plant:
+            contact = min(n - 1, plant + max(1, (n - plant) // 2))
+
+        # Lead leg = the one straighter (less flexed) at contact.
+        lead = 'l' if fl[contact] < fr[contact] else 'r'
+        lead_flex = fl if lead == 'l' else fr
+
+        # Block = how much the lead knee STRAIGHTENS from its deepest flexion in the
+        # plant→contact window into contact. Measuring from peak flexion (not raw plant)
+        # keeps the metric robust when plant is detected slightly early (still loading)
+        # and guarantees the "extension" is non-negative, as it physically should be.
+        window = lead_flex[plant:contact + 1]
+        peak_flex = float(np.max(window)) if len(window) else float(lead_flex[plant])
+        contact_flex = float(lead_flex[contact])
+        ext = max(0.0, peak_flex - contact_flex)
+        return {
+            'lead_leg_block_deg': round(ext, 1),
+            'lead_side': lead,
+            'lead_knee_peak_flex_deg': round(peak_flex, 1),
+            'lead_knee_flex_at_contact_deg': round(contact_flex, 1),
+        }
+
+    def _empirical_percentile(self, key: str, value: float) -> Tuple[Optional[float], Optional[int]]:
+        """Percentile of `value` against the user's own library of swings at this
+        level (built by build_cohort.py). Returns (percentile, n) or (None, None)
+        when no sufficiently-populated cohort exists for this level/dimension."""
+        model = get_cohort_model()
+        if not model:
+            return (None, None)
+        entry = (model.get(self.skill_level) or {}).get(key)
+        if not entry:
+            return (None, None)
+        vals = entry.get('values') or []
+        n = int(entry.get('n', len(vals)))
+        if n < COHORT_MIN_N or not vals:
+            return (None, None)
+        import bisect
+        # Rank in "goodness" space so lower-is-better dimensions rank correctly.
+        invert = key in INVERT_DIMS
+        g = sorted(-v for v in vals) if invert else sorted(vals)
+        x = -float(value) if invert else float(value)
+        lo = bisect.bisect_left(g, x)
+        hi = bisect.bisect_right(g, x)
+        rank = (lo + hi) / 2.0
+        pct = max(1.0, min(99.0, round(rank / len(g) * 100.0, 0)))
+        return (pct, n)
+
+    def _percentile_for(self, key: str, value: float) -> Optional[float]:
+        """Translate a raw dimension value into an approximate cohort percentile (1-99)
+        by interpolating the value across the level's 5 star-boundary thresholds."""
+        thr = SWINGAI_THRESHOLDS.get(key, {}).get(self.skill_level, [])
+        if not thr:
+            return None
+        vals = [t[0] for t in sorted(thr, key=lambda x: x[1])]  # thresholds in star order 1..5
+        anchors = list(PERCENTILE_ANCHORS)
+        if key in INVERT_DIMS:
+            # Lower value is better → flip axis so "more good" maps to higher percentile.
+            pts = sorted([(-vals[i], anchors[i]) for i in range(len(vals))], key=lambda p: p[0])
+            x = -float(value)
+        else:
+            pts = sorted([(vals[i], anchors[i]) for i in range(len(vals))], key=lambda p: p[0])
+            x = float(value)
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        if x <= xs[0]:
+            if xs[1] > xs[0]:
+                frac = (x - xs[0]) / (xs[1] - xs[0])
+                return round(max(1.0, ys[0] + frac * (ys[1] - ys[0])), 0)
+            return ys[0]
+        if x >= xs[-1]:
+            if xs[-1] > xs[-2]:
+                frac = (x - xs[-1]) / (xs[-1] - xs[-2])
+                return round(min(99.0, ys[-1] + frac * (ys[-1] - ys[-2])), 0)
+            return ys[-1]
+        for i in range(len(xs) - 1):
+            if xs[i] <= x <= xs[i + 1] and xs[i + 1] > xs[i]:
+                frac = (x - xs[i]) / (xs[i + 1] - xs[i])
+                return round(ys[i] + frac * (ys[i + 1] - ys[i]), 0)
+        return 50.0
+
+    def build_swingai_report(self, rotation: Dict, stride: Dict, trc_metrics: Dict, lower_body: Dict = None) -> Dict:
         """Build a SwingAI-mirrored 12-dimension report from computed physics outputs.
         Returns a structured dict with phases, dimension detail, and an aggregate Swing Score."""
         dims = {}
@@ -1779,6 +2023,20 @@ class RefinedHittingOptimizer:
             'description': 'Shoulder alignment at contact for optimal barrel control and plate coverage.',
         }
 
+        # Lead-Leg Block — front-knee extension from plant to contact (OBP bat-speed correlate)
+        llb = self.calculate_lead_leg_block(lower_body or {}, rotation, stride)
+        llb_val = llb.get('lead_leg_block_deg', 0.0)
+        llb_stars = self._rate_dimension('lead_leg_block', llb_val)
+        dims['lead_leg_block'] = {
+            'label': SWINGAI_LABELS['lead_leg_block'],
+            'stars': llb_stars,
+            'badge': self._rating_to_badge(llb_stars),
+            'value': round(llb_val, 1),
+            'unit': '° ext',
+            'description': 'Lead (front) knee straightening from foot plant to contact. A firm, '
+                           'extending front leg posts up and whips energy into the barrel (Driveline OBP).',
+        }
+
         # Kinetic Chain Efficiency
         chain_eff = rotation.get('kinetic_chain_efficiency_pct', 0.0) if rotation else 0.0
         kce_stars = self._rate_dimension('kinetic_chain_efficiency', chain_eff)
@@ -1865,14 +2123,65 @@ class RefinedHittingOptimizer:
         # SWING SCORE (0-100): Weighted average of dimension star ratings
         # Stars range 1-5. Normalise to 0-100 as (stars-1)/4 * 100, then weight.
         # ------------------------------------------------------------------
+        # Star-boundary percentile fallback for dimensions without a threshold table.
+        _STAR_PCT = {1: 8.0, 2: 30.0, 3: 50.0, 4: 72.0, 5: 92.0}
+
         total_weight = 0.0
         weighted_sum = 0.0
+        pct_weight = 0.0
+        pct_weighted_sum = 0.0
+        n_empirical = 0
         for dim_key, weight in SWINGAI_WEIGHTS.items():
             stars = dims[dim_key]['stars']
             normalized = ((stars - 1) / 4.0) * 100.0
             weighted_sum += normalized * weight
             total_weight += weight
+
+            # Cohort percentile — prefer the user's own level-grouped library,
+            # falling back to research-benchmark estimation when the cohort is thin.
+            emp_pct, emp_n = self._empirical_percentile(dim_key, dims[dim_key]['value'])
+            if emp_pct is not None:
+                pct = emp_pct
+                dims[dim_key]['percentile_n'] = int(emp_n)
+                n_empirical += 1
+            else:
+                pct = self._percentile_for(dim_key, dims[dim_key]['value'])
+                if pct is None:
+                    pct = _STAR_PCT.get(stars, 50.0)
+            dims[dim_key]['percentile'] = int(pct)
+            pct_weighted_sum += pct * weight
+            pct_weight += weight
+
         swing_score = round(weighted_sum / total_weight, 1) if total_weight > 0 else 0.0
+        overall_percentile = int(round(pct_weighted_sum / pct_weight)) if pct_weight > 0 else 50
+        percentile_basis = 'library' if n_empirical > 0 else 'benchmark'
+
+        # ------------------------------------------------------------------
+        # PRESCRIPTION ENGINE — rank weak dimensions by bat-speed impact and
+        # map each to a specific cue + drill (Driveline-style constraint coaching).
+        # impact = dimension weight × star deficit (how far below a 5-star it is).
+        # ------------------------------------------------------------------
+        prescriptions = []
+        for dim_key, weight in SWINGAI_WEIGHTS.items():
+            stars = dims[dim_key]['stars']
+            if stars >= 4:
+                continue  # only prescribe for below-target dimensions
+            drill = DRILL_LIBRARY.get(dim_key)
+            if not drill:
+                continue
+            prescriptions.append({
+                'key': dim_key,
+                'label': SWINGAI_LABELS.get(dim_key, dim_key),
+                'stars': stars,
+                'percentile': dims[dim_key].get('percentile', 50),
+                'impact': round(weight * (5 - stars), 4),
+                'cue': drill['cue'],
+                'drill': drill['drill'],
+                'why': drill['why'],
+            })
+        prescriptions.sort(key=lambda p: p['impact'], reverse=True)
+        for i, p in enumerate(prescriptions):
+            p['priority'] = i + 1
 
         # ------------------------------------------------------------------
         # Assemble phases
@@ -1891,9 +2200,14 @@ class RefinedHittingOptimizer:
 
         return {
             'swing_score': swing_score,
+            'overall_percentile': overall_percentile,
+            'percentile_basis': percentile_basis,      # 'library' (your own swings) or 'benchmark' (research)
+            'percentile_library_dims': n_empirical,     # how many of the 15 used your library
             'skill_level': self.skill_level,
             'phases': phases,
             'dimensions': dims,
+            'prescriptions': prescriptions,
+            'lead_leg_block': llb,
         }
 
 def find_mot_files() -> List[str]:

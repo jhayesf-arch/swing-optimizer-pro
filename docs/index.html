@@ -88,10 +88,34 @@
                                 <span class="hero-stat-value" id="efficiency-number">--</span>
                                 <span class="hero-stat-label">Physics Efficiency Score</span>
                             </div>
+                            <div class="hero-stat">
+                                <span class="hero-stat-value" id="overall-pct-number">--</span>
+                                <span class="hero-stat-label" id="overall-pct-label">Overall Percentile (vs level)</span>
+                            </div>
                         </div>
+                        <p id="pct-basis-note" class="small text-muted" style="margin-top:8px;"></p>
                         <p id="data-warning" class="hidden text-muted small" style="margin-top: 12px; max-width: 400px; line-height: 1.4;">
                             <span class="val-warn" style="font-weight:bold;"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span> Exit velocity is theoretically improbable for this athlete's demographics — likely a data artifact in the motion capture file.
                         </p>
+                    </div>
+                </div>
+
+                <!-- COACHING FOCUS: BODY HEATMAP + TOP PRIORITIES -->
+                <div class="glass-card panel mt-3 hidden" id="focus-panel">
+                    <h3 class="panel-title">Coaching Focus <span class="panel-hint">weakest links &amp; where to work</span></h3>
+                    <div class="focus-grid">
+                        <div class="focus-heatmap">
+                            <div id="body-heatmap"></div>
+                            <div class="heatmap-legend">
+                                <span><i class="hm-swatch hm-weak"></i> Needs work</span>
+                                <span><i class="hm-swatch hm-ok"></i> On track</span>
+                                <span><i class="hm-swatch hm-strong"></i> Strength</span>
+                            </div>
+                        </div>
+                        <div class="focus-priorities">
+                            <div class="focus-priorities-head">Your Top Priorities</div>
+                            <ol id="priorities-list" class="priorities-list"></ol>
+                        </div>
                     </div>
                 </div>
 
@@ -129,6 +153,7 @@
                         <canvas id="kinematic-chart"></canvas>
                     </div>
                     <div id="kinematic-legend" class="kine-legend"></div>
+                    <div id="kine-timeline" class="kine-timeline"></div>
                     <div id="kinematic-caption" class="small" style="margin-top:0.6rem;"></div>
                 </div>
 

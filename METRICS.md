@@ -35,9 +35,33 @@ A plain-English explanation of every number in your swing report. No biomechanic
 - **Pelvis Direction at Contact\*** — How "open" your hips are when you hit the ball. Good hitters have their hips already cleared/open at contact.
 - **Upper Torso Direction at Contact\*** — How open your shoulders are at contact (they should still lag the hips a touch).
 - **Kinetic Chain Efficiency** — How much of your total energy actually ends up in the arms and bat (the payoff of good sequencing).
+- **Lead‑Leg Block\*** — How much your front knee *straightens* (extends) from foot plant to contact. A firm, extending front leg "posts up" and redirects your momentum into rotation. This is one of the strongest bat‑speed correlates in the Driveline OpenBiomechanics dataset — a soft, collapsing front leg leaks energy that should whip into the barrel.
 - **Sequence Quality\*** — Whether your body fires in the right *order* with the right timing (hips → torso → arms → hands), and how cleanly.
 - **Hand / Bat Speed\*** — Same as the headline number: peak hand speed through the zone (mph).
 - **Follow‑Through Quality** — How smoothly you decelerate after contact — abrupt stops usually mean energy leaked instead of going into the ball.
+
+---
+
+## Percentile ranks & Coaching Focus
+
+Every dimension shows a **percentile** — where you rank *at your level* (youth / high school / college / pro). 50th = dead average; 80th = better than 4 of 5 hitters. The **Overall Percentile** at the top blends all dimensions. The **Coaching Focus** panel turns this into action: a body heatmap colors your weakest links (red = needs work, green = strength), and **Your Top Priorities** ranks the fixes with the biggest bat‑speed payoff first, each with a specific cue and drill.
+
+**Two ways percentiles are computed — the report tells you which:**
+
+- **vs research** (default) — percentiles are *estimated* from published benchmarks (Blast Motion, Fleisig, Escamilla, etc.). Good directionally, but not a measured rank against real hitters. Only Hand/Bat Speed is anchored to fully level‑stratified data.
+- **vs your library** — real percentiles computed from *your own* `.mot`/`.trc` files, grouped by level. A "72nd percentile" then literally means "better than 72% of the college swings you've logged." Tiles marked **·lib** and the hero note tell you this is active.
+
+To switch to library‑based ranking, build a cohort from the swings on your machine:
+
+```
+# 1) List your swing files (fill in level + height/weight in the CSV it writes)
+python backend/build_cohort.py init --dir ~/your-swings --out cohort_manifest.csv
+
+# 2) Build the model (drops cohort_percentiles.json next to analyzer.py)
+python backend/build_cohort.py build --manifest cohort_manifest.csv
+```
+
+Each level needs at least 5 swings before its empirical percentiles are trusted; levels below that automatically fall back to the research estimate. Re‑run `build` whenever you add swings.
 
 ---
 
