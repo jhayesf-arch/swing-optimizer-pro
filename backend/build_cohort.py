@@ -15,8 +15,8 @@ Two steps:
 
      Then open cohort_manifest.csv and fill in, for each row:
         level        one of: youth | high_school | college | professional
-        height_in    athlete height in inches   (or set height_m)
-        weight_lb    athlete weight in pounds    (or set weight_kg)
+        height_cm    athlete height in centimetres  (imperial height_in also accepted)
+        weight_kg    athlete weight in kilograms    (imperial weight_lb also accepted)
      (bat_oz / bat_in are optional; sensible defaults are used.)
 
   2) Build the cohort model consumed by the analyzer:
@@ -40,7 +40,7 @@ athletes.json format:
       "cohort_out": "cohort_percentiles.json",
       "athletes": [
         {"dir": "~/Downloads/kike_swing_data_monocular", "athlete": "kike",
-         "level": "high_school", "height_in": 68, "weight_lb": 150}
+         "level": "high_school", "height_cm": 173, "weight_kg": 68}
       ]
     }
 """
@@ -55,7 +55,7 @@ from analyzer import RefinedHittingOptimizer, SWINGAI_LABELS
 
 MANIFEST_COLUMNS = [
     'mot_file', 'trc_file', 'level',
-    'height_in', 'weight_lb', 'height_m', 'weight_kg',
+    'height_cm', 'weight_kg', 'height_in', 'weight_lb', 'height_m',
     'bat_oz', 'bat_in', 'athlete', 'notes',
 ]
 VALID_LEVELS = {'youth', 'high_school', 'college', 'professional'}
@@ -83,8 +83,8 @@ def cmd_init(args):
         rows.append({
             'mot_file': mot,
             'trc_file': trc if os.path.exists(trc) else '',
-            'level': '', 'height_in': '', 'weight_lb': '',
-            'height_m': '', 'weight_kg': '', 'bat_oz': '', 'bat_in': '',
+            'level': '', 'height_cm': '', 'weight_kg': '', 'height_in': '',
+            'weight_lb': '', 'height_m': '', 'bat_oz': '', 'bat_in': '',
             'athlete': '', 'notes': '',
         })
     with open(args.out, 'w', newline='') as f:
@@ -92,7 +92,7 @@ def cmd_init(args):
         w.writeheader()
         w.writerows(rows)
     print(f"Wrote {args.out} with {len(rows)} swing(s).")
-    print("Now fill in the 'level', 'height_in' (or height_m), and 'weight_lb' (or weight_kg) columns,")
+    print("Now fill in the 'level', 'height_cm' (or height_in), and 'weight_kg' (or weight_lb) columns,")
     print("then run:  python build_cohort.py build --manifest", args.out)
     return 0
 
@@ -162,7 +162,9 @@ def cmd_build(args):
         if level not in VALID_LEVELS:
             skipped.append((mot, f"level '{level}' is blank/invalid"))
             continue
-        h_m = _num(row, 'height_m') or (_num(row, 'height_in') and _num(row, 'height_in') * 0.0254)
+        # Demographics: metric preferred (cm/kg); imperial accepted as a fallback.
+        h_m = (_num(row, 'height_cm') and _num(row, 'height_cm') / 100.0) \
+            or _num(row, 'height_m') or (_num(row, 'height_in') and _num(row, 'height_in') * 0.0254)
         w_kg = _num(row, 'weight_kg') or (_num(row, 'weight_lb') and _num(row, 'weight_lb') * 0.453592)
         if not h_m or not w_kg:
             skipped.append((mot, "missing height/weight"))
@@ -207,7 +209,7 @@ def _discover(cfg, config_path):
                 continue  # not a swing folder
             cfg.setdefault('athletes', []).append({
                 'dir': child, 'athlete': name,
-                'level': '', 'height_in': None, 'weight_lb': None,
+                'level': '', 'height_cm': None, 'weight_kg': None,
                 'needs_demographics': True,
             })
             known.add(rp)
@@ -265,7 +267,8 @@ def cmd_auto(args):
         if level not in VALID_LEVELS:
             skipped.append((d, f"level '{level}' invalid"))
             continue
-        h_m = a.get('height_m') or (a.get('height_in') and float(a['height_in']) * 0.0254)
+        h_m = (a.get('height_cm') and float(a['height_cm']) / 100.0) \
+            or a.get('height_m') or (a.get('height_in') and float(a['height_in']) * 0.0254)
         w_kg = a.get('weight_kg') or (a.get('weight_lb') and float(a['weight_lb']) * 0.453592)
         if not h_m or not w_kg:
             skipped.append((d, "missing height/weight"))

@@ -67,7 +67,7 @@ Each level needs at least 5 swings before its empirical percentiles are trusted;
 
 ### Automatic rebuilds
 
-To avoid re‑running by hand, keep an `athletes.json` mapping each athlete's folder to their level + height/weight, then rebuild with a single command (no manifest):
+To avoid re‑running by hand, keep an `athletes.json` mapping each athlete's folder to their level + height (`height_cm`) + weight (`weight_kg`) — metric is preferred; `height_in`/`weight_lb` are also accepted — then rebuild with a single command (no manifest):
 
 ```
 python backend/build_cohort.py auto      # reads athletes.json, regroups by level
