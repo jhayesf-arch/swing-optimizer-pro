@@ -179,13 +179,64 @@ def cmd_build(args):
     return 0
 
 
+def _discover(cfg, config_path):
+    """Scan cfg['discover_roots'] for athlete folders (any immediate subfolder
+    containing .mot files) not already in the config, and register each as a
+    stub entry that needs demographics. Returns the list of newly-added names.
+    Stubs are held OUT of the cohort until level/height/weight are filled in."""
+    roots = cfg.get('discover_roots') or []
+    if not roots:
+        return []
+    known = set()
+    for a in cfg.get('athletes', []):
+        if a.get('dir'):
+            known.add(os.path.realpath(os.path.expanduser(a['dir'])))
+    added = []
+    for root in roots:
+        root = os.path.expanduser(root)
+        if not os.path.isdir(root):
+            continue
+        for name in sorted(os.listdir(root)):
+            child = os.path.join(root, name)
+            if not os.path.isdir(child):
+                continue
+            rp = os.path.realpath(child)
+            if rp in known:
+                continue
+            if not glob.glob(os.path.join(child, '**', '*.mot'), recursive=True):
+                continue  # not a swing folder
+            cfg.setdefault('athletes', []).append({
+                'dir': child, 'athlete': name,
+                'level': '', 'height_in': None, 'weight_lb': None,
+                'needs_demographics': True,
+            })
+            known.add(rp)
+            added.append(name)
+    if added:
+        with open(config_path, 'w') as f:
+            json.dump(cfg, f, indent=2)
+    return added
+
+
 def cmd_auto(args):
     """Rebuild the cohort with no manual manifest, driven by an athletes config
     that maps each folder to its athlete demographics. Ideal for automation:
-    drop new .mot/.trc files into a known folder and re-run this command."""
+    drop new .mot/.trc files into a known folder and re-run this command.
+
+    If the config has a `discover_roots` list, new athlete folders under those
+    roots are auto-registered (held out of the cohort until you add their
+    level/height/weight)."""
     with open(args.config) as f:
         cfg = json.load(f)
+
+    newly = _discover(cfg, args.config)
+    if newly:
+        print(f"Registered {len(newly)} new athlete folder(s): {', '.join(newly)}")
+        print("  -> add each one's level + height/weight in the config to include them in the cohort.")
+
     out = args.out or cfg.get('cohort_out') or os.path.join(os.path.dirname(__file__), 'cohort_percentiles.json')
+    if not os.path.isabs(out):  # resolve relative to the config file, not the CWD
+        out = os.path.join(os.path.dirname(os.path.abspath(args.config)), out)
     dirs = [os.path.expanduser(a['dir']) for a in cfg.get('athletes', []) if a.get('dir')]
 
     # Cheap change-detection so a file-watcher can poll frequently without cost:
