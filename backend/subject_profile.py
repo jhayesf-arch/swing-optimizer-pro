@@ -110,6 +110,8 @@ def analyze_subject(
     bat_kg: float = 0.88,
     bat_m: float = 0.864,
     athlete: Optional[str] = None,
+    instrument: Optional[str] = None,
+    instrument_note: Optional[str] = None,
 ) -> Dict:
     """Run every swing in mot_dir and return per-swing reports plus an averaged view."""
     mot_dir = os.path.expanduser(mot_dir)
@@ -126,6 +128,7 @@ def analyze_subject(
             opt = RefinedHittingOptimizer(
                 body_mass_kg=weight_kg, body_height_m=height_m,
                 skill_level=level, bat_mass_kg=bat_kg, bat_length_m=bat_m,
+                instrument=instrument, instrument_note=instrument_note,
             )
             kin = opt.load_mot_file(mot)
             if kin is None or len(kin) == 0:
@@ -147,6 +150,9 @@ def analyze_subject(
                 "lead_leg_block": rep.get("lead_leg_block", {}),
                 "prescriptions": rep.get("prescriptions", []),
                 "metrics": diag.get("metrics", {}),
+                # Equipment context: surface in UI so caveats are visible per-swing
+                **({"instrument": diag["instrument"]} if diag.get("instrument") else {}),
+                **({"instrument_note": diag["instrument_note"]} if diag.get("instrument_note") else {}),
             })
         except Exception as e:  # one bad file shouldn't sink the whole profile
             errors.append({"file": os.path.basename(mot), "error": str(e)})
@@ -166,6 +172,9 @@ def analyze_subject(
         "weight_kg": weight_kg,
         "swings": swings,
         "errors": errors,
+        # Equipment context at profile level (from first swing with the note)
+        **({"instrument": instrument} if instrument else {}),
+        **({"instrument_note": instrument_note} if instrument_note else {}),
         **agg,
     }
 
@@ -357,6 +366,8 @@ def analyze_from_config(config_path: str, athlete_name: str) -> Dict:
             bat_kg=float(a.get("bat_oz", 31.0)) * 0.0283495,
             bat_m=float(a.get("bat_in", 34.0)) * 0.0254,
             athlete=a.get("athlete"),
+            instrument=a.get("instrument"),
+            instrument_note=a.get("instrument_note"),
         )
     known = ", ".join(str(a.get("athlete")) for a in cfg.get("athletes", []))
     raise SystemExit(f"Athlete '{athlete_name}' not found in {config_path}. Known: {known}")

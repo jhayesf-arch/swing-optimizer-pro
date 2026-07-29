@@ -646,12 +646,15 @@ def _build_data_quality(trc_metrics: dict, has_grf: bool = False) -> dict:
 
 class RefinedHittingOptimizer:
     def __init__(self, body_mass_kg: float, body_height_m: float, skill_level: str = 'high_school',
-                 bat_mass_kg: float = 0.88, bat_length_m: float = 0.864):
+                 bat_mass_kg: float = 0.88, bat_length_m: float = 0.864,
+                 instrument: str = None, instrument_note: str = None):
         self.body_mass_kg = float(body_mass_kg)
         self.body_height_m = float(body_height_m)
         self.skill_level = skill_level if skill_level in SKILL_LEVEL_BENCHMARKS else 'high_school'
         self.bat_mass_kg = float(bat_mass_kg)
         self.bat_length_m = float(bat_length_m)
+        self.instrument = instrument          # e.g. 'wood_stick', 'aluminum_bat', None
+        self.instrument_note = instrument_note  # free-text caveat for this session
         self.g = 9.81
         self.calculate_segment_properties()
         
@@ -856,12 +859,13 @@ class RefinedHittingOptimizer:
         shoulder_power = shoulder_torque * shoulder_omega
 
         # Detect swing window: walk backward from peak pelvis omega to last quiet frame.
-        # Swing window: find the last local minimum of pelvis angle before peak omega.
-        # This is the point where the pelvis stops counter-rotating and starts the
-        # actual swing — physically meaningful regardless of trial length or speed.
-        # Fallback: walk backward from peak to last frame where omega changes sign.
+        # CRITICAL: limit search to ≤400ms before peak. A baseball swing cannot take longer
+        # than ~400ms total, so searching further back just finds noise from setup/walk-in.
+        # Without this bound, long trials (4–8s) produce swing_start at t=0, making the
+        # "swing window" span the whole trial and argmax find random pre-swing noise peaks.
         peak_pelvis_frame_global = int(np.argmax(np.abs(pelvis_omega)))
         swing_start = 0
+        _max_swing_frames = int(0.40 * fs)   # 400ms hard limit
 
         # Use Driveline event timestamp (fp_10_time) when available — eliminates detection variability
         if 'fp_10_time' in data.attrs:
@@ -871,19 +875,23 @@ class RefinedHittingOptimizer:
         else:
             # Find the direction of rotation at peak (positive or negative)
             peak_sign = np.sign(pelvis_omega[peak_pelvis_frame_global])
+            search_lo = max(0, peak_pelvis_frame_global - _max_swing_frames)
 
-            # Walk backward: swing starts at the last frame where omega was opposite sign
-            for i in range(peak_pelvis_frame_global - 1, -1, -1):
-                if np.sign(pelvis_omega[i]) != peak_sign and abs(pelvis_omega[i]) * 180/np.pi > 20.0:
+            # Walk backward (bounded): swing starts at last frame where omega reversed sign
+            for i in range(peak_pelvis_frame_global - 1, search_lo - 1, -1):
+                if np.sign(pelvis_omega[i]) != peak_sign and abs(pelvis_omega[i]) * 180/np.pi > 15.0:
                     swing_start = i
                     break
-            # If no sign reversal found, fall back to last frame below 15% of peak
+            # If no sign reversal found within window, fall back to last frame below 10% of peak
             if swing_start == 0:
-                quiet_threshold = abs(pelvis_omega[peak_pelvis_frame_global]) * 0.15
-                for i in range(peak_pelvis_frame_global, -1, -1):
+                quiet_threshold = abs(pelvis_omega[peak_pelvis_frame_global]) * 0.10
+                for i in range(peak_pelvis_frame_global - 1, search_lo - 1, -1):
                     if abs(pelvis_omega[i]) < quiet_threshold:
                         swing_start = i
-                    break
+                        break
+            # Final fallback: 350ms before peak (better than frame 0)
+            if swing_start == 0:
+                swing_start = max(0, peak_pelvis_frame_global - int(0.35 * fs))
 
         sw = slice(swing_start, None)
         peak_hip_torque      = float(np.max(np.abs(hip_torque[sw])))
@@ -938,17 +946,65 @@ class RefinedHittingOptimizer:
             return np.gradient(smooth_data(arr, 11), dt)
 
         pelvis_om3d = np.sqrt(pelvis_omega**2 + _om1d('pelvis_tilt')**2 + _om1d('pelvis_list')**2)
-        torso_om3d  = np.sqrt(shoulder_omega**2 + _om1d('lumbar_bending')**2)
+        # Absolute thorax angular velocity = pelvis_rotation + lumbar_rotation (additive in planar approx).
+        # Using relative lumbar alone is WRONG — it peaks early relative to pelvis because the
+        # lumbar joint reaches its fastest twist while the pelvis is still accelerating.
+        # Absolute thorax correctly peaks AFTER the pelvis, which is what sequence timing measures.
+        thorax_abs_omega = pelvis_omega + _om1d('lumbar_rotation')
+        torso_om3d = np.sqrt(thorax_abs_omega**2 + _om1d('lumbar_bending')**2)
 
-        peak_hip_frame      = int(np.argmax(pelvis_om3d[swing_start:]))
-        peak_shoulder_frame = int(np.argmax(torso_om3d[swing_start:]))
-        peak_arm_frame      = int(np.argmax(np.abs(arm_omega_sw))) if np.sum(np.abs(arm_omega_sw)) > 0 else peak_shoulder_frame + 1
+        # Sub-frame peak interpolation via quadratic fit around argmax.
+        # At 60Hz each frame is 17ms, so raw argmax has ±8ms quantization error that
+        # produces apparent sequence reversals even when the hitter is sequencing correctly.
+        # Fitting a parabola to the 3 samples around the peak gives ~1ms resolution.
+        def _subframe_peak(arr, offset):
+            """Return fractional frame index of the peak of arr[offset:], offset from start.
+            Falls back to integer argmax if the parabola is ill-conditioned."""
+            idx = int(np.argmax(arr[offset:]))
+            i = idx + offset
+            if i == 0 or i >= len(arr) - 1:
+                return float(i)
+            y0, y1, y2 = arr[i-1], arr[i], arr[i+1]
+            denom = y0 - 2*y1 + y2
+            if abs(denom) < 1e-12:
+                return float(i)
+            frac = 0.5 * (y0 - y2) / denom
+            frac = max(-1.0, min(1.0, frac))   # clamp to ±1 frame
+            return float(i) + frac
 
-        sequence_timing_ms = float((peak_shoulder_frame - peak_hip_frame) * dt * 1000.0)
+        # Pelvis peak first — used to constrain the thorax search.
+        peak_hip_frac = _subframe_peak(pelvis_om3d, swing_start)
+        peak_hip_frame = int(round(peak_hip_frac))
+
+        # Thorax peak: search only within ±200ms of the pelvis peak.
+        # This prevents large pre-swing setup movements (arms loading, etc.) from
+        # stealing the global argmax and producing -200 to -700ms phantom lags.
+        _search_half = int(0.20 * fs)   # 200ms each side
+        thr_lo = max(swing_start, peak_hip_frame - _search_half)
+        thr_hi = min(len(torso_om3d), peak_hip_frame + _search_half + 1)
+        peak_shoulder_frac = _subframe_peak(torso_om3d[thr_lo:thr_hi], 0) + thr_lo
+
+        peak_shoulder_frame = int(round(peak_shoulder_frac))
+        peak_arm_frac = (_subframe_peak(np.abs(arm_omega_sw), 0) + swing_start
+                         if np.sum(np.abs(arm_omega_sw)) > 0 else peak_shoulder_frac + 1.0)
+
+        sequence_timing_ms = float((peak_shoulder_frac - peak_hip_frac) * dt * 1000.0)
+
+        # Resolution uncertainty flags:
+        # 1. Timing within ±1 frame → cannot distinguish order at 60Hz.
+        # 2. Peak pelvis omega < 120 deg/s → too weak a movement to sequence-analyze
+        #    (check swing, practice move, or noisy capture).
+        _frame_ms = dt * 1000.0
+        _peak_pelvis_dgs = float(np.max(pelvis_om3d[swing_start:])) * 180.0 / np.pi
+        sequence_indeterminate = bool(
+            abs(sequence_timing_ms) < _frame_ms or
+            _peak_pelvis_dgs < 120.0
+        )
+
         frame_tol = 1
         proper_sequence = bool(
-            (peak_hip_frame - frame_tol) <= peak_shoulder_frame and
-            peak_shoulder_frame <= (peak_arm_frame + frame_tol)
+            (peak_hip_frac - frame_tol) <= peak_shoulder_frac and
+            peak_shoulder_frac <= (peak_arm_frac + frame_tol)
         )
 
         # =========================================================================
@@ -1053,6 +1109,7 @@ class RefinedHittingOptimizer:
             'max_separation_deg': float(max_separation),
             'sequence_timing_ms': float(sequence_timing_ms),
             'proper_sequence': proper_sequence,
+            'sequence_indeterminate': sequence_indeterminate,
             'peak_arm_omega_rad_s': float(peak_arm_w_val),
             'peak_elb_omega_rad_s': float(peak_elb_w_val),
             'peak_shoulder_omega_rad_s': float(peak_shoulder_w),
@@ -1393,10 +1450,11 @@ class RefinedHittingOptimizer:
 
         return result
 
-    def _calculate_trc_sequence_timing(self, trc_data: pd.DataFrame, mot_data: pd.DataFrame) -> float:
+    def _calculate_trc_sequence_timing(self, trc_data: pd.DataFrame, mot_data: pd.DataFrame) -> Optional[Dict]:
         """Compute pelvis-to-torso sequence timing (ms) from TRC marker velocities.
         Uses hip joint center midpoint for pelvis and thorax proximal marker for torso.
-        Returns positive ms = pelvis peaks before torso (correct sequence)."""
+        Returns dict with keys: timing_ms, proper_sequence, indeterminate.
+        Positive timing_ms = pelvis peaks before torso (correct sequence)."""
         from scipy.signal import butter, filtfilt, savgol_filter
         t = trc_data['Time'].values if 'Time' in trc_data.columns else trc_data['time'].values
         dt = np.diff(t).mean()
@@ -1434,13 +1492,34 @@ class RefinedHittingOptimizer:
         if pelvis_spd is None or thorax_spd is None:
             return None
 
-        # Find swing start from mot fp_10_time, mapped to TRC time base
+        # Find swing start from mot fp_10_time, mapped to TRC time base.
+        # Limit search to ≤400ms before peak, same constraint as joint-angle path.
         fp_time = mot_data.attrs.get('fp_10_time', t[len(t)//3])
         fp_idx = int(np.argmin(np.abs(t - fp_time)))
 
-        peak_pelvis = fp_idx + int(np.argmax(pelvis_spd[fp_idx:]))
-        peak_thorax = fp_idx + int(np.argmax(thorax_spd[fp_idx:]))
-        return float((peak_thorax - peak_pelvis) * dt * 1000.0)
+        # Pelvis peak: bounded search forward from fp_idx
+        _max_frames = int(0.40 * fs)
+        search_end = min(len(pelvis_spd), fp_idx + _max_frames + int(0.5*fs))
+        peak_pelvis = fp_idx + int(np.argmax(pelvis_spd[fp_idx:search_end]))
+
+        # Thorax peak: constrained to ±200ms around pelvis peak (same as joint-angle path)
+        _search_half = int(0.20 * fs)
+        thr_lo = max(fp_idx, peak_pelvis - _search_half)
+        thr_hi = min(len(thorax_spd), peak_pelvis + _search_half + 1)
+        peak_thorax = thr_lo + int(np.argmax(thorax_spd[thr_lo:thr_hi]))
+
+        timing_ms = float((peak_thorax - peak_pelvis) * dt * 1000.0)
+        frame_ms = dt * 1000.0
+        peak_pelvis_spd = float(pelvis_spd[peak_pelvis])
+
+        # Indeterminate when: timing within 1 frame OR pelvis speed too low (weak movement)
+        indeterminate = bool(abs(timing_ms) < frame_ms or peak_pelvis_spd < 0.10)
+
+        return {
+            'timing_ms': timing_ms,
+            'proper_sequence': bool(timing_ms <= 0),  # torax ≤ pelvis = correct (pos = pelvis first)
+            'indeterminate': indeterminate,
+        }
 
     def comprehensive_diagnosis(self, kinematics: pd.DataFrame, filename: str, trc_data: pd.DataFrame = None, verbose: bool = False) -> Dict:
         trc_metrics = self.calculate_trc_metrics(trc_data) if trc_data is not None else {'max_hand_speed_mph': 0.0, 'max_hand_speed_mps': 0.0}
@@ -1453,17 +1532,11 @@ class RefinedHittingOptimizer:
         plant_frame = stride['plant_frame'] if stride else len(kinematics) // 2
         weight_shift = self.calculate_weight_shift(kinematics, plant_frame)
 
-        # Override sequence timing with TRC-derived value when thorax markers are available.
-        # Joint-angle-based sequence timing is unreliable because absolute thorax velocity
-        # cannot be reconstructed from pelvis_rotation + lumbar_rotation alone.
-        if trc_data is not None and rotation is not None:
-            try:
-                seq_ms = self._calculate_trc_sequence_timing(trc_data, kinematics)
-                if seq_ms is not None:
-                    rotation['sequence_timing_ms'] = seq_ms
-                    rotation['proper_sequence'] = bool(seq_ms >= 0)
-            except Exception:
-                pass
+        # Note: the TRC-based sequence timing override was removed. The joint-angle
+        # path now uses absolute thorax velocity (pelvis_rotation + lumbar_rotation)
+        # with a ±400ms bounded search window — the root causes of the original
+        # unreliable values. The TRC path measured translational marker speed, not
+        # angular velocity, which made it less accurate than the corrected joint-angle path.
 
         # GRF estimation from whole-body CoM (requires TRC markers)
         grf_data = {}
@@ -1777,6 +1850,9 @@ class RefinedHittingOptimizer:
             "weight_shift": weight_shift,
             "grf_estimation": grf_data,
             "data_quality": _build_data_quality(trc_metrics, has_grf=bool(grf_data)),
+            # Equipment / session context
+            **({"instrument": self.instrument} if self.instrument else {}),
+            **({"instrument_note": self.instrument_note} if self.instrument_note else {}),
         }
 
     def _rate_dimension(self, key: str, value: float, invert: bool = False) -> int:
@@ -2153,10 +2229,15 @@ class RefinedHittingOptimizer:
         # Sequence Quality — computed directly (not threshold lookup)
         if rotation:
             proper = rotation.get('proper_sequence', False)
+            indeterminate = rotation.get('sequence_indeterminate', False)
             timing_ms = rotation.get('sequence_timing_ms', 0.0)
             benchmarks = SKILL_LEVEL_BENCHMARKS.get(self.skill_level, {})
             t_lo, t_hi = benchmarks.get('sequence_timing_ms', (20, 60))
-            if proper and t_lo <= timing_ms <= t_hi:
+            if indeterminate:
+                # Cannot determine which segment peaks first at 60Hz — honest 3/5.
+                # Don't penalize what the capture resolution can't measure.
+                sq_stars = 3
+            elif proper and t_lo <= timing_ms <= t_hi:
                 sq_stars = 5
             elif proper and timing_ms > 0:
                 sq_stars = 4 if abs(timing_ms - (t_lo + t_hi) / 2) < 15 else 3
@@ -2170,9 +2251,12 @@ class RefinedHittingOptimizer:
             'label': SWINGAI_LABELS['sequence_quality'],
             'stars': sq_stars,
             'badge': self._rating_to_badge(sq_stars),
-            'value': round(rotation.get('sequence_timing_ms', 0.0) if rotation else 0.0, 0),
+            'value': round(rotation.get('sequence_timing_ms', 0.0) if rotation else 0.0, 1),
             'unit': 'ms lag',
             'description': 'Proximal-to-distal sequencing: Pelvis → Torso → Arms in correct order and timing.',
+            **(({'indeterminate': True,
+                 'indeterminate_reason': 'Timing difference is within 1-frame resolution (≤17ms at 60Hz). Sequence direction cannot be determined from this capture rate.'}
+                if rotation and rotation.get('sequence_indeterminate') else {})),
         }
 
         # Hand / Bat Speed — most reliable output metric
