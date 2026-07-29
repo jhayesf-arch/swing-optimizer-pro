@@ -109,9 +109,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // -----------------------------------------
     // State
     // -----------------------------------------
-    let pendingUploadFile = null;
+    let pendingUploadFiles = [];
     let selectedSkillLevel = 'high_school';
     let lastAnalysis = null;
+    // Multi-swing analysis: one entry per selectable view (Average + each swing).
+    let analysisViews = [];
+    let currentViewFilename = '';
+    let droppedTrcFiles = [];   // .trc files dropped together with the .mot files
 
     // -----------------------------------------
     // Init
@@ -147,38 +151,48 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         dropZone.classList.remove('dragover');
         if (e.dataTransfer.files.length) {
-            promptDemographicsForUpload(e.dataTransfer.files[0]);
+            promptDemographicsForUpload(Array.from(e.dataTransfer.files));
         }
     });
-    
+
     fileInput.addEventListener('change', (e) => {
         if (e.target.files.length) {
-            promptDemographicsForUpload(e.target.files[0]);
+            promptDemographicsForUpload(Array.from(e.target.files));
         }
     });
 
     trcInput.addEventListener('change', (e) => {
-        if (e.target.files.length) {
-            trcLabel.textContent = `✓ ${e.target.files[0].name}`;
+        const n = e.target.files.length;
+        if (n) {
+            trcLabel.textContent = n === 1 ? `✓ ${e.target.files[0].name}` : `✓ ${n} marker files`;
         }
     });
 
     document.getElementById('load-demo').addEventListener('click', () => {
+        hideViewSelector();
         renderDashboard(DEMO_DIAGNOSIS, 'demo_swing.mot');
     });
     
     document.getElementById('btn-cancel-demo').addEventListener('click', hideDemoModal);
     document.getElementById('btn-run-physics').addEventListener('click', () => {
         hideDemoModal();
-        if (pendingUploadFile) {
-            handleUpload(pendingUploadFile);
-        }
+        if (!pendingUploadFiles || !pendingUploadFiles.length) return;
+        if (pendingUploadFiles.length === 1) handleUpload(pendingUploadFiles[0]);
+        else handleBatchUpload(pendingUploadFiles);
+    });
+
+    document.getElementById('swing-view')?.addEventListener('change', (e) => {
+        selectView(e.target.value);
     });
 
     btnBack.addEventListener('click', () => {
         resultsSection.classList.add('hidden');
         uploadSection.classList.remove('hidden');
         fileInput.value = '';
+        trcInput.value = '';
+        trcLabel.textContent = '';
+        droppedTrcFiles = [];
+        hideViewSelector();
     });
     
     closeToast.addEventListener('click', hideError);
@@ -354,6 +368,7 @@ document.addEventListener('DOMContentLoaded', () => {
             catch (_) { throw new Error(`Server error (HTTP ${response.status})`); }
 
             if (data.success) {
+                hideViewSelector();
                 renderDashboard(data.data, data.filename);
             } else {
                 showError(data.error || "Analysis failed");
@@ -365,7 +380,141 @@ document.addEventListener('DOMContentLoaded', () => {
             hideLoading();
         }
     }
-    
+
+    // -----------------------------------------
+    // Multi-swing analysis
+    // -----------------------------------------
+    async function handleBatchUpload(files) {
+        showLoading();
+
+        const formData = new FormData();
+        files.forEach(f => formData.append('files', f));
+        const trcs = (trcInput.files && trcInput.files.length)
+            ? Array.from(trcInput.files) : droppedTrcFiles;
+        trcs.forEach(f => formData.append('trc_files', f));
+
+        const demo = getDemographics();
+        formData.append('height_m', demo.height_m);
+        formData.append('weight_kg', demo.weight_kg);
+        formData.append('skill_level', selectedSkillLevel);
+        formData.append('bat_mass_kg', demo.bat_mass_kg);
+        formData.append('bat_length_m', demo.bat_length_m);
+
+        const doUpload = () => fetch(`${API_BASE}/api/analyze/batch`, { method: 'POST', body: formData });
+        try {
+            let response;
+            try { response = await doUpload(); }
+            catch (_) { await new Promise(r => setTimeout(r, 5000)); response = await doUpload(); }
+
+            let data;
+            try { data = await response.json(); }
+            catch (_) { throw new Error(`Server error (HTTP ${response.status})`); }
+
+            if (!data.success) {
+                showError(data.error || "Analysis failed");
+                hideLoading();
+                return;
+            }
+            if (data.errors && data.errors.length) {
+                console.warn('Some swings failed to analyze:', data.errors);
+            }
+            analysisViews = buildViews(data);
+            showViewSelector(analysisViews);
+            selectView('average');
+        } catch (err) {
+            showError("Network error — backend may still be waking up. Please try again in a moment.");
+            console.error(err);
+            hideLoading();
+        }
+    }
+
+    // Turn a batch response into selectable views: the average first, then each
+    // individual swing. Each view carries a diagnosis shaped like a single-swing
+    // response so the existing render path works unchanged.
+    function buildViews(data) {
+        const swings = data.swings || [];
+        const first = swings[0] || {};
+        const libDims = dims => Object.values(dims || {})
+            .filter(d => typeof d.percentile_n === 'number').length;
+        const mean = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+
+        const views = [];
+        const avg = data.average;
+        if (avg) {
+            const consistency = avg.overall_consistency;
+            views.push({
+                id: 'average',
+                label: `Average — ${data.n_swings} swings`,
+                hint: consistency != null ? `Consistency ${consistency}/100` : '',
+                diagnosis: {
+                    swing_score: avg.swing_score,
+                    efficiency_score: Math.round(mean(swings.map(s => s.efficiency_score || 0))),
+                    metrics: data.average_metrics || {},
+                    swingai_report: { ...avg, percentile_library_dims: libDims(avg.dimensions) },
+                    findings: [], recommendations: [],
+                    skeleton_frames: first.skeleton_frames,
+                    kinematic_sequence: first.kinematic_sequence,
+                    grf_estimation: {},
+                },
+            });
+        }
+        swings.forEach(s => {
+            views.push({
+                id: `swing_${s.index}`,
+                label: `Swing ${s.index} — ${s.name}`,
+                hint: `Score ${Math.round(s.swing_score)}`,
+                diagnosis: {
+                    swing_score: s.swing_score,
+                    efficiency_score: s.efficiency_score,
+                    metrics: s.metrics || {},
+                    swingai_report: {
+                        swing_score: s.swing_score,
+                        overall_percentile: s.overall_percentile,
+                        percentile_basis: s.percentile_basis,
+                        percentile_library_dims: libDims(s.dimensions),
+                        skill_level: data.skill_level,
+                        phases: s.phases,
+                        dimensions: s.dimensions,
+                        prescriptions: s.prescriptions,
+                        lead_leg_block: s.lead_leg_block,
+                    },
+                    findings: s.findings || [], recommendations: s.recommendations || [],
+                    skeleton_frames: s.skeleton_frames,
+                    kinematic_sequence: s.kinematic_sequence,
+                    grf_estimation: s.grf_estimation || {},
+                },
+            });
+        });
+        return views;
+    }
+
+    function showViewSelector(views) {
+        const panel = document.getElementById('view-selector');
+        const sel = document.getElementById('swing-view');
+        if (!panel || !sel) return;
+        sel.innerHTML = views.map(v =>
+            `<option value="${v.id}">${v.label.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</option>`
+        ).join('');
+        panel.classList.remove('hidden');
+    }
+
+    function hideViewSelector() {
+        analysisViews = [];
+        document.getElementById('view-selector')?.classList.add('hidden');
+    }
+
+    function selectView(id) {
+        const v = analysisViews.find(x => x.id === id);
+        if (!v) return;
+        const sel = document.getElementById('swing-view');
+        if (sel && sel.value !== id) sel.value = id;
+        const hint = document.getElementById('view-hint');
+        if (hint) hint.textContent = v.hint || '';
+        currentViewFilename = v.label;
+        renderDashboard(v.diagnosis, v.label);
+    }
+
+
     // -----------------------------------------
     // Rendering
     // -----------------------------------------
@@ -435,6 +584,24 @@ document.addEventListener('DOMContentLoaded', () => {
         const libDims = diagnosis.swingai_report?.percentile_library_dims || 0;
         const opLabel = document.getElementById('overall-pct-label');
         const note = document.getElementById('pct-basis-note');
+
+        // Averaged multi-swing view: say so explicitly, since these numbers mean
+        // something different from a single trial.
+        const rep = diagnosis.swingai_report || {};
+        const avgNote = document.getElementById('avg-basis-note');
+        if (avgNote) {
+            if (rep.is_average) {
+                const c = rep.overall_consistency;
+                const rng = rep.swing_score_range;
+                avgNote.innerHTML = `<span class="accent">◆</span> Averaged across <strong>${rep.n_swings} swings</strong>`
+                    + (rng ? ` (scores ${rng[0]}–${rng[1]})` : '')
+                    + (c != null ? ` · <strong>${c}/100</strong> consistency` : '')
+                    + ` — outlier trials excluded. Use the <em>Viewing</em> menu to inspect any single swing.`;
+                avgNote.classList.remove('hidden');
+            } else {
+                avgNote.classList.add('hidden');
+            }
+        }
         if (basis === 'blended') {
             if (opLabel) opLabel.textContent = 'Overall Percentile (library + research)';
             if (note) note.innerHTML = `<span class="val-good">●</span> Blended ranking: <strong>your own library</strong> anchored by research benchmarks (${libDims}/15 metrics use your swings; your data's weight grows as you log more). Grow it with <code>build_cohort.py</code>.`;
@@ -1004,12 +1171,25 @@ document.addEventListener('DOMContentLoaded', () => {
                </div>`
             : '';
 
+        // Averaged view only: how repeatable this metric was across the swings.
+        // A wide range with a good average is a consistency problem, not a range one.
+        let spread = '';
+        if (typeof dim.consistency === 'number' && Array.isArray(dim.range)) {
+            const c = dim.consistency;
+            const cls = c >= 75 ? 'spread-good' : c >= 50 ? 'spread-ok' : 'spread-poor';
+            spread = `<div class="dim-spread" title="Consistency across ${dim.n_swings || '—'} swings (100 = identical every swing)">
+                          <span class="${cls}">${Math.round(c)}<span class="spread-unit">/100 consistent</span></span>
+                          <span class="dim-range">${dim.range[0]}–${dim.range[1]} ${dim.unit}</span>
+                      </div>`;
+        }
+
         tile.innerHTML = `
             <div class="dim-badge ${badgeClass}"></div>
             <div class="dim-info">
                 <div class="dim-name">${dim.label}</div>
                 <div class="dim-value">${dim.value} ${dim.unit}</div>
                 ${pctBar}
+                ${spread}
                 ${cues}
             </div>
             <div class="dim-stars">${stars}</div>
@@ -1075,12 +1255,20 @@ document.addEventListener('DOMContentLoaded', () => {
     // -----------------------------------------
     // Utilities
     // -----------------------------------------
-    function promptDemographicsForUpload(file) {
-        if (!file.name.endsWith('.mot')) {
-            showError("Please upload a .mot file");
+    function promptDemographicsForUpload(files) {
+        const list = Array.isArray(files) ? files : [files];
+        const mots = list.filter(f => f.name.endsWith('.mot'));
+        if (!mots.length) {
+            showError("Please upload at least one .mot file");
             return;
         }
-        pendingUploadFile = file;
+        // .trc files dropped alongside the .mot files are used as markers.
+        const trcs = list.filter(f => f.name.endsWith('.trc'));
+        if (trcs.length) {
+            droppedTrcFiles = trcs;
+            trcLabel.textContent = trcs.length === 1 ? `✓ ${trcs[0].name}` : `✓ ${trcs.length} marker files`;
+        }
+        pendingUploadFiles = mots;
         showDemoModal();
     }
 

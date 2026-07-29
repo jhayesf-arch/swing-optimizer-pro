@@ -1,9 +1,11 @@
 import os
+from typing import List
 from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from analyzer import RefinedHittingOptimizer
+from subject_profile import aggregate_swings
 
 try:
     from opensim_id import run_inverse_dynamics, summarize_id_results
@@ -420,6 +422,121 @@ async def analyze_upload(
         if trc_path and os.path.exists(trc_path):
             os.remove(trc_path)
 
+@app.post("/api/analyze/batch")
+async def analyze_batch(
+    files: List[UploadFile] = File(...),
+    trc_files: List[UploadFile] = File(None),
+    height_m: float = Form(1.83),
+    weight_kg: float = Form(82.0),
+    skill_level: str = Form('high_school'),
+    bat_mass_kg: float = Form(0.88),
+    bat_length_m: float = Form(0.864),
+):
+    """Analyze several swings for one athlete and return every per-swing report
+    plus an averaged view (outliers excluded) with swing-to-swing consistency.
+
+    One swing is a noisy sample; the average is what an athlete should be judged
+    on, and the spread is itself a coaching signal.
+    """
+    mots = [f for f in files if f.filename and f.filename.endswith('.mot')]
+    if not mots:
+        return JSONResponse(status_code=400, content={"success": False, "error": "No .mot files provided"})
+
+    # Pair markers to kinematics by filename stem (OpenCap splits them across folders).
+    trc_by_stem = {}
+    written = []
+    try:
+        for tf in (trc_files or []):
+            if not tf or not tf.filename or not tf.filename.endswith('.trc'):
+                continue
+            path = os.path.join(TMP_DIR, os.path.basename(tf.filename))
+            with open(path, "wb") as fh:
+                fh.write(await tf.read())
+            written.append(path)
+            trc_by_stem[os.path.splitext(os.path.basename(tf.filename))[0].lower()] = path
+
+        swings, errors = [], []
+        for uf in mots:
+            name = os.path.basename(uf.filename)
+            stem = os.path.splitext(name)[0]
+            mot_path = os.path.join(TMP_DIR, name)
+            with open(mot_path, "wb") as fh:
+                fh.write(await uf.read())
+            written.append(mot_path)
+            try:
+                opt = RefinedHittingOptimizer(
+                    body_mass_kg=weight_kg, body_height_m=height_m,
+                    skill_level=skill_level, bat_mass_kg=bat_mass_kg, bat_length_m=bat_length_m,
+                )
+                kin = opt.load_mot_file(mot_path)
+                if kin is None or len(kin) == 0:
+                    errors.append({"file": name, "error": "empty/invalid .mot"})
+                    continue
+                trc_path = trc_by_stem.get(stem.lower())
+                trc_data = opt.load_trc_file(trc_path) if trc_path else None
+                diag = opt.comprehensive_diagnosis(kin, name, trc_data=trc_data)
+                rep = diag.get("swingai_report", {})
+
+                # Kinematic sequence is small and worth having per swing; skeleton
+                # frames are large, so only the first swing carries them.
+                extras = {}
+                try:
+                    extras['kinematic_sequence'] = _kinematic_sequence(kin)
+                except Exception:
+                    pass
+                if not swings:
+                    try:
+                        extras['skeleton_frames'] = (
+                            _extract_skeleton_frames(trc_data, kin) if trc_data is not None
+                            else _skeleton_from_mot(kin, body_height_m=height_m)
+                        )
+                    except Exception:
+                        pass
+
+                swings.append({
+                    "index": len(swings) + 1,
+                    "name": stem,
+                    "has_markers": trc_data is not None,
+                    "swing_score": rep.get("swing_score", 0.0),
+                    "overall_percentile": rep.get("overall_percentile"),
+                    "percentile_basis": rep.get("percentile_basis"),
+                    "efficiency_score": diag.get("efficiency_score", 0),
+                    "dimensions": rep.get("dimensions", {}),
+                    "phases": rep.get("phases", {}),
+                    "lead_leg_block": rep.get("lead_leg_block", {}),
+                    "prescriptions": rep.get("prescriptions", []),
+                    "metrics": diag.get("metrics", {}),
+                    "findings": diag.get("findings", []),
+                    "recommendations": diag.get("recommendations", []),
+                    "grf_estimation": diag.get("grf_estimation", {}),
+                    "data_quality": diag.get("data_quality", {}),
+                    **extras,
+                })
+            except Exception as e:
+                errors.append({"file": name, "error": str(e)})
+
+        if not swings:
+            return JSONResponse(status_code=400, content={
+                "success": False, "error": "No swings could be analyzed", "errors": errors})
+
+        agg = aggregate_swings(swings, skill_level, height_m, weight_kg, bat_mass_kg, bat_length_m)
+        return JSONResponse(content={
+            "success": True,
+            "n_swings": len(swings),
+            "skill_level": skill_level,
+            "swings": swings,
+            "errors": errors,
+            **agg,
+        })
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
+    finally:
+        for p in written:
+            if os.path.exists(p):
+                os.remove(p)
+
+
 @app.get("/style.css")
 def serve_css():
     return FileResponse(os.path.join(FRONTEND_DIR, "style.css"))
@@ -427,5 +544,12 @@ def serve_css():
 @app.get("/app.js")
 def serve_js():
     return FileResponse(os.path.join(FRONTEND_DIR, "app.js"))
+
+@app.get("/body.svg")
+def serve_body_svg():
+    # The Coaching Focus heatmap fetches this by relative path; without an
+    # explicit route it 404s whenever the app is served from the API backend
+    # (only the GitHub Pages build has docs/ as the web root).
+    return FileResponse(os.path.join(FRONTEND_DIR, "body.svg"), media_type="image/svg+xml")
 
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
