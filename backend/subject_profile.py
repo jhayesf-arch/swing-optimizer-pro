@@ -182,11 +182,19 @@ def aggregate_swings(
     view shaped like a single-swing report. Shared by the folder-based profile
     and the multi-file upload endpoint."""
     # ---- per-dimension statistics across swings ---------------------------
-    dim_keys = [k for k in SWINGAI_WEIGHTS if any(k in s["dimensions"] for s in swings)]
+    def _measured(s, key):
+        """A dimension counts only when the capture actually measured it."""
+        d = s["dimensions"].get(key)
+        return (d is not None and d.get("available") is not False
+                and isinstance(d.get("value"), (int, float)))
+
+    dim_keys = [k for k in SWINGAI_WEIGHTS if any(_measured(s, k) for s in swings)]
+    unavailable_keys = [k for k in SWINGAI_WEIGHTS
+                        if k not in dim_keys and any(k in s["dimensions"] for s in swings)]
     stats: Dict[str, Dict] = {}
     for key in dim_keys:
-        idxs = [i for i, s in enumerate(swings) if key in s["dimensions"]]
-        vals = [float(swings[i]["dimensions"][key].get("value", 0.0)) for i in idxs]
+        idxs = [i for i, s in enumerate(swings) if _measured(s, key)]
+        vals = [float(swings[i]["dimensions"][key]["value"]) for i in idxs]
         outliers = _outlier_indices(vals)
         kept = [v for i, v in enumerate(vals) if i not in outliers]
         if not kept:  # every value flagged (degenerate) — fall back to all
@@ -211,12 +219,22 @@ def aggregate_swings(
         bat_mass_kg=bat_kg, bat_length_m=bat_m,
     )
     avg_dims: Dict[str, Dict] = {}
+    # Dimensions no swing could measure stay in the report, flagged, so the
+    # athlete sees "not measured" rather than a silently missing row.
+    for key in unavailable_keys:
+        src = next((s["dimensions"][key] for s in swings if key in s["dimensions"]), {})
+        avg_dims[key] = {
+            "label": src.get("label", SWINGAI_LABELS.get(key, key)),
+            "unit": src.get("unit", ""), "description": src.get("description", ""),
+            "value": None, "stars": 0, "badge": "unavailable", "available": False,
+            "unavailable_reason": src.get("unavailable_reason", "not measurable in these captures"),
+        }
     for key in dim_keys:
         st = stats[key]
         excluded_pos = {i for i, s in enumerate(swings)
-                        if key in s["dimensions"] and s["index"] in st["excluded_swings"]}
+                        if _measured(s, key) and s["index"] in st["excluded_swings"]}
         members = [s["dimensions"][key] for i, s in enumerate(swings)
-                   if key in s["dimensions"] and i not in excluded_pos]
+                   if _measured(s, key) and i not in excluded_pos]
         template = members[0]
 
         star_vals = [d.get("stars", 3) for d in members]
@@ -247,7 +265,7 @@ def aggregate_swings(
     prescriptions = []
     for key, weight in SWINGAI_WEIGHTS.items():
         d = avg_dims.get(key)
-        if not d or d["stars"] >= 4:
+        if not d or d.get("available") is False or d["stars"] >= 4:
             continue
         drill = DRILL_LIBRARY.get(key)
         if not drill:
@@ -267,7 +285,8 @@ def aggregate_swings(
         pdims = [{**avg_dims[d], "key": d} for d in meta["dimensions"] if d in avg_dims]
         if not pdims:
             continue
-        avg_stars = sum(d["stars"] for d in pdims) / len(pdims)
+        rated = [d for d in pdims if d.get("available") is not False]
+        avg_stars = sum(d["stars"] for d in rated) / max(1, len(rated))
         phases[phase_key] = {
             "label": meta["label"], "icon": meta["icon"],
             "avg_stars": round(avg_stars, 1),
@@ -364,9 +383,18 @@ def _print_summary(p: Dict) -> None:
     print(f"\n  {'dimension':<32} {'avg':>9} {'range':>17} {'consist':>8} {'★':>6}")
     print("  " + "-" * 78)
     for key, d in avg["dimensions"].items():
+        if d.get("available") is False:
+            print(f"  {d['label'][:32]:<32} {'not measured':>9} {'—':>17} {'—':>8} {'—':>6}")
+            continue
         rng = f"{d['range'][0]} – {d['range'][1]}"
         con = "—" if d.get("consistency") is None else f"{d['consistency']:.0f}"
         print(f"  {d['label'][:32]:<32} {d['value']:>9} {rng:>17} {con:>8} {'★' * d['stars']:>6}")
+
+    missing = [d for d in avg["dimensions"].values() if d.get("available") is False]
+    if missing:
+        print("\n  Not measured in these captures:")
+        for d in missing:
+            print(f"    - {d['label']}: {d.get('unavailable_reason', 'unavailable')}")
 
     flagged = {k: s for k, s in p["stats"].items() if s["excluded_swings"]}
     if flagged:
