@@ -445,6 +445,24 @@ header p { color: var(--text-muted); font-size: 1.1rem; }
     text-align: right;
 }
 .dim-pct-label sup { font-size: 0.7em; }
+/* Dimension the capture couldn't measure — muted, never scored */
+.dim-tile.dim-unavailable { opacity: 0.55; }
+.dim-badge.badge-unavailable {
+    background: var(--text-muted); color: var(--text-muted); box-shadow: none;
+}
+.dim-pill.badge-unavailable {
+    background: rgba(255,255,255,0.06);
+    color: var(--text-muted);
+    border: 1px solid rgba(255,255,255,0.12);
+}
+.dim-unavailable-why {
+    font-size: 0.66rem;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-top: 3px;
+    line-height: 1.35;
+}
+
 /* Swing-to-swing spread (averaged multi-swing view only) */
 .dim-spread {
     display: flex;

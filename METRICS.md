@@ -23,7 +23,7 @@ A plain-English explanation of every number in your swing report. No biomechanic
 - **Upper Torso Load** — How much your upper body coils/stores energy during the load.
 
 ### Phase 2 — Stride (moving toward the pitch)
-- **Stride Length\*** — How far your front foot strides, measured relative to your height (so it's fair across body sizes).
+- **Stride Length\*** — How wide your base is at contact: the horizontal distance between your two ankles at ball contact, relative to your height (so it's fair across body sizes). It needs **foot markers** (a `.trc` file) — without them the report says *Not measured* rather than guessing.
 - **Forward Move** — How efficiently your body's weight moves forward into the swing (momentum toward the ball).
 
 ### Phase 3 — Power Move (the turn)
@@ -76,6 +76,12 @@ One swing is a single noisy sample. Select **multiple `.mot` files** in the uplo
 - **Consistency is its own coaching metric.** Every tile shows a `0–100 consistent` score and the swing‑to‑swing range. A hitter averaging 38° of hip‑shoulder separation with a 25–50° range has a *repeatability* problem, not a range problem — the average alone hides that. Green ≥75, amber ≥50, red below.
 
 A very low consistency score with a huge range (e.g. `9/100`, `50–1126 J`) usually means the **metric itself is unreliable** on that capture, not that the hitter is wildly inconsistent — treat it as a data‑quality flag.
+
+## "Not measured"
+
+Some metrics can't be computed from every capture — stride length needs foot markers, and a capture that begins after front‑foot plant may not contain the information at all. When that happens the tile reads **Not measured** with the reason, and the dimension is **excluded from the Swing Score and from the drill prescriptions** rather than scored as a failure.
+
+This matters: a metric the system cannot see is not the same as a metric the athlete performed badly, and reporting the second when the first is true is worse than reporting nothing.
 
 From the command line, the same aggregation runs per athlete straight from `athletes.json`:
 

@@ -1149,6 +1149,23 @@ document.addEventListener('DOMContentLoaded', () => {
         tile.className = 'dim-tile';
         if (dim.key) tile.dataset.dimKey = dim.key;
 
+        // A dimension the capture couldn't measure: say so plainly rather than
+        // showing a confident low rating for something that was never observed.
+        if (dim.available === false) {
+            tile.classList.add('dim-unavailable');
+            tile.innerHTML = `
+                <div class="dim-badge badge-unavailable"></div>
+                <div class="dim-info">
+                    <div class="dim-name">${dim.label}</div>
+                    <div class="dim-value">Not measured</div>
+                    <div class="dim-unavailable-why">${dim.unavailable_reason || 'unavailable in this capture'}</div>
+                </div>
+                <div class="dim-pill badge-unavailable">N/A</div>
+                <div class="dim-tooltip">${dim.description || ''}</div>
+            `;
+            return tile;
+        }
+
         const badgeClass = badgeCssClass(dim.badge);
         const pillLabel = pillText(dim.badge);
         const stars = renderStars(dim.stars);

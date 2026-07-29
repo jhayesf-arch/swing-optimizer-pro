@@ -393,6 +393,14 @@ DRILL_LIBRARY = {
 # level. When present, percentiles are computed against real swings at the same
 # level instead of being estimated from research benchmarks.
 # ---------------------------------------------------------------------------
+# Stride detection. These trials cover a whole at-bat (several seconds), so the
+# stride is searched for only in the window just before contact; a "stride"
+# below the minimum ratio is stance jitter or a capture that began after front
+# foot plant, and is reported as not-measured rather than as a bad stride.
+STRIDE_LOOKBACK_S = 1.2
+STRIDE_QUIET_MPS = 0.10
+STRIDE_MIN_RATIO = 0.15
+
 COHORT_MIN_N = 5  # minimum swings in a level before its empirical data is blended in at all
 # Empirical-Bayes shrinkage constant. The user's cohort gets weight n/(n+K) and the
 # research benchmark gets the remainder, so research guidance anchors small cohorts and
@@ -1070,7 +1078,55 @@ class RefinedHittingOptimizer:
             'body_rotation_ratio_pct': body_rotation_ratio,
         }
         
-    def calculate_stride_refined(self, data: pd.DataFrame, rotation: Dict = None) -> Dict:
+    def _stride_from_markers(self, trc_data: pd.DataFrame, data: pd.DataFrame,
+                             rotation: Dict) -> Optional[Dict]:
+        """Stride length from foot markers: the horizontal distance between the two
+        ankles at contact — the standard foot-to-foot definition.
+
+        Measured as a snapshot at contact rather than as lead-foot displacement,
+        because these captures frequently begin with the athlete already in his
+        strided stance (tee and drill work), which makes any displacement-based
+        measure read ~0 for a stance that is in fact wide open. A snapshot is
+        indifferent to when recording started.
+
+        Returns None if markers are missing.
+        """
+        if trc_data is None or rotation is None or 'pelvis_omega' not in rotation:
+            return None
+        try:
+            cols = trc_data.columns
+            if 'Neck_X' not in cols or 'LAnkle_X' not in cols or 'RAnkle_X' not in cols:
+                return None
+            # Identify the vertical axis empirically (lab frames vary): it's the one
+            # where the neck sits far above the ankle.
+            vert = max('XYZ', key=lambda a: float(np.mean(trc_data['Neck_' + a].values)
+                                                  - np.mean(trc_data['LAnkle_' + a].values)))
+            horiz = [a for a in 'XYZ' if a != vert]
+
+            # Contact ≈ peak pelvis angular velocity.
+            contact = int(min(int(np.argmax(np.abs(rotation['pelvis_omega']))), len(trc_data) - 1))
+
+            def ankle(side):
+                return np.array([float(trc_data[f'{side}Ankle_{a}'].values[contact]) for a in horiz])
+
+            sep = float(np.linalg.norm(ankle('L') - ankle('R')))
+            ratio = sep / self.body_height_m
+            # Feet closer together than this at contact means the markers or the
+            # contact frame are wrong — a hitter is never fully closed at contact.
+            if ratio < STRIDE_MIN_RATIO:
+                return {'stride_detected': False, 'stride_source': 'markers',
+                        'stride_reason': 'foot separation at contact is implausibly small',
+                        'stride_length_m': sep, 'stride_ratio': ratio}
+            # The lead foot is the one further from the pelvis along the stride axis;
+            # reported for context (lead-leg block uses its own detection).
+            return {'stride_detected': True, 'stride_source': 'markers',
+                    'stride_length_m': sep, 'stride_ratio': ratio,
+                    'contact_frame': contact}
+        except Exception:
+            return None
+
+    def calculate_stride_refined(self, data: pd.DataFrame, rotation: Dict = None,
+                                 trc_data: pd.DataFrame = None) -> Dict:
         if 'pelvis_tx' not in data.columns or 'pelvis_ty' not in data.columns:
             return None
             
@@ -1112,20 +1168,51 @@ class RefinedHittingOptimizer:
             plant_frame = len(data) // 2
             plant_method = "fallback_midframe"
         
-        # It's possible for kinematics to start slightly after stride. 
-        start_pos = np.array([pelvis_x[0], pelvis_y[0]])
-        plant_pos = np.array([pelvis_x[plant_frame], pelvis_y[plant_frame]])
-        stride_length = np.linalg.norm(plant_pos - start_pos)
-        
-        stride_ratio = stride_length / self.body_height_m
+        # ── Stride length ──────────────────────────────────────────────────
+        # Stride length is the LEAD FOOT's travel to plant, so foot markers are
+        # the only correct source. Without them we can still report how far the
+        # pelvis travelled, but that is a different, much smaller quantity — it
+        # is NOT benchmarked against stride-length research, because scoring it
+        # as if it were a stride told every athlete their stride was "off target"
+        # when the system simply could not see it.
+        marker = self._stride_from_markers(trc_data, data, rotation)
+
+        if marker and marker.get('stride_detected'):
+            stride_length = marker['stride_length_m']
+            stride_ratio = marker['stride_ratio']
+            stride_detected, stride_source = True, 'markers'
+            stride_reason = None
+        else:
+            # Pelvis travel in the HORIZONTAL plane (tx/tz) — never the vertical
+            # axis — measured from a quiet stance reference near swing onset
+            # rather than frame 0, since these trials span a whole at-bat.
+            pelvis_z = data['pelvis_tz'].values if 'pelvis_tz' in data.columns else np.zeros(len(pelvis_x))
+            if HAS_SCIPY:
+                pelvis_z = butter_lowpass_filter(pelvis_z, 15.0, fs)
+            ref = max(0, plant_frame - int(0.25 / dt)) if dt > 0 else 0
+            start_pos = np.array([np.median(pelvis_x[ref:plant_frame + 1]),
+                                  np.median(pelvis_z[ref:plant_frame + 1])])
+            plant_pos = np.array([pelvis_x[plant_frame], pelvis_z[plant_frame]])
+            stride_length = float(np.linalg.norm(plant_pos - start_pos))
+            stride_ratio = stride_length / self.body_height_m
+            stride_detected, stride_source = False, ('markers' if marker else 'pelvis_fallback')
+            stride_reason = (marker or {}).get(
+                'stride_reason',
+                'no marker data — stride length needs foot markers (.trc)')
+
+        # Only meaningful when a real stride was measured.
         optimal_stride_ratio = 0.75
-        stride_efficiency_pct = (stride_ratio / optimal_stride_ratio) * 100.0
-        
+        stride_efficiency_pct = (stride_ratio / optimal_stride_ratio) * 100.0 if stride_detected else 0.0
+
         return {
             'stride_length_m': float(stride_length),
             'stride_length_ft': float(stride_length * 3.28084),
             'stride_ratio': float(stride_ratio),
             'stride_efficiency_pct': float(stride_efficiency_pct),
+            'stride_detected': bool(stride_detected),
+            'stride_source': stride_source,
+            'stride_reason': stride_reason,
+            'lead_side': (marker or {}).get('lead_side'),
             'plant_frame': int(plant_frame),
             'plant_time': float(data['time'].iloc[plant_frame]),
             'plant_method': plant_method
@@ -1359,7 +1446,7 @@ class RefinedHittingOptimizer:
         trc_metrics = self.calculate_trc_metrics(trc_data) if trc_data is not None else {'max_hand_speed_mph': 0.0, 'max_hand_speed_mps': 0.0}
         wrist_speed_mps = float(trc_metrics.get('max_hand_speed_mps', 0.0))
         rotation = self.calculate_rotational_torques_refined(kinematics, wrist_speed_mps=wrist_speed_mps)
-        stride = self.calculate_stride_refined(kinematics, rotation)
+        stride = self.calculate_stride_refined(kinematics, rotation, trc_data=trc_data)
         hand_speed = self.estimate_hand_speed(rotation, trc_metrics)
         lower_body = self.calculate_lower_body_kinematics(kinematics)
         linear_id  = self.calculate_linear_inverse_dynamics(kinematics)
@@ -1906,15 +1993,23 @@ class RefinedHittingOptimizer:
         # ------------------------------------------------------------------
         # PHASE 2: STRIDE
         # ------------------------------------------------------------------
+        # Stride length and forward move both depend on actually seeing the stride.
+        # When the capture doesn't contain one, report them as not measured rather
+        # than scoring a confident "off target" for something we cannot observe.
+        stride_ok = bool(stride and stride.get('stride_detected'))
+        stride_note = (stride or {}).get('stride_reason') or 'stride not measurable in this capture'
+
         stride_ratio = stride['stride_ratio'] if stride else 0.0
         sl_stars = self._rate_dimension('stride_length', stride_ratio)
         dims['stride_length'] = {
             'label': SWINGAI_LABELS['stride_length'],
-            'stars': sl_stars,
-            'badge': self._rating_to_badge(sl_stars),
-            'value': round(stride_ratio, 2),
+            'stars': sl_stars if stride_ok else 0,
+            'badge': self._rating_to_badge(sl_stars) if stride_ok else 'unavailable',
+            'value': round(stride_ratio, 2) if stride_ok else None,
             'unit': '× height',
             'description': 'Forward step distance relative to body height. Elite target ~75-90% of height.',
+            'available': stride_ok,
+            **({} if stride_ok else {'unavailable_reason': stride_note}),
         }
 
         stride_eff = stride['stride_efficiency_pct'] if stride else 0.0
@@ -1923,11 +2018,13 @@ class RefinedHittingOptimizer:
         fm_stars = self._rate_dimension('forward_move', fm_val)
         dims['forward_move'] = {
             'label': SWINGAI_LABELS['forward_move'],
-            'stars': fm_stars,
-            'badge': self._rating_to_badge(fm_stars),
-            'value': round(stride_eff, 1),
+            'stars': fm_stars if stride_ok else 0,
+            'badge': self._rating_to_badge(fm_stars) if stride_ok else 'unavailable',
+            'value': round(stride_eff, 1) if stride_ok else None,
             'unit': '%',
             'description': 'Controlled forward momentum of the stride, stopping at front foot plant.',
+            'available': stride_ok,
+            **({} if stride_ok else {'unavailable_reason': stride_note}),
         }
 
         # ------------------------------------------------------------------
@@ -2136,6 +2233,10 @@ class RefinedHittingOptimizer:
         pct_weighted_sum = 0.0
         n_empirical = 0
         for dim_key, weight in SWINGAI_WEIGHTS.items():
+            # A dimension the capture couldn't measure carries no weight — scoring
+            # it would penalise the athlete for a limitation of the data.
+            if dims[dim_key].get('available') is False:
+                continue
             stars = dims[dim_key]['stars']
             normalized = ((stars - 1) / 4.0) * 100.0
             weighted_sum += normalized * weight
@@ -2177,6 +2278,8 @@ class RefinedHittingOptimizer:
         # ------------------------------------------------------------------
         prescriptions = []
         for dim_key, weight in SWINGAI_WEIGHTS.items():
+            if dims[dim_key].get('available') is False:
+                continue  # never prescribe a drill for something we didn't measure
             stars = dims[dim_key]['stars']
             if stars >= 4:
                 continue  # only prescribe for below-target dimensions
@@ -2203,7 +2306,8 @@ class RefinedHittingOptimizer:
         phases = {}
         for phase_key, phase_meta in SWINGAI_PHASES.items():
             phase_dims = [{**dims[d], 'key': d} for d in phase_meta['dimensions'] if d in dims]
-            phase_avg_stars = sum(d['stars'] for d in phase_dims) / max(1, len(phase_dims))
+            rated = [d for d in phase_dims if d.get('available') is not False]
+            phase_avg_stars = sum(d['stars'] for d in rated) / max(1, len(rated))
             phases[phase_key] = {
                 'label': phase_meta['label'],
                 'icon': phase_meta['icon'],
