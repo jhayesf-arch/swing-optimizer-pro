@@ -31,16 +31,17 @@
                 <!-- Drag and Drop Zone -->
                 <div class="upload-zone" id="drop-zone">
                     <div class="upload-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="52" height="52"><path d="M12 13v9"/><path d="m16 17-4-4-4 4"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg></div>
-                    <p>Drag &amp; drop a <strong class="accent">.mot</strong> file here</p>
+                    <p>Drag &amp; drop <strong class="accent">.mot</strong> file(s) here</p>
                     <p class="small">or</p>
                     <label class="btn btn-primary">
-                        Browse .mot File
-                        <input type="file" id="file-input" accept=".mot" hidden>
+                        Browse .mot File(s)
+                        <input type="file" id="file-input" accept=".mot" multiple hidden>
                     </label>
+                    <p class="small text-muted" style="margin-top:8px;">Select several swings from one athlete to get an <strong>averaged profile</strong> plus swing-to-swing consistency.</p>
                     <div style="margin-top:10px;">
                         <label class="btn btn-secondary btn-sm">
-                            + Add .trc File <span class="small text-muted">(optional)</span>
-                            <input type="file" id="trc-input" accept=".trc" hidden>
+                            + Add .trc File(s) <span class="small text-muted">(optional)</span>
+                            <input type="file" id="trc-input" accept=".trc" multiple hidden>
                         </label>
                         <p class="small text-muted" id="trc-label" style="margin-top:4px;"></p>
                     </div>
@@ -55,6 +56,11 @@
             <section class="results-section hidden" id="results-section">
                 <div class="results-actions mb-4">
                     <button class="btn btn-secondary btn-sm" id="btn-back"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg> New Analysis</button>
+                    <div class="view-selector hidden" id="view-selector">
+                        <label for="swing-view">Viewing</label>
+                        <select id="swing-view" class="input-dark"></select>
+                        <span class="small text-muted" id="view-hint"></span>
+                    </div>
                     <button class="btn btn-primary btn-sm" id="btn-report"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg> Download Report</button>
                 </div>
                 
@@ -93,6 +99,7 @@
                                 <span class="hero-stat-label" id="overall-pct-label">Overall Percentile (vs level)</span>
                             </div>
                         </div>
+                        <p id="avg-basis-note" class="small text-muted hidden" style="margin-top:8px;"></p>
                         <p id="pct-basis-note" class="small text-muted" style="margin-top:8px;"></p>
                         <p id="data-warning" class="hidden text-muted small" style="margin-top: 12px; max-width: 400px; line-height: 1.4;">
                             <span class="val-warn" style="font-weight:bold;"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span> Exit velocity is theoretically improbable for this athlete's demographics — likely a data artifact in the motion capture file.

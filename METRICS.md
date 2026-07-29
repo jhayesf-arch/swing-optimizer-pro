@@ -65,6 +65,25 @@ python backend/build_cohort.py build --manifest cohort_manifest.csv
 
 Each level needs at least 5 swings before its empirical percentiles are trusted; levels below that automatically fall back to the research estimate. Re‑run `build` whenever you add swings.
 
+---
+
+## Analyzing several swings at once (averages &amp; consistency)
+
+One swing is a single noisy sample. Select **multiple `.mot` files** in the uploader (or drop them together with their `.trc` markers) and the report gains a **Viewing** menu: an **Average** across all the swings, plus every individual swing.
+
+- **The average is the headline.** It is what an athlete should be judged on — a single trial can be flattered or wrecked by one bad capture.
+- **Outliers are excluded.** Each metric is screened with a MAD‑based modified z‑score, so one mistracked swing can't drag the average. Excluded trials stay fully visible in the menu.
+- **Consistency is its own coaching metric.** Every tile shows a `0–100 consistent` score and the swing‑to‑swing range. A hitter averaging 38° of hip‑shoulder separation with a 25–50° range has a *repeatability* problem, not a range problem — the average alone hides that. Green ≥75, amber ≥50, red below.
+
+A very low consistency score with a huge range (e.g. `9/100`, `50–1126 J`) usually means the **metric itself is unreliable** on that capture, not that the hitter is wildly inconsistent — treat it as a data‑quality flag.
+
+From the command line, the same aggregation runs per athlete straight from `athletes.json`:
+
+```
+python backend/subject_profile.py --athlete jett
+python backend/subject_profile.py --athlete kike --json kike_profile.json
+```
+
 ### Automatic rebuilds
 
 To avoid re‑running by hand, keep an `athletes.json` mapping each athlete's folder to their level + height (`height_cm`) + weight (`weight_kg`) — metric is preferred; `height_in`/`weight_lb` are also accepted — then rebuild with a single command (no manifest):
