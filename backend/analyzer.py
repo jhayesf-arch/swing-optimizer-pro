@@ -614,7 +614,7 @@ def _build_data_quality(trc_metrics: dict, has_grf: bool = False) -> dict:
                 "peak_knee_torque_Nm (no GRF)",
                 "kinetic_chain_efficiency_pct",
                 "estimated_hand_speed_mph (angular velocity method)" if not has_trc
-                else "estimated_hand_speed_mph (TRC wrist markers — higher accuracy)",
+                else "max_hand_speed_mph (TRC wrist markers — valid, but monocular reconstruction has high geometric sensitivity: accuracy degrades when wrist trajectory has large depth component relative to camera axis. Cross-session comparisons unreliable; use within-session trends only.)",
             ],
             "low_or_data_dependent": [
                 "stride_length_m (unreliable for long trials >2s)",
@@ -789,11 +789,32 @@ class RefinedHittingOptimizer:
         # them before filtering — this prevents the Butterworth filter from smoothing through
         # the discontinuity and creating spurious high-velocity artifacts.
         lumbar_raw_deg = data['lumbar_rotation'].values.copy()
+        # Repair IK joint-limit artifacts in lumbar_rotation:
+        # OpenSim's Rajagopal model clamps lumbar_rotation at ±90°. When the IK hits the
+        # limit, the angle saturates for several frames then snaps back. The saturation
+        # frames AND the release frame immediately after are both artifacts.
+        # Strategy:
+        #  1. Flag frames stuck at the joint limit (|angle| >= 89.5°).
+        #  2. Also flag the frame *after* any clamped run (the release/snap frame).
+        #  3. Linearly interpolate over all flagged frames.
+        # Secondary check: any single-frame jump > 30° that isn't already flagged is also
+        # a discontinuity artifact — extend the mask to cover it.
         limit = 89.5  # deg — just inside the ±90° OpenSim joint limit
-        clamped = np.abs(lumbar_raw_deg) >= limit
-        if np.any(clamped):
-            idx = np.arange(len(lumbar_raw_deg))
-            lumbar_raw_deg = np.interp(idx, idx[~clamped], lumbar_raw_deg[~clamped])
+        bad = np.abs(lumbar_raw_deg) >= limit
+        # Dilate by 1 frame to the right (mask release frame after each saturated run)
+        bad_dilated = bad.copy()
+        bad_dilated[1:] |= bad[:-1]
+        # Also mask frames with single-frame jumps > 30° that aren't yet masked
+        jumps = np.abs(np.diff(lumbar_raw_deg))
+        jump_frames = np.where(jumps > 30.0)[0] + 1  # frame where the snap appears
+        for jf in jump_frames:
+            bad_dilated[max(0, jf-1):min(len(bad_dilated), jf+2)] = True
+        # Interpolate over bad frames using surrounding valid values
+        if np.any(bad_dilated):
+            good = ~bad_dilated
+            if good.sum() >= 2:  # need at least 2 valid points to interpolate
+                idx = np.arange(len(lumbar_raw_deg))
+                lumbar_raw_deg = np.interp(idx, idx[good], lumbar_raw_deg[good])
         lumbar_angle_unwrapped = np.unwrap(np.deg2rad(lumbar_raw_deg))
 
         # shoulder_angle = absolute thorax orientation (pelvis + lumbar relative twist)
@@ -1012,8 +1033,16 @@ class RefinedHittingOptimizer:
         # =========================================================================
         eps = 1e-6
 
-        peak_pelvis_w   = float(np.max(np.abs(p_omega_sw)))
-        peak_shoulder_w = float(np.max(np.abs(lumbar_omega_sw)))  # relative trunk twist rate
+        peak_pelvis_w = float(np.max(np.abs(p_omega_sw)))
+
+        # Constrain lumbar (torso) omega search to ±200ms around the pelvis peak.
+        # Searching the full post-swing window (swing_start to end) picks up post-impact
+        # oscillations and marker noise that can be 2–3× larger than the actual swing peak.
+        _ke_half = int(0.20 * fs)
+        _ke_lo = max(swing_start, peak_hip_frame - _ke_half)
+        _ke_hi = min(len(lumbar_omega), peak_hip_frame + _ke_half + 1)
+        peak_shoulder_w = float(np.max(np.abs(lumbar_omega[_ke_lo:_ke_hi])))
+
         peak_arm_w_val  = float(np.max(np.abs(arm_omega_sw)))
         peak_elb_w_val  = float(np.max(np.abs(elb_omega_sw)))
 
@@ -1023,10 +1052,12 @@ class RefinedHittingOptimizer:
         bat_I = (1.0 / 3.0) * self.bat_mass_kg * (self.bat_length_m ** 2)
 
         pelvis_ke = 0.5 * hip_inertia * (peak_pelvis_w ** 2)
-        # Cap peak_shoulder_w to 3× pelvis omega — lumbar joint-limit artifact can
-        # produce unrealistically high values (>1000 deg/s) in some trials.
-        # Physiologically, trunk twist rate should not exceed ~3× pelvis rotation rate.
-        peak_shoulder_w_capped = min(peak_shoulder_w, 3.0 * peak_pelvis_w)
+        # Cap peak_shoulder_w to 2.0× pelvis omega.
+        # Empirical calibration on 46 clean Kike swings: mean ratio = 1.22×, p90 = 1.47×,
+        # max = 1.90×. A 2.0× cap passes all legitimate values with margin while catching
+        # any IK artifact that survived the lumbar_rotation interpolation step above.
+        # (Previously 3× — too permissive; Jett's spike at 1692/740=2.3× was passing through.)
+        peak_shoulder_w_capped = min(peak_shoulder_w, 2.0 * peak_pelvis_w)
         torso_ke  = 0.5 * trunk_I * (peak_shoulder_w_capped ** 2)
         arm_ke    = 0.5 * (upper_arm_I + forearm_I) * 2 * (peak_arm_w_val ** 2)
         elbow_ke  = 0.5 * forearm_I * 2 * (peak_elb_w_val ** 2)
@@ -2053,8 +2084,9 @@ class RefinedHittingOptimizer:
             'description': 'Hip rotational energy during the swing (proxy for hip coil power).',
         }
 
-        # Upper Torso Load: cap at pelvis_ke × 4 to prevent lumbar artifact inflation.
-        # Physiologically, torso KE should not exceed ~4× pelvis KE in a baseball swing.
+        # Upper Torso Load: the omega cap (2× pelvis) was applied upstream in torque_refined,
+        # so torso_ke_J is already artifact-cleaned. Apply a matching 4× pelvis_ke guard here
+        # (equivalent to 2× omega) as a belt-and-suspenders check against any residual artifacts.
         torso_ke_capped = min(torso_ke_load, pelvis_ke_load * 4.0) if pelvis_ke_load > 0 else torso_ke_load
         utl_stars = self._rate_dimension('upper_torso_load', torso_ke_capped)
         dims['upper_torso_load'] = {
@@ -2261,7 +2293,9 @@ class RefinedHittingOptimizer:
 
         # Hand / Bat Speed — most reliable output metric
         # Priority: TRC wrist markers > angular velocity estimate
-        hand_spd = trc_metrics.get('max_hand_speed_mph', 0.0) if trc_metrics else 0.0
+        _trc_hs = trc_metrics.get('max_hand_speed_mph', 0.0) if trc_metrics else 0.0
+        _trc_source = bool(_trc_hs > 0)
+        hand_spd = _trc_hs
         if hand_spd == 0.0:
             hs_result = self.estimate_hand_speed(rotation, trc_metrics or {})
             hand_spd = hs_result.get('estimated_hand_speed_mph', 0.0) if hs_result else 0.0
@@ -2273,6 +2307,13 @@ class RefinedHittingOptimizer:
             'value': round(hand_spd, 1),
             'unit': 'mph',
             'description': 'Peak hand/wrist speed — primary output metric of the kinetic chain.',
+            'source': 'trc_marker' if _trc_source else 'angular_velocity_estimate',
+            # Monocular captures have high geometric sensitivity for hand speed: accuracy
+            # degrades when the wrist trajectory has a large depth component relative to
+            # the camera. Within-session trends are valid; cross-session comparisons are not.
+            **(({'monocular_caveat': True,
+                 'monocular_note': 'Monocular wrist speed: valid within this session, but sensitive to camera angle. Cross-session and cross-athlete comparisons unreliable.'}
+                if _trc_source else {})),
         }
 
         # Follow-Through Quality: pelvis deceleration arc after contact (peak pelvis omega)
