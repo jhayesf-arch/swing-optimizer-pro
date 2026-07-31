@@ -62,17 +62,21 @@ _SKEL_MARKERS = [
 ]
 
 
-def _kinematic_sequence(mot_df, max_points: int = 72) -> dict:
-    """
-    Approximate proximal-to-distal kinematic sequence: segment angular velocity
-    (deg/s) vs time, derived from .mot joint angles via an axial-rotation proxy
-    (pelvis -> +lumbar -> +lead arm -> +elbow). Intended for visualization, not
-    as a validated segment-velocity measurement. Lead side assumed left (RH hitter).
+def _kinematic_sequence(mot_df, rotation=None, max_points: int = 72) -> dict:
+    """Proximal-to-distal kinematic sequence for the chart: segment angular
+    velocity (deg/s) vs time.
+
+    The series come from the analyzer's own segment velocities so the chart and
+    the Sequence Quality metric are drawn from identical signals. An independent
+    proxy for the chart drifts out of agreement with the metric — the previous
+    one summed raw joint angles across incompatible axes and rendered the
+    sequence reversed (hands peaking before the pelvis on every swing).
     """
     import numpy as np
-    from scipy.signal import butter, filtfilt
 
-    if 'pelvis_rotation' not in mot_df.columns or 'time' not in mot_df.columns:
+    if rotation is None or not rotation.get('segment_omega'):
+        return {}
+    if 'time' not in mot_df.columns:
         return {}
     t = mot_df['time'].values.astype(float)
     if len(t) < 8:
@@ -80,68 +84,52 @@ def _kinematic_sequence(mot_df, max_points: int = 72) -> dict:
     dt = float(np.median(np.diff(t)))
     if dt <= 0:
         return {}
-    nyq = 0.5 / dt
-    b, a = butter(4, min(12.0 / nyq, 0.99), btype='low')
 
-    def col(name):
-        return mot_df[name].values.astype(float) if name in mot_df.columns else None
-
-    def filt(x):
-        if x is None:
-            return None
-        x = np.unwrap(np.deg2rad(x))
-        try:
-            x = filtfilt(b, a, x)
-        except Exception:
-            pass
-        return x  # radians
-
-    pelvis = filt(col('pelvis_rotation'))
-    if pelvis is None:
-        return {}
-    lumbar = filt(col('lumbar_rotation'))
-    # Lead side = left for a right-handed hitter; fall back across available columns.
-    if 'arm_rot_l' in mot_df.columns:
-        arm = filt(col('arm_rot_l'))
-    elif 'arm_flex_l' in mot_df.columns:
-        arm = filt(col('arm_flex_l'))
-    else:
-        arm = filt(col('arm_flex_r'))
-    elbow = filt(col('elbow_flex_l') if 'elbow_flex_l' in mot_df.columns else col('elbow_flex_r'))
-
-    pelvis_a = pelvis
-    torso_a = pelvis + lumbar if lumbar is not None else None
-    base = torso_a if torso_a is not None else pelvis
-    arm_a = base + arm if arm is not None else None
-    hand_a = (arm_a + elbow) if (arm_a is not None and elbow is not None) else None
-
-    def omega(angle):
-        if angle is None:
-            return None
-        return np.abs(np.rad2deg(np.gradient(angle, dt)))  # deg/s magnitude
-
-    raw = {'Pelvis': omega(pelvis_a), 'Torso': omega(torso_a),
-           'Lead Arm': omega(arm_a), 'Hands/Bat': omega(hand_a)}
-    raw = {k: v for k, v in raw.items() if v is not None and np.nanmax(v) > 1e-6}
+    # rad/s -> deg/s magnitude, trimmed to the shortest available series
+    raw = {}
+    for name, arr in rotation['segment_omega'].items():
+        a = np.abs(np.asarray(arr, dtype=float)) * 180.0 / np.pi
+        if a.size and np.nanmax(a) > 1e-6:
+            raw[name] = a
     if 'Pelvis' not in raw:
         return {}
+    n = min(len(t), min(len(v) for v in raw.values()))
+    t = t[:n]
+    raw = {k: v[:n] for k, v in raw.items()}
 
+    # Window the chart to the swing itself, anchored on the pelvis peak.
+    swing_start = int(rotation.get('swing_start_frame') or 0)
     pelw = raw['Pelvis']
-    peak = int(np.argmax(pelw))
-    start = max(0, peak - int(0.30 / dt))
-    end = min(len(t) - 1, peak + int(0.20 / dt))
+    peak = int(np.argmax(pelw[swing_start:])) + swing_start
+    start = max(0, min(swing_start, peak - int(0.05 / dt)))
+    end = min(n - 1, peak + int(0.20 / dt))
     if end - start < 4:
-        start, end = 0, len(t) - 1
+        start, end = 0, n - 1
     idx = np.arange(start, end + 1)
     idx = idx[::max(1, len(idx) // max_points)]
     t0 = t[start]
 
     time_ms = [round(float((t[i] - t0) * 1000.0), 1) for i in idx]
+
+    # Mark the peaks the sequence METRIC found (sub-frame interpolated, bounded
+    # around the pelvis peak). Falling back to a local argmax here is what made
+    # the chart disagree with the Sequence Quality shown beside it.
+    metric_peaks = rotation.get('segment_peak_frames') or {}
+
     out_series, peaks = {}, {}
     for k, v in raw.items():
         out_series[k] = [int(round(float(v[i]))) for i in idx]
-        pj = int(np.argmax(v[start:end + 1])) + start
-        peaks[k] = {'t_ms': round(float((t[pj] - t0) * 1000.0), 1), 'value': int(round(float(v[pj])))}
+        pf = metric_peaks.get(k)
+        if pf is not None and 0 <= float(pf) < n:
+            frac = float(pf)
+            pj = int(round(frac))
+            # interpolate the timestamp so sub-frame precision isn't thrown away
+            t_peak = float(np.interp(frac, np.arange(n), t))
+        else:
+            pj = int(np.argmax(v[start:end + 1])) + start
+            t_peak = float(t[pj])
+        peaks[k] = {'t_ms': round((t_peak - t0) * 1000.0, 1),
+                    'value': int(round(float(v[min(pj, n - 1)])))}
 
     contact = peaks.get('Hands/Bat') or peaks.get('Lead Arm') or peaks['Pelvis']
     return {'time_ms': time_ms, 'series': out_series, 'peaks': peaks,
@@ -202,13 +190,24 @@ def _extract_skeleton_frames(trc_df, mot_df, max_frames: int = 60) -> dict:
         if all(c in trc_sub.columns for c in cols):
             available.append(m)
 
+    # OpenCap marker sets carry RHip/LHip but no midHip, and the spine bone is
+    # drawn Neck -> midHip. Without it the figure renders severed: head, shoulders
+    # and arms floating free of the pelvis and legs. Synthesise the pelvis centre.
+    synth_midhip = 'midHip' not in available and {'RHip', 'LHip'} <= set(available)
+
     for _, row in trc_sub.iterrows():
         frame = {}
         for m in available:
             frame[m] = [round(float(row[f'{m}_X']), 4),
                         round(float(row[f'{m}_Y']), 4),
                         round(float(row[f'{m}_Z']), 4)]
+        if synth_midhip:
+            r, l = frame['RHip'], frame['LHip']
+            frame['midHip'] = [round((r[i] + l[i]) / 2.0, 4) for i in range(3)]
         frames.append(frame)
+
+    if synth_midhip:
+        available = available + ['midHip']
 
     # Contact frame index within the downsampled frames
     t_contact = mot_times[peak]
@@ -410,10 +409,11 @@ async def analyze_upload(
             except Exception:
                 pass
         try:
-            diagnosis['kinematic_sequence'] = _kinematic_sequence(kinematics)
+            diagnosis['kinematic_sequence'] = _kinematic_sequence(kinematics, diagnosis.get('_rotation'))
         except Exception:
             pass
         _run_id(file_path, DEFAULT_MODEL, bat_mass_kg, bat_length_m, diagnosis)
+        diagnosis.pop('_rotation', None)   # numpy arrays — not JSON-serialisable
         return JSONResponse(content={"filename": file.filename, "success": True, "data": diagnosis})
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -485,17 +485,19 @@ async def analyze_batch(
                 # frames are large, so only the first swing carries them.
                 extras = {}
                 try:
-                    extras['kinematic_sequence'] = _kinematic_sequence(kin)
+                    extras['kinematic_sequence'] = _kinematic_sequence(kin, diag.get('_rotation'))
                 except Exception:
                     pass
-                if not swings:
-                    try:
-                        extras['skeleton_frames'] = (
-                            _extract_skeleton_frames(trc_data, kin) if trc_data is not None
-                            else _skeleton_from_mot(kin, body_height_m=height_m)
-                        )
-                    except Exception:
-                        pass
+                # Every swing carries its own skeleton (~20KB) — otherwise selecting
+                # trial 3 in the Viewing menu showed trial 1's body, or nothing.
+                try:
+                    extras['skeleton_frames'] = (
+                        _extract_skeleton_frames(trc_data, kin) if trc_data is not None
+                        else _skeleton_from_mot(kin, body_height_m=height_m)
+                    )
+                except Exception:
+                    pass
+                diag.pop('_rotation', None)
 
                 swings.append({
                     "index": len(swings) + 1,

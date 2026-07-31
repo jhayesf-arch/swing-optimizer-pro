@@ -356,6 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('skill_level', selectedSkillLevel);
         formData.append('bat_mass_kg', demo.bat_mass_kg);
         formData.append('bat_length_m', demo.bat_length_m);
+        if (demo.handedness) formData.append('handedness', demo.handedness);
         
         const doUpload = () => fetch(`${API_BASE}/api/analyze/upload`, { method: 'POST', body: formData });
         try {
@@ -535,6 +536,7 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('skill_level', selectedSkillLevel);
         formData.append('bat_mass_kg', demo.bat_mass_kg);
         formData.append('bat_length_m', demo.bat_length_m);
+        if (demo.handedness) formData.append('handedness', demo.handedness);
 
         const doUpload = () => fetch(`${API_BASE}/api/analyze/batch`, { method: 'POST', body: formData });
         try {
@@ -1010,14 +1012,20 @@ document.addEventListener('DOMContentLoaded', () => {
             return `<span class="kine-chip"><span class="kine-dot" style="background:${KINE_COLORS[k]}"></span>${k}${detail}</span>`;
         }).join('');
 
-        // Caption: is the sequence proper proximal-to-distal?
-        const times = present.map(k => seq.peaks && seq.peaks[k] ? seq.peaks[k].t_ms : null).filter(t => t != null);
-        let proper = times.length === present.length;
-        for (let i = 1; i < times.length; i++) if (times[i] <= times[i - 1]) proper = false;
+        // Caption: the verdict comes from the pelvis→torso lag only, because that is
+        // the pair the Sequence Quality metric actually measures. Arm and hand peak
+        // timing from 60Hz monocular joint angles is too noisy to judge on (observed
+        // >300ms of scatter across one athlete's consecutive swings), so those curves
+        // are shown for shape but must not decide a pass/fail the athlete reads.
+        const pk = seq.peaks || {};
+        const lag = (pk['Pelvis'] && pk['Torso']) ? (pk['Torso'].t_ms - pk['Pelvis'].t_ms) : null;
+        const proper = lag != null && lag > 0;
         const cap = document.getElementById('kinematic-caption');
         cap.innerHTML = proper
-            ? '<span class="val-good" style="font-weight:700;">✓ Proper sequence</span> <span class="text-muted">— segments peak in order, building speed up the chain.</span>'
-            : '<span class="val-warn" style="font-weight:700;">⚠ Sequence flag</span> <span class="text-muted">— segments do not peak strictly proximal-to-distal; energy may leak out of the chain.</span>';
+            ? `<span class="val-good" style="font-weight:700;">✓ Proper sequence</span> <span class="text-muted">— hips peak ${Math.round(lag)}ms before the torso, building speed up the chain. Arm and hand timing is indicative only at this capture rate.</span>`
+            : (lag == null
+                ? '<span class="text-muted">Sequence timing could not be resolved for this capture.</span>'
+                : `<span class="val-warn" style="font-weight:700;">⚠ Sequence flag</span> <span class="text-muted">— the torso peaks ${Math.abs(Math.round(lag))}ms <em>before</em> the hips rather than after, so the chain isn't building from the ground up. Arm and hand timing is indicative only at this capture rate.</span>`);
 
         renderSequenceTimeline(seq, present);
 
@@ -1705,9 +1713,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const center = box.getCenter(new THREE.Vector3());
             figure.position.copy(center).multiplyScalar(-1);
 
-            const sphere = box.getBoundingSphere(new THREE.Sphere());
-            const radius = Math.max(sphere.radius, 0.1);
-            const dist = (radius / Math.sin((camera.fov * Math.PI / 180) / 2)) * 1.15;
+            // Fit the actual box on BOTH axes. Fitting only the vertical FOV clipped
+            // the figure left/right; fitting the bounding SPHERE left a standing
+            // figure tiny, because the sphere is far larger than the body is wide.
+            // Width uses max(x, z) so the figure still fits while being rotated.
+            const size = box.getSize(new THREE.Vector3());
+            const halfH = Math.max(size.y / 2, 0.05);
+            const halfW = Math.max(Math.max(size.x, size.z) / 2, 0.05);
+            const vFov = (camera.fov * Math.PI) / 180;
+            const hFov = 2 * Math.atan(Math.tan(vFov / 2) * (camera.aspect || 1));
+            const radius = Math.max(box.getBoundingSphere(new THREE.Sphere()).radius, 0.1);
+            const dist = Math.max(halfH / Math.tan(vFov / 2),
+                                  halfW / Math.tan(hFov / 2)) * 1.12;
             camera.position.set(0, 0, dist);
             camera.near = Math.max(dist - radius * 2, 0.001);
             camera.far = dist + radius * 4;
@@ -1735,6 +1752,21 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
             console.error('[skeleton] build failed, showing reference pose:', err);
             try { buildSkeleton(null, null, '#ffffff'); } catch (e) { /* give up gracefully */ }
+        }
+
+        // The viewport is responsive (aspect-ratio driven), so the renderer and
+        // camera must follow it — otherwise the figure stretches or gets clipped
+        // whenever the panel width changes.
+        if (typeof ResizeObserver !== 'undefined') {
+            const ro = new ResizeObserver(() => {
+                const w = container.clientWidth, h = container.clientHeight;
+                if (!w || !h) return;
+                renderer.setSize(w, h);
+                camera.aspect = w / h;
+                camera.updateProjectionMatrix();
+                frameCamera();
+            });
+            ro.observe(container);
         }
 
         function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
@@ -1772,7 +1804,9 @@ document.addEventListener('DOMContentLoaded', () => {
             height_m: ((ft * 12) + inc) * 0.0254,
             weight_kg: lbs * 0.453592,
             bat_mass_kg: batOz * 0.0283495,   // oz → kg
-            bat_length_m: batIn * 0.0254       // in → m
+            bat_length_m: batIn * 0.0254,      // in → m
+            // Blank means "infer from pose" on the server.
+            handedness: document.getElementById('athlete-handedness')?.value || ''
         };
     }
     

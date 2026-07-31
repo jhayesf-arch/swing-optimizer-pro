@@ -1029,24 +1029,32 @@ class RefinedHittingOptimizer:
         pre_peak_sep = separation_full[swing_start:peak_pelvis_frame_global + 1]
         max_separation = float(np.max(np.abs(pre_peak_sep))) if len(pre_peak_sep) > 0 else float(np.max(np.abs(separation_full[swing_start:])))
         
-        # Incorporating the Arms and Elbow details for Kinematics
-        arm_omega = np.zeros_like(pelvis_omega)
-        if 'arm_flex_r' in data.columns:
-            arm_r_unwrapped = np.unwrap(np.deg2rad(data['arm_flex_r'].values))
-            if HAS_SCIPY:
-                arm_r_filtered = butter_lowpass_filter(arm_r_unwrapped, cutoff_hz, fs)
-                arm_omega = savgol_smooth_and_diff(arm_r_filtered, window=window_size, polyorder=3, deriv=1, dt=dt)
-            else:
-                arm_omega = np.gradient(smooth_data(arm_r_unwrapped, window=11), dt)
+        # Incorporating the Arms and Elbow details for Kinematics.
+        # The LEAD arm is the front arm: left for a right-handed hitter, right for
+        # a lefty. This was previously hardcoded to the right arm, so every
+        # right-handed hitter had their TRAIL arm reported as "Lead Arm" — which
+        # peaks at a different time and made the kinematic sequence look reversed.
+        lead_arm_side = 'l' if (self.handedness or 'right') == 'right' else 'r'
 
-        elb_omega = np.zeros_like(pelvis_omega)
-        if 'elbow_flex_r' in data.columns:
-            elb_r_unwrapped = np.unwrap(np.deg2rad(data['elbow_flex_r'].values))
+        def _joint_omega(col):
+            out = np.zeros_like(pelvis_omega)
+            if col not in data.columns:
+                return out
+            unwrapped = np.unwrap(np.deg2rad(data[col].values))
             if HAS_SCIPY:
-                elb_r_filtered = butter_lowpass_filter(elb_r_unwrapped, cutoff_hz, fs)
-                elb_omega = savgol_smooth_and_diff(elb_r_filtered, window=window_size, polyorder=3, deriv=1, dt=dt)
-            else:
-                elb_omega = np.gradient(smooth_data(elb_r_unwrapped, window=11), dt)
+                filtered = butter_lowpass_filter(unwrapped, cutoff_hz, fs)
+                return savgol_smooth_and_diff(filtered, window=window_size, polyorder=3, deriv=1, dt=dt)
+            return np.gradient(smooth_data(unwrapped, window=11), dt)
+
+        arm_col = f'arm_flex_{lead_arm_side}'
+        elb_col = f'elbow_flex_{lead_arm_side}'
+        # Fall back to the other side if the lead-side column is missing.
+        if arm_col not in data.columns:
+            arm_col = 'arm_flex_r' if 'arm_flex_r' in data.columns else arm_col
+        if elb_col not in data.columns:
+            elb_col = 'elbow_flex_r' if 'elbow_flex_r' in data.columns else elb_col
+        arm_omega = _joint_omega(arm_col)
+        elb_omega = _joint_omega(elb_col)
 
         # Slice arm/elbow to swing window
         arm_omega_sw  = arm_omega[swing_start:]
@@ -1105,8 +1113,17 @@ class RefinedHittingOptimizer:
         peak_shoulder_frac = _subframe_peak(torso_om3d[thr_lo:thr_hi], 0) + thr_lo
 
         peak_shoulder_frame = int(round(peak_shoulder_frac))
-        peak_arm_frac = (_subframe_peak(np.abs(arm_omega_sw), 0) + swing_start
-                         if np.sum(np.abs(arm_omega_sw)) > 0 else peak_shoulder_frac + 1.0)
+        # Bound the arm peak the same way as the thorax. Left unbounded it caught
+        # arbitrary local maxima anywhere in the trial (observed 129-640ms on
+        # consecutive swings from one athlete), which is noise, not sequencing.
+        if np.sum(np.abs(arm_omega_sw)) > 0:
+            _arm_abs = np.abs(arm_omega)
+            arm_lo = max(swing_start, peak_hip_frame - _search_half)
+            arm_hi = min(len(_arm_abs), peak_hip_frame + _search_half + 1)
+            peak_arm_frac = (_subframe_peak(_arm_abs[arm_lo:arm_hi], 0) + arm_lo
+                             if arm_hi > arm_lo else peak_shoulder_frac + 1.0)
+        else:
+            peak_arm_frac = peak_shoulder_frac + 1.0
 
         sequence_timing_ms = float((peak_shoulder_frac - peak_hip_frac) * dt * 1000.0)
 
@@ -1249,6 +1266,25 @@ class RefinedHittingOptimizer:
             'pelvis_omega': pelvis_omega,
             'pelvis_angle': pelvis_angle,
             'swing_start_frame': swing_start,
+            # Absolute segment angular-velocity series, exported so the kinematic
+            # sequence chart is drawn from the same signals the sequence metric is
+            # computed from. A separate proxy for the chart drifts out of agreement
+            # with the metric — it previously rendered the sequence reversed.
+            'segment_omega': {
+                'Pelvis': pelvis_om3d,
+                'Torso': torso_om3d,
+                # Absolute = parent + relative, matching the thorax convention above.
+                'Lead Arm': np.abs(thorax_abs_omega + arm_omega),
+                'Hands/Bat': np.abs(thorax_abs_omega + arm_omega + elb_omega),
+            },
+            # Peak frames as the sequence METRIC found them — sub-frame interpolated
+            # and bounded to ±200ms of the pelvis peak. The chart must mark these
+            # exact frames, or it will contradict the Sequence Quality it sits next to.
+            'segment_peak_frames': {
+                'Pelvis': peak_hip_frac,
+                'Torso': peak_shoulder_frac,
+                'Lead Arm': peak_arm_frac,
+            },
             'pelvis_ke_J': float(pelvis_ke),
             'torso_ke_J': float(torso_ke),
             'arm_ke_J': float(arm_ke),
@@ -1976,6 +2012,10 @@ class RefinedHittingOptimizer:
         )
 
         return {
+            # Internal handle so the API can draw the kinematic-sequence chart from
+            # the same segment velocities the metrics use. Contains numpy arrays —
+            # callers MUST pop it before JSON serialisation.
+            "_rotation": rotation,
             "capture_quality": capture_quality,
             "metrics": asdict(metrics),
             "findings": findings,
