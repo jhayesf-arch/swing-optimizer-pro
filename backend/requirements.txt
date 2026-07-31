@@ -1,7 +1,8 @@
+anthropic
 fastapi
-uvicorn
-python-multipart
-scipy
+matplotlib
 numpy
 pandas
-matplotlib
+python-multipart
+scipy
+uvicorn

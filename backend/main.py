@@ -1,7 +1,7 @@
 import os
 from typing import List
 from fastapi import FastAPI, UploadFile, File, Form, Request
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from analyzer import RefinedHittingOptimizer
@@ -535,6 +535,37 @@ async def analyze_batch(
         for p in written:
             if os.path.exists(p):
                 os.remove(p)
+
+
+@app.post("/api/coach")
+async def coach(request: Request):
+    """Streaming conversational coach.
+
+    The browser sends the already-computed report back as grounding; the API key
+    lives only here, server-side. The model explains those numbers — it never
+    computes biomechanics (see coach.py).
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse(status_code=400, content={"error": "Expected a JSON body"})
+
+    from coach import stream_reply
+    return StreamingResponse(
+        stream_reply(payload),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/api/coach/status")
+def coach_status():
+    """Lets the UI hide the coach entirely when no key is configured."""
+    from coach import COACH_MODEL
+    return {
+        "enabled": bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")),
+        "model": COACH_MODEL,
+    }
 
 
 @app.get("/style.css")

@@ -879,14 +879,30 @@ class RefinedHittingOptimizer:
         hip_power     = hip_torque * pelvis_omega
         shoulder_power = shoulder_torque * shoulder_omega
 
-        # Detect swing window: walk backward from peak pelvis omega to last quiet frame.
-        # CRITICAL: limit search to ≤400ms before peak. A baseball swing cannot take longer
-        # than ~400ms total, so searching further back just finds noise from setup/walk-in.
-        # Without this bound, long trials (4–8s) produce swing_start at t=0, making the
-        # "swing window" span the whole trial and argmax find random pre-swing noise peaks.
+        # Detect swing start: find the last quiet frame before the sustained ramp to peak.
+        # 
+        # Design: a baseball swing has a clear signature — pelvis omega is near-zero for
+        # most of the trial, then ramps monotonically to a single dominant peak over 100-400ms.
+        # The swing start is the last frame below an onset threshold before that ramp begins.
+        #
+        # Algorithm: walk backward from peak_pelvis_frame.
+        #   - onset_threshold = max(20 deg/s, 12% of peak omega)
+        #   - When we drop below threshold after having been above it, that crossing IS the
+        #     swing start (the bottom of the ramp). Stop there.
+        #   - Hard bound: never search more than 600ms before peak.
+        #     600ms chosen to handle slow/deliberate practice swings (all real swings < 500ms).
+        #
+        # Edge cases handled:
+        #   - Long trials (4-8s of setup): the backward scan terminates at the ramp bottom,
+        #     not at a sign reversal 3 seconds earlier.
+        #   - Multiple movements before the swing: the ramp-finding scan stops at the quiet
+        #     period between the last preparatory movement and the swing ramp.
+        #   - Drill files (upper_first, lower_first): if the preceding drill movement has
+        #     already decayed to quiet before the actual swing ramp, the detector finds the
+        #     correct quiet gap between them.
         peak_pelvis_frame_global = int(np.argmax(np.abs(pelvis_omega)))
         swing_start = 0
-        _max_swing_frames = int(0.40 * fs)   # 400ms hard limit
+        _max_swing_frames = int(0.60 * fs)   # 600ms hard bound
 
         # Use Driveline event timestamp (fp_10_time) when available — eliminates detection variability
         if 'fp_10_time' in data.attrs:
@@ -894,25 +910,33 @@ class RefinedHittingOptimizer:
             times = data['time'].values
             swing_start = int(np.argmin(np.abs(times - fp_time)))
         else:
-            # Find the direction of rotation at peak (positive or negative)
-            peak_sign = np.sign(pelvis_omega[peak_pelvis_frame_global])
-            search_lo = max(0, peak_pelvis_frame_global - _max_swing_frames)
+            pk = peak_pelvis_frame_global
+            peak_omega_dgs = abs(pelvis_omega[pk]) * 180.0 / np.pi
+            onset_thr_dgs = max(20.0, peak_omega_dgs * 0.12)   # deg/s
+            onset_thr_rad = onset_thr_dgs * np.pi / 180.0      # rad/s
+            search_lo = max(0, pk - _max_swing_frames)
 
-            # Walk backward (bounded): swing starts at last frame where omega reversed sign
-            for i in range(peak_pelvis_frame_global - 1, search_lo - 1, -1):
-                if np.sign(pelvis_omega[i]) != peak_sign and abs(pelvis_omega[i]) * 180/np.pi > 15.0:
-                    swing_start = i
-                    break
-            # If no sign reversal found within window, fall back to last frame below 10% of peak
-            if swing_start == 0:
-                quiet_threshold = abs(pelvis_omega[peak_pelvis_frame_global]) * 0.10
-                for i in range(peak_pelvis_frame_global - 1, search_lo - 1, -1):
-                    if abs(pelvis_omega[i]) < quiet_threshold:
+            # Walk backward: track whether we've crossed above the onset threshold.
+            # The first time we drop back below it (going backward) is the swing start.
+            above = False
+            ss_found = False
+            for i in range(pk - 1, search_lo - 1, -1):
+                if abs(pelvis_omega[i]) >= onset_thr_rad:
+                    above = True
+                else:
+                    if above:
+                        # Just crossed below threshold going backward — this is the
+                        # bottom of the ramp: the last quiet frame before the swing.
                         swing_start = i
+                        ss_found = True
                         break
-            # Final fallback: 350ms before peak (better than frame 0)
-            if swing_start == 0:
-                swing_start = max(0, peak_pelvis_frame_global - int(0.35 * fs))
+                    # Still in quiet zone before the ramp — keep tracking
+                    swing_start = i
+
+            # Fallback: if the whole 600ms window is above threshold (very short trial
+            # that starts mid-swing), use the first frame of the search window.
+            if not ss_found or swing_start == 0:
+                swing_start = search_lo
 
         sw = slice(swing_start, None)
         peak_hip_torque      = float(np.max(np.abs(hip_torque[sw])))

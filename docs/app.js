@@ -116,11 +116,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let analysisViews = [];
     let currentViewFilename = '';
     let droppedTrcFiles = [];   // .trc files dropped together with the .mot files
+    // Free-text caveat about how the swings were captured (equipment, quality).
+    // Passed to the coach so it won't compare e.g. dry-stick swings to bat norms.
+    let captureNote = null;
 
     // -----------------------------------------
     // Init
     // -----------------------------------------
     checkBackendHealth();
+    initCoach();
     initSkillPills();
 
     // -----------------------------------------
@@ -380,6 +384,138 @@ document.addEventListener('DOMContentLoaded', () => {
             hideLoading();
         }
     }
+
+    // -----------------------------------------
+    // Conversational coach
+    // -----------------------------------------
+    // The coach only ever explains numbers the physics engine already computed —
+    // the current view's report is sent along as grounding on every question.
+    let coachEnabled = false;
+    let coachHistory = [];
+    let coachBusy = false;
+
+    async function initCoach() {
+        try {
+            const s = await fetch(`${API_BASE}/api/coach/status`).then(r => r.json());
+            coachEnabled = !!s.enabled;
+        } catch (_) { coachEnabled = false; }
+        // With no server-side key there is nothing to talk to; hide it rather
+        // than offering a button that always fails.
+        document.getElementById('coach-dock')?.classList.toggle('hidden', !coachEnabled);
+    }
+
+    function toggleCoach(open) {
+        const panel = document.getElementById('coach-panel');
+        const fab = document.getElementById('coach-fab');
+        if (!panel || !fab) return;
+        const show = open ?? panel.classList.contains('hidden');
+        panel.classList.toggle('hidden', !show);
+        fab.setAttribute('aria-expanded', String(show));
+        if (show) {
+            const ctx = document.getElementById('coach-context');
+            if (ctx) ctx.textContent = currentViewFilename || lastAnalysis?.filename || 'Current swing';
+            document.getElementById('coach-question')?.focus();
+        }
+    }
+
+    function coachAppend(role, text) {
+        document.getElementById('coach-empty')?.classList.add('hidden');
+        const log = document.getElementById('coach-log');
+        const el = document.createElement('div');
+        el.className = `coach-msg coach-${role}`;
+        el.textContent = text;
+        log.appendChild(el);
+        log.scrollTop = log.scrollHeight;
+        return el;
+    }
+
+    async function askCoach(question, dimKey) {
+        if (!coachEnabled || coachBusy || !question.trim()) return;
+        if (!lastAnalysis) { coachAppend('error', 'Run an analysis first.'); return; }
+        coachBusy = true;
+        toggleCoach(true);
+        coachAppend('user', question);
+
+        const bubble = coachAppend('assistant', '');
+        bubble.classList.add('coach-streaming');
+        let answer = '';
+
+        try {
+            const res = await fetch(`${API_BASE}/api/coach`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    question,
+                    dim_key: dimKey || null,
+                    report: lastAnalysis.diagnosis?.swingai_report || {},
+                    metrics: lastAnalysis.diagnosis?.metrics || {},
+                    capture_note: captureNote || null,
+                    history: coachHistory.slice(-8),
+                }),
+            });
+            if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
+            // Parse the SSE stream frame by frame.
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buf = '';
+            for (;;) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buf += decoder.decode(value, { stream: true });
+                const frames = buf.split('\n\n');
+                buf = frames.pop() || '';
+                for (const frame of frames) {
+                    const ev = /^event:\s*(.+)$/m.exec(frame)?.[1];
+                    const raw = /^data:\s*(.+)$/m.exec(frame)?.[1];
+                    if (!ev || !raw) continue;
+                    let data; try { data = JSON.parse(raw); } catch (_) { continue; }
+                    if (ev === 'delta') {
+                        answer += data.text || '';
+                        bubble.textContent = answer;
+                        document.getElementById('coach-log').scrollTop = 1e9;
+                    } else if (ev === 'error') {
+                        bubble.classList.add('coach-error');
+                        bubble.textContent = data.message || 'Coach unavailable.';
+                    }
+                }
+            }
+            if (answer) {
+                coachHistory.push({ role: 'user', content: question });
+                coachHistory.push({ role: 'assistant', content: answer });
+            } else if (!bubble.textContent) {
+                bubble.classList.add('coach-error');
+                bubble.textContent = 'No response from the coach.';
+            }
+        } catch (err) {
+            bubble.classList.add('coach-error');
+            bubble.textContent = `Coach unavailable: ${err.message}`;
+        } finally {
+            bubble.classList.remove('coach-streaming');
+            coachBusy = false;
+        }
+    }
+
+    document.getElementById('coach-fab')?.addEventListener('click', () => toggleCoach());
+    document.getElementById('coach-close')?.addEventListener('click', () => toggleCoach(false));
+    document.getElementById('coach-form')?.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const input = document.getElementById('coach-question');
+        const q = input.value;
+        input.value = '';
+        askCoach(q);
+    });
+    document.getElementById('coach-log')?.addEventListener('click', (e) => {
+        const chip = e.target.closest('.coach-chip');
+        if (chip) askCoach(chip.dataset.q);
+    });
+    // "Explain this" on a dimension tile asks about that metric specifically.
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.dim-explain');
+        if (!btn) return;
+        e.stopPropagation();
+        askCoach(`Explain my ${btn.dataset.label} in plain language — what does this number mean for my swing, and what should I do about it?`, btn.dataset.key);
+    });
 
     // -----------------------------------------
     // Multi-swing analysis
@@ -1211,6 +1347,8 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
             <div class="dim-stars">${stars}</div>
             <div class="dim-pill ${badgeClass}">${pillLabel}</div>
+            <button class="dim-explain" data-key="${dim.key || ''}" data-label="${dim.label}"
+                    title="Ask the coach about this">Explain</button>
             <div class="dim-tooltip">${dim.description}</div>
         `;
 
