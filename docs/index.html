@@ -212,6 +212,44 @@
     </div>
 
     <!-- Loading Overlay -->
+    <!-- ===================== COACH ===================== -->
+    <div class="coach-dock hidden" id="coach-dock">
+        <button class="coach-fab" id="coach-fab" aria-expanded="false" aria-controls="coach-panel">
+            <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <span>Ask the coach</span>
+        </button>
+
+        <section class="coach-panel hidden" id="coach-panel" aria-label="Conversational coach">
+            <header class="coach-head">
+                <div>
+                    <div class="coach-title">Coach</div>
+                    <div class="coach-sub" id="coach-context">Average view</div>
+                </div>
+                <button class="coach-close" id="coach-close" aria-label="Close coach">×</button>
+            </header>
+
+            <div class="coach-log" id="coach-log">
+                <div class="coach-empty" id="coach-empty">
+                    <p>Ask about anything in your report — it only answers from your measured numbers.</p>
+                    <div class="coach-suggests">
+                        <button class="coach-chip" data-q="What is the single most important thing to work on, and why?">Biggest priority</button>
+                        <button class="coach-chip" data-q="Explain my swing score in plain language. What is driving it?">Explain my score</button>
+                        <button class="coach-chip" data-q="Which of my numbers are strong? Keep it brief.">What am I good at?</button>
+                        <button class="coach-chip" data-q="Which of these measurements should I not trust yet, and why?">What's unreliable?</button>
+                    </div>
+                </div>
+            </div>
+
+            <form class="coach-input" id="coach-form">
+                <input type="text" id="coach-question" placeholder="Ask about your swing…" autocomplete="off" maxlength="1000">
+                <button type="submit" id="coach-send" aria-label="Send">
+                    <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+                </button>
+            </form>
+            <p class="coach-foot">Explains your computed report — it never calculates the numbers itself.</p>
+        </section>
+    </div>
+
     <div class="loading-overlay hidden" id="loading-overlay" role="status" aria-live="polite">
         <div class="spinner-container">
             <div class="spinner"></div>

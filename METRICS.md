@@ -77,6 +77,20 @@ One swing is a single noisy sample. Select **multiple `.mot` files** in the uplo
 
 A very low consistency score with a huge range (e.g. `9/100`, `50–1126 J`) usually means the **metric itself is unreliable** on that capture, not that the hitter is wildly inconsistent — treat it as a data‑quality flag.
 
+## Ask the coach
+
+With a server-side Anthropic key configured, a **Coach** panel appears bottom-right. Ask anything about your report in plain language, or hit **Explain** on any metric tile to ask about that number specifically.
+
+The coach is **grounded, not generative**: it receives the numbers your physics engine already computed and may only explain those. It never calculates biomechanics itself — that boundary is what keeps every figure in the report reproducible. It's also told which metrics were *not measured* and which are *too inconsistent to trust*, so it declines to over‑interpret them rather than confidently explaining a number the engine doesn't stand behind.
+
+To enable it, set the key on the **server** (never in the browser) and restart:
+
+```
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Optionally set `COACH_MODEL` (defaults to `claude-sonnet-5`). Without a key the panel stays hidden rather than offering a button that fails.
+
 ## "Not measured"
 
 Some metrics can't be computed from every capture — stride length needs foot markers, and a capture that begins after front‑foot plant may not contain the information at all. When that happens the tile reads **Not measured** with the reason, and the dimension is **excluded from the Swing Score and from the drill prescriptions** rather than scored as a failure.
