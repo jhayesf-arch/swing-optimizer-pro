@@ -371,6 +371,7 @@ async def analyze_upload(
     skill_level: str = Form('high_school'),
     bat_mass_kg: float = Form(0.88),
     bat_length_m: float = Form(0.864),
+    handedness: str = Form(None),
 ):
     if not file.filename.endswith('.mot'):
         return JSONResponse(status_code=400, content={"success": False, "error": "File must be a .mot file"})
@@ -389,7 +390,8 @@ async def analyze_upload(
         optimizer = RefinedHittingOptimizer(
             body_mass_kg=weight_kg, body_height_m=height_m,
             skill_level=skill_level,
-            bat_mass_kg=bat_mass_kg, bat_length_m=bat_length_m
+            bat_mass_kg=bat_mass_kg, bat_length_m=bat_length_m,
+            handedness=handedness,
         )
         kinematics = optimizer.load_mot_file(file_path)
         if kinematics is None or len(kinematics) == 0:
@@ -431,6 +433,7 @@ async def analyze_batch(
     skill_level: str = Form('high_school'),
     bat_mass_kg: float = Form(0.88),
     bat_length_m: float = Form(0.864),
+    handedness: str = Form(None),
 ):
     """Analyze several swings for one athlete and return every per-swing report
     plus an averaged view (outliers excluded) with swing-to-swing consistency.
@@ -467,6 +470,7 @@ async def analyze_batch(
                 opt = RefinedHittingOptimizer(
                     body_mass_kg=weight_kg, body_height_m=height_m,
                     skill_level=skill_level, bat_mass_kg=bat_mass_kg, bat_length_m=bat_length_m,
+                    handedness=handedness,
                 )
                 kin = opt.load_mot_file(mot_path)
                 if kin is None or len(kin) == 0:
@@ -500,6 +504,7 @@ async def analyze_batch(
                     "swing_score": rep.get("swing_score", 0.0),
                     "overall_percentile": rep.get("overall_percentile"),
                     "percentile_basis": rep.get("percentile_basis"),
+                    "capture_quality": diag.get("capture_quality", {}),
                     "efficiency_score": diag.get("efficiency_score", 0),
                     "dimensions": rep.get("dimensions", {}),
                     "phases": rep.get("phases", {}),

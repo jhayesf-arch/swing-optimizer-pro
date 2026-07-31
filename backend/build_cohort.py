@@ -55,7 +55,7 @@ from analyzer import RefinedHittingOptimizer, SWINGAI_LABELS
 
 MANIFEST_COLUMNS = [
     'mot_file', 'trc_file', 'level',
-    'height_cm', 'weight_kg', 'height_in', 'weight_lb', 'height_m',
+    'height_cm', 'weight_kg', 'height_in', 'weight_lb', 'height_m', 'handedness',
     'bat_oz', 'bat_in', 'athlete', 'notes',
 ]
 VALID_LEVELS = {'youth', 'high_school', 'college', 'professional'}
@@ -84,7 +84,7 @@ def cmd_init(args):
             'mot_file': mot,
             'trc_file': trc if os.path.exists(trc) else '',
             'level': '', 'height_cm': '', 'weight_kg': '', 'height_in': '',
-            'weight_lb': '', 'height_m': '', 'bat_oz': '', 'bat_in': '',
+            'weight_lb': '', 'height_m': '', 'handedness': '', 'bat_oz': '', 'bat_in': '',
             'athlete': '', 'notes': '',
         })
     with open(args.out, 'w', newline='') as f:
@@ -97,17 +97,27 @@ def cmd_init(args):
     return 0
 
 
-def _run_swing(buckets, mot, trc, level, h_m, w_kg, bat_kg, bat_m):
+def _run_swing(buckets, mot, trc, level, h_m, w_kg, bat_kg, bat_m, handedness=None):
     """Analyze one swing and fold its dimension values into buckets[level][dim].
-    Returns None on success or an error string to report as skipped."""
+    Returns None on success or an error string to report as skipped.
+
+    Degraded captures are skipped: this distribution is the reference every
+    athlete gets ranked against, so a check swing or mistracked trial would
+    quietly shift everyone's percentiles.
+    """
     try:
         opt = RefinedHittingOptimizer(body_mass_kg=w_kg, body_height_m=h_m,
-                                      skill_level=level, bat_mass_kg=bat_kg, bat_length_m=bat_m)
+                                      skill_level=level, bat_mass_kg=bat_kg, bat_length_m=bat_m,
+                                      handedness=handedness)
         kin = opt.load_mot_file(mot)
         if kin is None or len(kin) == 0:
             return "empty/invalid .mot"
         trc_data = opt.load_trc_file(trc) if trc and os.path.exists(trc) else None
         diag = opt.comprehensive_diagnosis(kin, os.path.basename(mot), trc_data=trc_data)
+        cq = diag.get('capture_quality') or {}
+        if cq.get('usable') is False:
+            reasons = "; ".join(cq.get('reasons', [])) or "low capture quality"
+            return f"skipped (quality {cq.get('score')}/100): {reasons}"
         dims = diag.get('swingai_report', {}).get('dimensions', {})
         for key, d in dims.items():
             val = d.get('value')
@@ -171,7 +181,8 @@ def cmd_build(args):
             continue
         bat_kg = (_num(row, 'bat_oz') or 31.0) * 0.0283495
         bat_m = (_num(row, 'bat_in') or 34.0) * 0.0254
-        err = _run_swing(buckets, mot, (row.get('trc_file') or '').strip(), level, h_m, w_kg, bat_kg, bat_m)
+        err = _run_swing(buckets, mot, (row.get('trc_file') or '').strip(), level, h_m, w_kg,
+                         bat_kg, bat_m, handedness=(row.get('handedness') or '').strip() or None)
         if err:
             skipped.append((mot, err))
         else:
@@ -278,7 +289,8 @@ def cmd_auto(args):
         trc_idx = _pair_trc(d)
         for mot in sorted(glob.glob(os.path.join(d, '**', '*.mot'), recursive=True)):
             trc = trc_idx.get(os.path.splitext(os.path.basename(mot))[0].lower(), '')
-            err = _run_swing(buckets, mot, trc, level, h_m, w_kg, bat_kg, bat_m)
+            err = _run_swing(buckets, mot, trc, level, h_m, w_kg, bat_kg, bat_m,
+                             handedness=a.get('handedness'))
             if err:
                 skipped.append((mot, err))
             else:

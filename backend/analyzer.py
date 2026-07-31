@@ -644,10 +644,80 @@ def _build_data_quality(trc_metrics: dict, has_grf: bool = False) -> dict:
     }
 
 
+# Below this score a trial is treated as degraded: it still appears in the report
+# and stays individually selectable, but it is kept out of multi-swing averages
+# so one bad capture can't move an athlete's numbers.
+CAPTURE_QUALITY_MIN = 55
+
+
+def assess_capture_quality(rotation: dict, dims: dict, has_markers: bool,
+                           dt: float = None) -> dict:
+    """Score how much this capture can be trusted (0-100), with reasons.
+
+    Some trials contain a check swing, a practice move, or a mistracked capture
+    rather than a real swing — a 5-star pelvis rotation alongside 3 mph hands is
+    contradictory, not talent. Scoring the *capture* separately from the swing
+    lets degraded trials be held out of averages instead of silently dragging
+    them, and gives the athlete a reason rather than a mysterious number.
+    """
+    score = 100
+    reasons = []
+
+    peak_dgs = float((rotation or {}).get('peak_pelvis_omega_3d_deg_s') or 0.0)
+    if peak_dgs <= 0:
+        score -= 50
+        reasons.append("pelvis rotation could not be measured")
+    elif peak_dgs < 150:
+        # Disqualifying on its own: no competitive swing turns the pelvis this
+        # slowly, so this must not depend on a second flag to be excluded.
+        score -= 60
+        reasons.append(f"very little pelvis rotation ({peak_dgs:.0f}°/s) — likely a check swing or practice move")
+    elif peak_dgs < 250:
+        score -= 20
+        reasons.append(f"weak pelvis rotation ({peak_dgs:.0f}°/s) for a full swing")
+
+    if (rotation or {}).get('sequence_indeterminate'):
+        score -= 15
+        reasons.append("sequence order is indeterminate at this capture rate")
+
+    if not has_markers:
+        score -= 15
+        reasons.append("no marker data — several metrics can't be measured")
+
+    unavailable = [d.get('label', k) for k, d in (dims or {}).items()
+                   if d.get('available') is False]
+    if unavailable:
+        score -= min(20, 5 * len(unavailable))
+        reasons.append(f"{len(unavailable)} metric(s) not measurable: {', '.join(unavailable)}")
+
+    # A swing takes roughly 100-400 ms; a window far outside that means the
+    # segmentation latched onto the wrong movement.
+    swing_ms = None
+    if rotation is not None and dt:
+        pom = rotation.get('pelvis_omega')
+        start = rotation.get('swing_start_frame')
+        if pom is not None and start is not None and len(pom):
+            swing_ms = float((int(np.argmax(np.abs(pom))) - int(start)) * dt * 1000.0)
+            if swing_ms < 60 or swing_ms > 600:
+                score -= 20
+                reasons.append(f"implausible swing window ({swing_ms:.0f} ms) — segmentation may have misfired")
+
+    score = int(max(0, min(100, score)))
+    return {
+        'score': score,
+        'usable': score >= CAPTURE_QUALITY_MIN,
+        'reasons': reasons,
+        'peak_pelvis_omega_deg_s': round(peak_dgs, 1),
+        'swing_window_ms': round(swing_ms, 1) if swing_ms is not None else None,
+        'has_markers': bool(has_markers),
+    }
+
+
 class RefinedHittingOptimizer:
     def __init__(self, body_mass_kg: float, body_height_m: float, skill_level: str = 'high_school',
                  bat_mass_kg: float = 0.88, bat_length_m: float = 0.864,
-                 instrument: str = None, instrument_note: str = None):
+                 instrument: str = None, instrument_note: str = None,
+                 handedness: str = None):
         self.body_mass_kg = float(body_mass_kg)
         self.body_height_m = float(body_height_m)
         self.skill_level = skill_level if skill_level in SKILL_LEVEL_BENCHMARKS else 'high_school'
@@ -655,6 +725,11 @@ class RefinedHittingOptimizer:
         self.bat_length_m = float(bat_length_m)
         self.instrument = instrument          # e.g. 'wood_stick', 'aluminum_bat', None
         self.instrument_note = instrument_note  # free-text caveat for this session
+        # Which side the athlete bats from. The .mot carries no handedness, so
+        # without this the lead leg has to be guessed from the pose — which fails
+        # on check swings and short captures. 'right' | 'left' | None.
+        hd = str(handedness).lower().strip() if handedness else None
+        self.handedness = hd if hd in ('right', 'left') else None
         self.g = 9.81
         self.calculate_segment_properties()
         
@@ -1892,7 +1967,16 @@ class RefinedHittingOptimizer:
 
         swingai_report = self.build_swingai_report(rotation, stride, trc_metrics, lower_body)
 
+        # Score the capture itself, separately from the swing, so a check swing or
+        # a mistracked trial can be held out of multi-swing averages with a reason.
+        _dt = kinematics['time'].diff().mean() if 'time' in kinematics.columns else None
+        capture_quality = assess_capture_quality(
+            rotation, swingai_report.get('dimensions', {}),
+            has_markers=trc_data is not None, dt=_dt,
+        )
+
         return {
+            "capture_quality": capture_quality,
             "metrics": asdict(metrics),
             "findings": findings,
             "recommendations": recommendations,
@@ -1945,8 +2029,11 @@ class RefinedHittingOptimizer:
         plant to contact. A firm, extending lead leg posts up and redirects momentum into
         rotation — a top bat-speed correlate in the Driveline OpenBiomechanics dataset.
 
-        Handedness is not encoded in the .mot, so the lead leg is inferred as the leg that
-        is more extended (less flexed) at contact. Returns {} if knee arrays are unavailable.
+        The lead leg is taken from the athlete's stated handedness when known — a
+        right-handed hitter strides onto the left leg, and vice versa. Only when
+        handedness is unknown does it fall back to inferring the lead leg as the one
+        less flexed at contact, which misfires on check swings and short captures.
+        Returns {} if knee arrays are unavailable.
         """
         knee_r = lower_body.get('knee_r') if lower_body else None
         knee_l = lower_body.get('knee_l') if lower_body else None
@@ -1971,8 +2058,15 @@ class RefinedHittingOptimizer:
         if contact <= plant:
             contact = min(n - 1, plant + max(1, (n - plant) // 2))
 
-        # Lead leg = the one straighter (less flexed) at contact.
-        lead = 'l' if fl[contact] < fr[contact] else 'r'
+        # A right-handed hitter strides onto the left leg; a lefty onto the right.
+        if self.handedness == 'right':
+            lead, lead_source = 'l', 'handedness'
+        elif self.handedness == 'left':
+            lead, lead_source = 'r', 'handedness'
+        else:
+            # Fallback: the straighter (less flexed) leg at contact.
+            lead = 'l' if fl[contact] < fr[contact] else 'r'
+            lead_source = 'inferred_from_pose'
         lead_flex = fl if lead == 'l' else fr
 
         # Block = how much the lead knee STRAIGHTENS from its deepest flexion in the
@@ -1986,6 +2080,8 @@ class RefinedHittingOptimizer:
         return {
             'lead_leg_block_deg': round(ext, 1),
             'lead_side': lead,
+            'lead_side_source': lead_source,
+            'handedness': self.handedness,
             'lead_knee_peak_flex_deg': round(peak_flex, 1),
             'lead_knee_flex_at_contact_deg': round(contact_flex, 1),
         }
