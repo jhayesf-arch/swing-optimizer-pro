@@ -91,6 +91,22 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 Optionally set `COACH_MODEL` (defaults to `claude-sonnet-5`). Without a key the panel stays hidden rather than offering a button that fails.
 
+## Handedness
+
+Which side you bat from isn't recorded in a `.mot` file, so without it the app has to **guess your lead leg** from your pose each swing — and it gets it wrong on check swings and short captures. Set it once per athlete:
+
+```json
+{ "athlete": "kike", "handedness": "right", ... }
+```
+
+A right‑handed hitter strides onto the left leg, a lefty onto the right. The profile reports how often the guess agreed with itself (e.g. *"71% agree, 4 swings used the OTHER leg"*), so you can spot the problem before you fix it. Uploads accept a `handedness` form field too.
+
+## Capture quality
+
+Not every trial is a swing. Some captures are check swings, warm‑up moves, or mistracked — a 5‑star pelvis rotation next to 3 mph hands is contradictory, not talent. Every swing gets a **capture quality score (0–100)** with reasons, based on peak pelvis rotation, whether the sequence order is resolvable, marker availability, unmeasurable metrics, and whether the detected swing window is physically plausible.
+
+Trials below **55** are **held out of the averages and out of the cohort** — they still appear in the report and stay selectable, with the reason stated, so nothing is hidden. This keeps one bad capture from moving an athlete's numbers, and (more importantly) from shifting the reference distribution everyone else is ranked against. Pelvis rotation under 150°/s disqualifies a trial on its own — no competitive swing turns that slowly.
+
 ## "Not measured"
 
 Some metrics can't be computed from every capture — stride length needs foot markers, and a capture that begins after front‑foot plant may not contain the information at all. When that happens the tile reads **Not measured** with the reason, and the dimension is **excluded from the Swing Score and from the drill prescriptions** rather than scored as a failure.

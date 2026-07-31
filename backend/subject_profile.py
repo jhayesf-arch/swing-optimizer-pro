@@ -112,6 +112,7 @@ def analyze_subject(
     athlete: Optional[str] = None,
     instrument: Optional[str] = None,
     instrument_note: Optional[str] = None,
+    handedness: Optional[str] = None,
 ) -> Dict:
     """Run every swing in mot_dir and return per-swing reports plus an averaged view."""
     mot_dir = os.path.expanduser(mot_dir)
@@ -129,6 +130,7 @@ def analyze_subject(
                 body_mass_kg=weight_kg, body_height_m=height_m,
                 skill_level=level, bat_mass_kg=bat_kg, bat_length_m=bat_m,
                 instrument=instrument, instrument_note=instrument_note,
+                handedness=handedness,
             )
             kin = opt.load_mot_file(mot)
             if kin is None or len(kin) == 0:
@@ -145,6 +147,7 @@ def analyze_subject(
                 "swing_score": rep.get("swing_score", 0.0),
                 "overall_percentile": rep.get("overall_percentile"),
                 "percentile_basis": rep.get("percentile_basis"),
+                "capture_quality": diag.get("capture_quality", {}),
                 "efficiency_score": diag.get("efficiency_score", 0),
                 "dimensions": rep.get("dimensions", {}),
                 "lead_leg_block": rep.get("lead_leg_block", {}),
@@ -179,6 +182,31 @@ def analyze_subject(
     }
 
 
+def _handedness_summary(swings: List[Dict]) -> Dict:
+    """Report which side was used as the lead leg, and how sure we are.
+
+    When handedness is configured this is simply stated. When it isn't, the lead
+    leg is guessed per swing from the pose, and swings that disagree had their
+    lead-leg block measured on the wrong leg. Surfacing the disagreement rate
+    turns a silent error into a one-line fix in athletes.json.
+    """
+    sides = [(s.get("lead_leg_block") or {}).get("lead_side") for s in swings]
+    sides = [x for x in sides if x]
+    if not sides:
+        return {}
+    sources = {(s.get("lead_leg_block") or {}).get("lead_side_source") for s in swings}
+    top = max(set(sides), key=sides.count)
+    agree = sides.count(top)
+    known = "handedness" in sources
+    return {
+        "configured": known,
+        "lead_side": top,
+        "implied_handedness": "right" if top == "l" else "left",
+        "agreement": round(100.0 * agree / len(sides)),
+        "n_disagreeing": len(sides) - agree,
+    }
+
+
 def aggregate_swings(
     swings: List[Dict],
     level: str,
@@ -191,19 +219,34 @@ def aggregate_swings(
     view shaped like a single-swing report. Shared by the folder-based profile
     and the multi-file upload endpoint."""
     # ---- per-dimension statistics across swings ---------------------------
+    # Degraded captures (check swings, mistracked trials) are held out of the
+    # average but stay in `swings` so they remain selectable and explainable.
+    usable = [s for s in swings if (s.get("capture_quality") or {}).get("usable", True)]
+    excluded_captures = [
+        {"index": s["index"], "name": s["name"],
+         "score": (s.get("capture_quality") or {}).get("score"),
+         "reasons": (s.get("capture_quality") or {}).get("reasons", [])}
+        for s in swings if s not in usable
+    ]
+    # If quality gating would leave nothing to average, fall back to every swing
+    # rather than reporting an empty profile — and say so.
+    gating_applied = bool(usable) and bool(excluded_captures)
+    if not usable:
+        usable = swings
+
     def _measured(s, key):
         """A dimension counts only when the capture actually measured it."""
         d = s["dimensions"].get(key)
         return (d is not None and d.get("available") is not False
                 and isinstance(d.get("value"), (int, float)))
 
-    dim_keys = [k for k in SWINGAI_WEIGHTS if any(_measured(s, k) for s in swings)]
+    dim_keys = [k for k in SWINGAI_WEIGHTS if any(_measured(s, k) for s in usable)]
     unavailable_keys = [k for k in SWINGAI_WEIGHTS
-                        if k not in dim_keys and any(k in s["dimensions"] for s in swings)]
+                        if k not in dim_keys and any(k in s["dimensions"] for s in usable)]
     stats: Dict[str, Dict] = {}
     for key in dim_keys:
-        idxs = [i for i, s in enumerate(swings) if _measured(s, key)]
-        vals = [float(swings[i]["dimensions"][key]["value"]) for i in idxs]
+        idxs = [i for i, s in enumerate(usable) if _measured(s, key)]
+        vals = [float(usable[i]["dimensions"][key]["value"]) for i in idxs]
         outliers = _outlier_indices(vals)
         kept = [v for i, v in enumerate(vals) if i not in outliers]
         if not kept:  # every value flagged (degenerate) — fall back to all
@@ -219,7 +262,7 @@ def aggregate_swings(
             "consistency": _consistency(kept),
             "values": [_round_smart(v) for v in vals],
             # swing numbers (1-based) whose value was excluded from the average
-            "excluded_swings": sorted(swings[idxs[i]]["index"] for i in outliers),
+            "excluded_swings": sorted(usable[idxs[i]]["index"] for i in outliers),
         }
 
     # ---- averaged view, shaped exactly like a single-swing report ----------
@@ -231,7 +274,7 @@ def aggregate_swings(
     # Dimensions no swing could measure stay in the report, flagged, so the
     # athlete sees "not measured" rather than a silently missing row.
     for key in unavailable_keys:
-        src = next((s["dimensions"][key] for s in swings if key in s["dimensions"]), {})
+        src = next((s["dimensions"][key] for s in usable if key in s["dimensions"]), {})
         avg_dims[key] = {
             "label": src.get("label", SWINGAI_LABELS.get(key, key)),
             "unit": src.get("unit", ""), "description": src.get("description", ""),
@@ -240,9 +283,9 @@ def aggregate_swings(
         }
     for key in dim_keys:
         st = stats[key]
-        excluded_pos = {i for i, s in enumerate(swings)
+        excluded_pos = {i for i, s in enumerate(usable)
                         if _measured(s, key) and s["index"] in st["excluded_swings"]}
-        members = [s["dimensions"][key] for i, s in enumerate(swings)
+        members = [s["dimensions"][key] for i, s in enumerate(usable)
                    if _measured(s, key) and i not in excluded_pos]
         template = members[0]
 
@@ -303,8 +346,8 @@ def aggregate_swings(
             "dimensions": pdims,
         }
 
-    scores = [s["swing_score"] for s in swings]
-    pcts = [s["overall_percentile"] for s in swings if isinstance(s.get("overall_percentile"), (int, float))]
+    scores = [s["swing_score"] for s in usable]
+    pcts = [s["overall_percentile"] for s in usable if isinstance(s.get("overall_percentile"), (int, float))]
     weighted_consistency = [
         (SWINGAI_WEIGHTS[k], stats[k]["consistency"])
         for k in dim_keys if stats[k]["consistency"] is not None
@@ -316,8 +359,8 @@ def aggregate_swings(
 
     # Averaged scalar metrics for the hero stats.
     avg_metrics: Dict[str, float] = {}
-    for mkey in (swings[0].get("metrics") or {}):
-        mvals = [s["metrics"][mkey] for s in swings
+    for mkey in (usable[0].get("metrics") or {}):
+        mvals = [s["metrics"][mkey] for s in usable
                  if isinstance(s.get("metrics", {}).get(mkey), (int, float))
                  and not isinstance(s["metrics"][mkey], bool)]
         if mvals:
@@ -326,17 +369,20 @@ def aggregate_swings(
     average_report = {
         "swing_score": round(statistics.fmean(scores), 1),
         "overall_percentile": int(round(statistics.fmean(pcts))) if pcts else None,
-        "percentile_basis": swings[0].get("percentile_basis"),
+        "percentile_basis": usable[0].get("percentile_basis"),
         "skill_level": level,
         "phases": phases,
         "dimensions": avg_dims,
         "prescriptions": prescriptions,
-        "lead_leg_block": swings[0].get("lead_leg_block", {}),
+        "lead_leg_block": usable[0].get("lead_leg_block", {}),
         # aggregate-only fields
         "is_average": True,
-        "n_swings": len(swings),
+        "n_swings": len(usable),
+        "n_swings_captured": len(swings),
+        "excluded_captures": excluded_captures if gating_applied else [],
         "overall_consistency": overall_consistency,
         "swing_score_range": [round(min(scores), 1), round(max(scores), 1)],
+        "handedness": _handedness_summary(swings),
     }
 
     return {
@@ -368,6 +414,7 @@ def analyze_from_config(config_path: str, athlete_name: str) -> Dict:
             athlete=a.get("athlete"),
             instrument=a.get("instrument"),
             instrument_note=a.get("instrument_note"),
+            handedness=a.get("handedness"),
         )
     known = ", ".join(str(a.get("athlete")) for a in cfg.get("athletes", []))
     raise SystemExit(f"Athlete '{athlete_name}' not found in {config_path}. Known: {known}")
@@ -384,7 +431,9 @@ def _print_summary(p: Dict) -> None:
         return
 
     avg = p["average"]
-    print(f"\n{p['athlete']}  ({p['level']})  —  {p['n_swings']} swings")
+    used, captured = avg.get("n_swings"), avg.get("n_swings_captured", p["n_swings"])
+    suffix = f" ({used} of {captured} usable)" if used != captured else ""
+    print(f"\n{p['athlete']}  ({p['level']})  —  {p['n_swings']} swings{suffix}")
     print(f"  Swing Score : {avg['swing_score']}  (range {avg['swing_score_range'][0]}–{avg['swing_score_range'][1]})")
     if avg.get("overall_percentile") is not None:
         print(f"  Percentile  : {avg['overall_percentile']}th  [{avg.get('percentile_basis')}]")
@@ -400,6 +449,24 @@ def _print_summary(p: Dict) -> None:
         rng = f"{d['range'][0]} – {d['range'][1]}"
         con = "—" if d.get("consistency") is None else f"{d['consistency']:.0f}"
         print(f"  {d['label'][:32]:<32} {d['value']:>9} {rng:>17} {con:>8} {'★' * d['stars']:>6}")
+
+    hd = avg.get("handedness") or {}
+    if hd and not hd.get("configured"):
+        note = (f"  Handedness  : not set — lead leg guessed per swing "
+                f"({hd['agreement']}% agree, suggests {hd['implied_handedness']}-handed)")
+        if hd.get("n_disagreeing"):
+            note += (f"\n                {hd['n_disagreeing']} swing(s) used the OTHER leg — "
+                     f'set "handedness": "{hd["implied_handedness"]}" in athletes.json to fix')
+        print(note)
+    elif hd:
+        print(f"  Handedness  : {hd['implied_handedness']} (configured)")
+
+    dropped = avg.get("excluded_captures") or []
+    if dropped:
+        print("\n  Held out of the average — degraded captures:")
+        for c in dropped:
+            why = "; ".join(c.get("reasons", [])) or "low capture quality"
+            print(f"    - swing {c['index']} ({c['name']}), quality {c.get('score')}/100: {why}")
 
     missing = [d for d in avg["dimensions"].values() if d.get("available") is False]
     if missing:
