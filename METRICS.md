@@ -83,13 +83,15 @@ With a server-side Anthropic key configured, a **Coach** panel appears bottom-ri
 
 The coach is **grounded, not generative**: it receives the numbers your physics engine already computed and may only explain those. It never calculates biomechanics itself — that boundary is what keeps every figure in the report reproducible. It's also told which metrics were *not measured* and which are *too inconsistent to trust*, so it declines to over‑interpret them rather than confidently explaining a number the engine doesn't stand behind.
 
-To enable it, set the key on the **server** (never in the browser) and restart:
+An **Ask the Coach** section appears in every report with starter questions, alongside a floating button bottom‑right. Both are always visible: if no key is configured they say so plainly rather than disappearing, because a hidden feature is indistinguishable from a missing one.
 
-```
+To enable it, set the key on the **server** (never in the browser) and restart the backend:
+
+```bash
 export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
-Optionally set `COACH_MODEL` (defaults to `claude-sonnet-5`). Without a key the panel stays hidden rather than offering a button that fails.
+Optionally set `COACH_MODEL` (defaults to `claude-sonnet-5`).
 
 ## Handedness
 

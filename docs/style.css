@@ -458,6 +458,21 @@ header p { color: var(--text-muted); font-size: 1.1rem; }
 }
 .coach-fab:hover { transform: translateY(-1px); box-shadow: 0 10px 28px rgba(0,0,0,0.55); }
 
+/* Unconfigured: still visible and clickable, but visually secondary. Clicking
+   opens the panel and explains what's missing, rather than doing nothing. */
+.coach-fab.coach-fab-off {
+    background: rgba(255,255,255,0.08);
+    color: var(--text-muted);
+    border: 1px solid rgba(255,255,255,0.14);
+    box-shadow: none;
+}
+.coach-fab.coach-fab-off:hover { background: rgba(255,255,255,0.13); transform: none; }
+.coach-chips-off .coach-chip { opacity: 0.55; }
+#coach-cta-disabled code {
+    background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 4px;
+    color: var(--accent-glow); font-size: 0.9em;
+}
+
 .coach-panel {
     position: absolute; right: 0; bottom: 0;
     width: min(400px, calc(100vw - 40px));
