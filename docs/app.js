@@ -400,9 +400,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const s = await fetch(`${API_BASE}/api/coach/status`).then(r => r.json());
             coachEnabled = !!s.enabled;
         } catch (_) { coachEnabled = false; }
-        // With no server-side key there is nothing to talk to; hide it rather
-        // than offering a button that always fails.
-        document.getElementById('coach-dock')?.classList.toggle('hidden', !coachEnabled);
+
+        // Always show the entry points. Hiding them when no key is configured
+        // made the feature look missing rather than unconfigured — people went
+        // looking for it and found nothing. Show it, and say what it needs.
+        document.getElementById('coach-dock')?.classList.remove('hidden');
+        document.getElementById('coach-fab')?.classList.toggle('coach-fab-off', !coachEnabled);
+        document.getElementById('coach-cta-disabled')?.classList.toggle('hidden', coachEnabled);
+        document.getElementById('coach-cta-chips')?.classList.toggle('coach-chips-off', !coachEnabled);
     }
 
     function toggleCoach(open) {
@@ -431,7 +436,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function askCoach(question, dimKey) {
-        if (!coachEnabled || coachBusy || !question.trim()) return;
+        if (coachBusy || !question.trim()) return;
+        // Explain the gap rather than doing nothing when a click lands unconfigured.
+        if (!coachEnabled) {
+            toggleCoach(true);
+            coachAppend('error',
+                'The coach needs an ANTHROPIC_API_KEY set on the server. Set it and restart the backend — '
+                + 'the key stays server-side and is never sent to the browser.');
+            return;
+        }
         if (!lastAnalysis) { coachAppend('error', 'Run an analysis first.'); return; }
         coachBusy = true;
         toggleCoach(true);
@@ -506,9 +519,11 @@ document.addEventListener('DOMContentLoaded', () => {
         input.value = '';
         askCoach(q);
     });
-    document.getElementById('coach-log')?.addEventListener('click', (e) => {
+    // Suggestion chips work from both the in-panel empty state and the inline
+    // "Ask the Coach" section in the report.
+    document.addEventListener('click', (e) => {
         const chip = e.target.closest('.coach-chip');
-        if (chip) askCoach(chip.dataset.q);
+        if (chip && chip.dataset.q) askCoach(chip.dataset.q);
     });
     // "Explain this" on a dimension tile asks about that metric specifically.
     document.addEventListener('click', (e) => {

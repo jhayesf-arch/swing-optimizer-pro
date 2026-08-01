@@ -126,6 +126,26 @@
                     </div>
                 </div>
 
+                <!-- ASK THE COACH (inline entry point, shown once results load) -->
+                <div class="glass-card panel mt-3" id="coach-cta">
+                    <h3 class="panel-title">Ask the Coach <span class="panel-hint">explains your numbers in plain language</span></h3>
+                    <p class="small text-muted" style="margin:-0.3rem 0 0.9rem;max-width:760px;">
+                        Ask anything about this report and get a straight answer grounded in <strong>your measured numbers</strong> —
+                        it explains what the engine computed and never invents values. Hit <strong>Explain</strong> on any metric tile to ask about that one.
+                    </p>
+                    <div class="coach-suggests" id="coach-cta-chips">
+                        <button class="coach-chip" data-q="What is the single most important thing to work on, and why?">Biggest priority</button>
+                        <button class="coach-chip" data-q="Explain my swing score in plain language. What is driving it?">Explain my score</button>
+                        <button class="coach-chip" data-q="Which of my numbers are strong? Keep it brief.">What am I good at?</button>
+                        <button class="coach-chip" data-q="Which of these measurements should I not trust yet, and why?">What's unreliable?</button>
+                        <button class="coach-chip" data-q="Give me a training plan for the next two weeks based on this report.">Build me a plan</button>
+                    </div>
+                    <p class="small hidden" id="coach-cta-disabled" style="margin-top:0.9rem;">
+                        <span class="val-warn">●</span> The coach needs an <code>ANTHROPIC_API_KEY</code> set on the server.
+                        Set it and restart the backend — the key stays server-side and is never sent to the browser.
+                    </p>
+                </div>
+
                 <!-- SWING SKELETON PANEL -->
                 <div class="glass-card panel mt-3" id="skeleton-panel">
                     <h3 class="panel-title">3D Skeleton <span class="panel-hint">⟲ drag to rotate</span></h3>
