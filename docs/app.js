@@ -17,7 +17,6 @@ const DEMO_DIAGNOSIS = {
         time_to_peak_pelvis_ms: 145, pelvis_rotation_at_contact_deg: 52.4,
         x_factor_stretch_deg: 13.6, torso_arm_sequence_gap_ms: 41,
         pelvis_decel_rate_deg_s2: 9200, peak_lead_hip_ir_torque_Nm: 46.8,
-        pelvis_list_range_deg: 9.3,
     },
     findings: [
         'Optimal Proximal-to-Distal Kinetic Chain demonstrated.',
@@ -878,7 +877,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${m.torso_arm_sequence_gap_ms !== 0 ? createMetric('Torso→Arm Gap', m.torso_arm_sequence_gap_ms.toFixed(0), 'ms') : ''}
                 ${m.pelvis_decel_rate_deg_s2 > 0 ? createMetric('Pelvis Decel Rate', (m.pelvis_decel_rate_deg_s2 / 1000).toFixed(1), 'k°/s²') : ''}
                 ${m.peak_lead_hip_ir_torque_Nm > 0 ? createMetric('Lead Hip IR Torque', m.peak_lead_hip_ir_torque_Nm.toFixed(1), 'N·m') : ''}
-                ${m.pelvis_list_range_deg > 0 ? createMetric('Pelvis Obliquity', m.pelvis_list_range_deg.toFixed(1), '°') : ''}
             `;
         }
 
