@@ -585,6 +585,14 @@ class RefinedSwingMetrics:
     # carries no derivative noise — the most robust metric in this group on
     # markerless data. Welch et al. (1995); Fortenbaugh et al. (2011): 40–75° in pros.
     pelvis_rotation_at_contact_deg: float = 0.0
+    # Rotation swept from the top of the backswing to contact. Invariant to how the
+    # athlete was oriented to the cameras, so it compares across setups where the
+    # absolute angle above does not.
+    pelvis_rotation_excursion_deg: float = 0.0
+    # How the contact frame was found: peak_hand_speed, hand_deceleration_impact,
+    # or peak_pelvis_omega_fallback. Surfaced because every "at contact" number
+    # inherits the accuracy of this event.
+    contact_detection_method: str = "none"
     # Peak lead-hip internal-rotation torque — the drive behind pelvis rotation.
     # MacWilliams et al. (1998).
     peak_lead_hip_ir_torque_Nm: float = 0.0
@@ -1284,18 +1292,92 @@ class RefinedHittingOptimizer:
         # =========================================================================
         # PELVIS / LOWER-HALF METRICS  (citations in METRICS.md)
         # =========================================================================
-        # Contact proxy. Peak pelvis omega is the same event time_to_contact_s uses,
-        # so every "at contact" metric here is anchored to one consistent instant.
+        # ── Contact frame ────────────────────────────────────────────────────────
+        # Anchored to the HANDS, not the pelvis. Peak pelvis omega is systematically
+        # early: the pelvis is the first link in the chain and keeps rotating long
+        # after it stops accelerating. On Emilio_1_16 the pelvis peaked at t=1.23s
+        # while the pelvis angle kept opening until t=1.63s — a 400ms error that made
+        # "pelvis rotation at contact" read 26° against a true 54°.
+        #
+        # The hands are the distal end of the chain, so their speed peaks essentially
+        # at ball contact. Falls back to the pelvis only when no arm data exists.
+        hands_abs_omega = np.abs(thorax_abs_omega + arm_omega + elb_omega)
+        contact_method = 'peak_pelvis_omega_fallback'
         contact_frame = int(min(max(peak_pelvis_frame_global, swing_start),
                                 len(pelvis_angle) - 1))
+
+        if np.any(hands_abs_omega[swing_start:] > 0):
+            # Bound to ±300ms of the pelvis peak so a post-follow-through wobble or a
+            # second movement later in the trial cannot masquerade as contact.
+            _c_half = int(0.30 * fs)
+            c_lo = max(swing_start, peak_pelvis_frame_global - _c_half)
+            c_hi = min(len(hands_abs_omega), peak_pelvis_frame_global + _c_half + 1)
+            if c_hi > c_lo:
+                hands_pk = int(np.argmax(hands_abs_omega[c_lo:c_hi])) + c_lo
+                contact_frame = hands_pk
+                contact_method = 'peak_hand_speed'
+
+                # Impact refinement. A struck ball puts an impulsive brake on the hands,
+                # so the sharpest deceleration just after peak speed marks contact more
+                # precisely than the speed peak alone.
+                #
+                # Only accepted when the spike is distinct (>1.5x the surrounding
+                # deceleration), because at 60Hz sampling with a 15Hz filter a real
+                # ~1ms impact transient is largely smoothed away. It therefore fires on
+                # solid contact and correctly declines to on dry swings and tee work,
+                # where there is no impulse to find.
+                d_hi = min(len(hands_abs_omega), hands_pk + int(0.08 * fs) + 1)
+                if d_hi - hands_pk >= 3:
+                    decel = -np.gradient(hands_abs_omega[hands_pk:d_hi], dt)
+                    if np.max(decel) > 0:
+                        sharp = int(np.argmax(decel)) + hands_pk
+                        med = np.median(np.abs(decel))
+                        # 3x median, not 1.5x. At 1.5x this fired on a slow rehearsal
+                        # swing (peak pelvis 227 deg/s) and placed contact 250ms before
+                        # the pelvis finished rotating, which is not a plausible impact.
+                        # A struck ball produces a far sharper brake than that.
+                        if med > 0 and np.max(decel) > 3.0 * med and sharp > hands_pk:
+                            contact_frame = sharp
+                            contact_method = 'hand_deceleration_impact'
+
+        contact_frame = int(min(max(contact_frame, swing_start), len(pelvis_angle) - 1))
+
+        # ── Transition (top of the backswing) ────────────────────────────────────
+        # The instant the pelvis reverses from loading to firing. Found by walking back
+        # from contact to the last sign change in pelvis angular velocity.
+        #
+        # This is a different event from swing_start, which is a speed threshold and is
+        # therefore already past the top by the time it triggers. X-Factor stretch has
+        # to be measured from the true top: measured from swing_start it came out
+        # exactly 0.0 on every real trial, because separation is at its maximum the
+        # moment the threshold trips and only decays afterward.
+        transition_frame = swing_start
+        for i in range(contact_frame - 1, swing_start, -1):
+            if pelvis_omega[i] * pelvis_omega[contact_frame] <= 0:
+                transition_frame = i
+                break
 
         # ── X-Factor Stretch (Cheetham et al. 2001, 2008) ────────────────────────
         # Separation gained after the transition, above what was already held at the
         # top. max_separation_deg alone cannot distinguish a hitter who coils to 45°
         # and holds it from one who coils to 45° and stretches to 60° as the pelvis
         # fires — the second is the power pattern, and only stretch sees it.
-        sep_at_start = float(abs(separation_full[swing_start])) if swing_start < len(separation_full) else 0.0
-        x_factor_stretch = float(max(0.0, max_separation - sep_at_start))
+        # Measured from the transition, per Cheetham: separation at the top vs. its
+        # maximum during the early downswing. The gain exists because the pelvis
+        # accelerates open faster than the torso follows.
+        _sep_win = np.abs(separation_full[transition_frame:contact_frame + 1])
+        sep_at_top = float(abs(separation_full[transition_frame]))
+        x_factor_stretch = float(max(0.0, (np.max(_sep_win) if len(_sep_win) else 0.0) - sep_at_top))
+
+        # Saturation guard. OpenSim's lumbar_rotation coordinate clips at its joint
+        # limit, and thorax-vs-pelvis rotation beyond ~70 deg is not anatomically
+        # reachable — both Emilio trials pin at exactly 90.0 deg, which is the solver
+        # against the stop rather than the athlete's real coil. Any separation number
+        # taken from a clipped signal is meaningless, so report 0 and flag it rather
+        # than publish a figure that looks like a measurement.
+        _sep_saturated = bool(np.max(np.abs(separation_full)) >= 70.0)
+        if _sep_saturated:
+            x_factor_stretch = 0.0
 
         # ── Torso → lead arm sequence gap (Kwon et al. 2013) ─────────────────────
         # sequence_timing_ms already reports pelvis→torso; this is the next link.
@@ -1303,10 +1385,21 @@ class RefinedHittingOptimizer:
         torso_arm_gap_ms = float((peak_arm_frac - peak_shoulder_frac) * dt * 1000.0)
 
         # ── Pelvis rotation at contact (Welch 1995; Fortenbaugh 2011) ────────────
-        # Rotation opened from swing start to contact. Signed magnitude: direction
-        # depends on handedness, and only the amount of opening is meaningful.
-        pelvis_rot_at_contact = float(
-            abs(pelvis_angle[contact_frame] - pelvis_angle[swing_start]) * 180.0 / np.pi
+        # The ABSOLUTE pelvis orientation at contact, which is what the literature's
+        # 40-75° range refers to and what the OpenCap pelvis_rotation curve plots.
+        # Previously this returned the change from swing start, a different quantity
+        # that read ~26° where the true angle was ~54°.
+        #
+        # Caveat: absolute angle is expressed in the capture's ground frame, so it
+        # shifts if the athlete is set up at a different orientation to the cameras.
+        # Comparable within a session; compare across sessions with care.
+        pelvis_rot_at_contact = float(abs(pelvis_angle[contact_frame]) * 180.0 / np.pi)
+
+        # Total rotation swept from the top of the backswing through to contact.
+        # Setup-orientation invariant, so this is the safer number for comparing
+        # one athlete's swings against another's.
+        pelvis_rot_excursion = float(
+            abs(pelvis_angle[contact_frame] - pelvis_angle[transition_frame]) * 180.0 / np.pi
         )
 
         # ── Pelvis deceleration rate after peak (Putnam 1993) ────────────────────
@@ -1384,8 +1477,11 @@ class RefinedHittingOptimizer:
             'pelvis_torso_contribution_pct': pelvis_torso_contribution,
             # Pelvis / lower-half metrics
             'x_factor_stretch_deg': x_factor_stretch,
+            'separation_signal_saturated': _sep_saturated,
             'torso_arm_sequence_gap_ms': torso_arm_gap_ms,
             'pelvis_rotation_at_contact_deg': pelvis_rot_at_contact,
+            'pelvis_rotation_excursion_deg': pelvis_rot_excursion,
+            'contact_detection_method': contact_method,
             'pelvis_decel_rate_deg_s2': pelvis_decel_rate,
             'time_to_peak_pelvis_ms': time_to_peak_pelvis_ms,
             # Exported so comprehensive_diagnosis() can express the peak relative to
@@ -2078,6 +2174,8 @@ class RefinedHittingOptimizer:
             x_factor_stretch_deg=rotation.get('x_factor_stretch_deg', 0.0) if rotation else 0.0,
             torso_arm_sequence_gap_ms=rotation.get('torso_arm_sequence_gap_ms', 0.0) if rotation else 0.0,
             pelvis_rotation_at_contact_deg=rotation.get('pelvis_rotation_at_contact_deg', 0.0) if rotation else 0.0,
+            pelvis_rotation_excursion_deg=rotation.get('pelvis_rotation_excursion_deg', 0.0) if rotation else 0.0,
+            contact_detection_method=rotation.get('contact_detection_method', 'none') if rotation else 'none',
             peak_lead_hip_ir_torque_Nm=lower_body.get('peak_lead_hip_ir_torque_Nm', 0.0),
             pelvis_decel_rate_deg_s2=rotation.get('pelvis_decel_rate_deg_s2', 0.0) if rotation else 0.0,
             time_to_peak_pelvis_ms=rotation.get('time_to_peak_pelvis_ms', 0.0) if rotation else 0.0,

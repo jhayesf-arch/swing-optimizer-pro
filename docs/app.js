@@ -17,6 +17,7 @@ const DEMO_DIAGNOSIS = {
         time_to_peak_pelvis_ms: 145, pelvis_rotation_at_contact_deg: 52.4,
         x_factor_stretch_deg: 13.6, torso_arm_sequence_gap_ms: 41,
         pelvis_decel_rate_deg_s2: 9200, peak_lead_hip_ir_torque_Nm: 46.8,
+        pelvis_rotation_excursion_deg: 79, contact_detection_method: 'peak_hand_speed',
     },
     findings: [
         'Optimal Proximal-to-Distal Kinetic Chain demonstrated.',
@@ -873,6 +874,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${m.peak_pelvis_omega_3d_deg_s > 0 ? createMetric('Peak Pelvis Speed', m.peak_pelvis_omega_3d_deg_s.toFixed(0), '°/s') : ''}
                 ${pelvisTimingHtml}
                 ${m.pelvis_rotation_at_contact_deg > 0 ? createMetric('Pelvis Open at Contact', m.pelvis_rotation_at_contact_deg.toFixed(0), '°') : ''}
+                ${m.pelvis_rotation_excursion_deg > 0 ? createMetric('Pelvis Rotation Swept', m.pelvis_rotation_excursion_deg.toFixed(0), '°') : ''}
                 ${m.x_factor_stretch_deg > 0 ? createMetric('X-Factor Stretch', m.x_factor_stretch_deg.toFixed(1), '°') : ''}
                 ${m.torso_arm_sequence_gap_ms !== 0 ? createMetric('Torso→Arm Gap', m.torso_arm_sequence_gap_ms.toFixed(0), 'ms') : ''}
                 ${m.pelvis_decel_rate_deg_s2 > 0 ? createMetric('Pelvis Decel Rate', (m.pelvis_decel_rate_deg_s2 / 1000).toFixed(1), 'k°/s²') : ''}
