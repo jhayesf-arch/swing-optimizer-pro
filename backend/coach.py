@@ -163,7 +163,7 @@ def build_grounding(payload: Dict) -> str:
         "estimated_hand_speed_mph": "Hand speed (mph)",
         "max_separation_deg": "Hip-shoulder separation (deg)",
         "peak_hip_power_W": "Peak hip power (W)",
-        "kinetic_chain_efficiency_pct": "Kinetic chain efficiency (%)",
+        "energy_transfer_proxy_pct": "Distal energy share, our proxy (%)",
         "sequence_timing_ms": "Pelvis-to-torso lag (ms)",
     }
     extra = [f"- {lbl}: {metrics[k]}" for k, lbl in headline.items()

@@ -4,12 +4,12 @@ const DEMO_DIAGNOSIS = {
     metrics: {
         estimated_hand_speed_mph: 24.2, max_hand_speed_mph: 24.2,
         max_separation_deg: 44.1, peak_hip_power_W: 3820, hip_power_per_kg: 14.2,
-        sequence_timing_ms: 48, kinetic_chain_efficiency_pct: 52.3,
+        sequence_timing_ms: 48, energy_transfer_proxy_pct: 52.3,
         torso_to_pelvis_rot_ratio: 1.31, total_energy_transfer_J: 412,
         stride_efficiency_pct: 94, stride_ratio: 0.74, proper_sequence: true,
         pelvis_ke_J: 98.4, torso_ke_J: 74.1, arm_ke_J: 61.2, bat_ke_J: 38.7,
         time_to_contact_s: 0.155, rotational_acceleration_deg_s2: 8400,
-        body_rotation_ratio_pct: 44.2,
+        pelvis_torso_contribution_pct: 44.2,
     },
     findings: [
         'Optimal Proximal-to-Distal Kinetic Chain demonstrated.',
@@ -50,7 +50,7 @@ const DEMO_DIAGNOSIS = {
                 { key: 'pelvis_direction_at_contact', label: 'Pelvis Direction at Contact', value: '18', unit: '°', stars: 4, percentile: 72, badge: 'satisfactory', description: 'Hips well open at contact.' },
                 { key: 'upper_torso_direction_at_contact', label: 'Upper Torso Direction at Contact', value: '28', unit: '°', stars: 3, percentile: 55, badge: 'satisfactory', description: 'Shoulders moderately open.' },
                 { key: 'lead_leg_block', label: 'Lead-Leg Block', value: '19.4', unit: '° ext', stars: 3, percentile: 52, badge: 'satisfactory', description: 'Lead (front) knee straightening from foot plant to contact. A firm, extending front leg posts up and whips energy into the barrel (Driveline OBP).' },
-                { key: 'kinetic_chain_efficiency', label: 'Kinetic Chain Efficiency', value: '52.3', unit: '%', stars: 5, percentile: 86, badge: 'excellent', description: 'Elite distal energy transfer.' },
+                { key: 'kinetic_chain_efficiency', label: 'Energy Transfer (proxy)', value: '52.3', unit: '%', stars: 5, percentile: 86, badge: 'excellent', description: 'Elite distal energy transfer.' },
                 { key: 'sequence_quality', label: 'Sequence Quality', value: '48', unit: 'ms', stars: 4, percentile: 74, badge: 'satisfactory', description: 'Good proximal-to-distal sequence timing.' },
                 { key: 'hand_speed', label: 'Hand / Bat Speed', value: '24.2', unit: 'mph', stars: 4, percentile: 77, badge: 'satisfactory', description: 'Above average hand speed for college level (Blast benchmark: 21-25 mph).' },
                 { key: 'follow_through_quality', label: 'Follow-Through Quality', value: '42', unit: '°', stars: 3, percentile: 61, badge: 'satisfactory', description: 'Adequate follow-through arc.' },
@@ -260,12 +260,12 @@ document.addEventListener('DOMContentLoaded', () => {
             ['Peak Hip Power', num(m.peak_hip_power_W, 0), 'W'],
             ['Relative Hip Power', num(m.hip_power_per_kg, 1), 'W/kg'],
             ['Sequence Timing', num(m.sequence_timing_ms, 0), 'ms'],
-            ['Kinetic Chain Efficiency', num(m.kinetic_chain_efficiency_pct, 1), '%'],
+            ['Energy Transfer (proxy)', num(m.energy_transfer_proxy_pct, 1), '%'],
             ['Torso / Pelvis Ratio', num(m.torso_to_pelvis_rot_ratio, 2), ''],
             ['Total Chain Energy', num(m.total_energy_transfer_J, 0), 'J'],
             ['Time to Contact', m.time_to_contact_s ? (m.time_to_contact_s * 1000).toFixed(0) : '—', 'ms'],
             ['Rotational Accel', m.rotational_acceleration_deg_s2 ? (m.rotational_acceleration_deg_s2 / 1000).toFixed(1) : '—', 'k°/s²'],
-            ['Body Rotation Ratio', num(m.body_rotation_ratio_pct, 1), '%'],
+            ['Pelvis Rotation Share', num(m.pelvis_torso_contribution_pct, 1), '%'],
             ['Stride Efficiency', num(m.stride_efficiency_pct, 0), '%'],
             ['Stride Ratio', num(m.stride_ratio, 2), 'x Ht'],
             ['Proper Sequence', m.proper_sequence ? 'Yes' : 'No', ''],
@@ -823,12 +823,12 @@ document.addEventListener('DOMContentLoaded', () => {
             ${createMetric('Peak Hip Power', (m.peak_hip_power_W || 0).toFixed(0), 'W')}
             ${createMetric('Rel. Hip Power', (m.hip_power_per_kg || 0).toFixed(1), 'W/kg')}
             ${createMetric('Sequence Timing', (m.sequence_timing_ms || 0).toFixed(0), 'ms')}
-            ${createMetric('Chain Efficiency', (m.kinetic_chain_efficiency_pct || 0).toFixed(1), '%')}
+            ${createMetric('Energy Transfer', (m.energy_transfer_proxy_pct || 0).toFixed(1), '%')}
             ${createMetric('Torso/Pelvis Ratio', (m.torso_to_pelvis_rot_ratio || 0).toFixed(2), '')}
             ${createMetric('Total Chain KE', (m.total_energy_transfer_J || 0).toFixed(0), 'J')}
             ${m.time_to_contact_s > 0 ? createMetric('Time to Contact', (m.time_to_contact_s * 1000).toFixed(0), 'ms') : ''}
             ${m.rotational_acceleration_deg_s2 > 0 ? createMetric('Rotational Accel', (m.rotational_acceleration_deg_s2 / 1000).toFixed(1), 'k°/s²') : ''}
-            ${m.body_rotation_ratio_pct > 0 ? createMetric('Body Rotation Ratio', (m.body_rotation_ratio_pct || 0).toFixed(1), '%') : ''}
+            ${m.pelvis_torso_contribution_pct > 0 ? createMetric('Pelvis Rotation Share', (m.pelvis_torso_contribution_pct || 0).toFixed(1), '%') : ''}
         `;
 
         const grf = diagnosis.grf_estimation || {};

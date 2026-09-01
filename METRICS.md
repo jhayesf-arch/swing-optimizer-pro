@@ -34,7 +34,7 @@ A plain-English explanation of every number in your swing report. No biomechanic
 ### Phase 4 — Contact & Follow‑Through (delivering the barrel)
 - **Pelvis Direction at Contact\*** — How "open" your hips are when you hit the ball. Good hitters have their hips already cleared/open at contact.
 - **Upper Torso Direction at Contact\*** — How open your shoulders are at contact (they should still lag the hips a touch).
-- **Kinetic Chain Efficiency** — How much of your total energy actually ends up in the arms and bat (the payoff of good sequencing).
+- **Energy Transfer** — How much of your total energy actually ends up in the arms and bat (the payoff of good sequencing). This is our own measure, not a standard one — best for tracking your own progress rather than ranking against others.
 - **Lead‑Leg Block\*** — How much your front knee *straightens* (extends) from foot plant to contact. A firm, extending front leg "posts up" and redirects your momentum into rotation. This is one of the strongest bat‑speed correlates in the Driveline OpenBiomechanics dataset — a soft, collapsing front leg leaks energy that should whip into the barrel.
 - **Sequence Quality\*** — Whether your body fires in the right *order* with the right timing (hips → torso → arms → hands), and how cleanly.
 - **Hand / Bat Speed\*** — Same as the headline number: peak hand speed through the zone (mph).
@@ -176,4 +176,11 @@ A graph showing how fast each body part is turning, in order, through the swing.
 Two honesty caveats worth knowing:
 - **Only Hand / Bat Speed is fully stratified across all four levels** (youth → high school → college → pro), via Blast Motion's published benchmarks. It's the most trustworthy comparison.
 - The other `*` metrics come mostly from **college- and pro-level studies**; the youth and high‑school corridors are reasonable estimates scaled down from those (no published youth/HS data exists yet).
-- Everything **without** a `*` (Negative Move, Pelvis Load, Upper Torso Load, Forward Move, Kinetic Chain Efficiency, Follow‑Through Quality, and the raw energy/power/GRF readouts) is a **relative benchmark** — great for tracking your own swing‑to‑swing progress, not for ranking against other players.
+- Everything **without** a `*` (Negative Move, Pelvis Load, Upper Torso Load, Forward Move, Energy Transfer, Follow‑Through Quality, and the raw energy/power/GRF readouts) is a **relative benchmark** — great for tracking your own swing‑to‑swing progress, not for ranking against other players.
+
+---
+
+### Where these numbers come from
+For the research basis of every metric — the citation behind it, how strong the
+evidence is, and which numbers are our own composites rather than established
+science — see **[METRICS_RESEARCH.md](METRICS_RESEARCH.md)**.

@@ -177,7 +177,7 @@ SWINGAI_THRESHOLDS = {
         'professional': [(90,1),(50,2),(36,3),(22,4),(12,5)],
     },
     'kinetic_chain_efficiency': {
-        # KCE% = (arm_ke + elbow_ke + bat_ke) / total_ke × 100.
+        # Distal energy share = (arm_ke + forearm_ke + bat_ke) / total_ke × 100.
         # SOURCE: No direct hitting literature with KE transfer ratios by level.
         # Driveline Baseball (internal research, publicly cited): distal KE fraction
         #   is a top predictor of bat speed. Elite MLB ~45-65% distal transfer.
@@ -274,7 +274,7 @@ SWINGAI_LABELS = {
     'upper_torso_rotation_range': 'Upper Torso Total Rotation Range',
     'pelvis_direction_at_contact': 'Pelvis Direction at Contact',
     'upper_torso_direction_at_contact': 'Upper Torso Direction at Contact',
-    'kinetic_chain_efficiency': 'Kinetic Chain Efficiency',
+    'kinetic_chain_efficiency': 'Energy Transfer',
     'sequence_quality': 'Sequence Quality',
     'hand_speed': 'Hand / Bat Speed',
     'follow_through_quality': 'Follow-Through Quality',
@@ -445,7 +445,7 @@ SKILL_LEVEL_BENCHMARKS = {
         # Time to Contact: Blast Motion database: Youth 0.17-0.23 s
         'time_to_contact_range_s': (0.17, 0.23),
         # Body Rotation Ratio: Blast Motion: optimal 40-50% for all levels
-        'body_rotation_ratio_pct': (40, 50),
+        'pelvis_torso_contribution_pct': (40, 50),
     },
     'high_school': {
         # Power: Blast Motion database: HS Varsity 2,300-4,300 W
@@ -460,7 +460,7 @@ SKILL_LEVEL_BENCHMARKS = {
         'max_hand_speed_mph': (20, 26),
         # Time to Contact: Blast Motion database: HS Varsity 0.14-0.18 s
         'time_to_contact_range_s': (0.14, 0.18),
-        'body_rotation_ratio_pct': (40, 50),
+        'pelvis_torso_contribution_pct': (40, 50),
     },
     'college': {
         # Power: Blast Motion database: College 2,750-4,750 W
@@ -475,7 +475,7 @@ SKILL_LEVEL_BENCHMARKS = {
         'max_hand_speed_mph': (21, 27),
         # Time to Contact: Blast Motion database: College 0.14-0.18 s
         'time_to_contact_range_s': (0.14, 0.18),
-        'body_rotation_ratio_pct': (40, 50),
+        'pelvis_torso_contribution_pct': (40, 50),
     },
     'professional': {
         # Power: Blast Motion database: Professional MLB 3,650-5,650 W
@@ -490,7 +490,7 @@ SKILL_LEVEL_BENCHMARKS = {
         'max_hand_speed_mph': (23, 29),
         # Time to Contact: Blast Motion database: Professional 0.13-0.17 s
         'time_to_contact_range_s': (0.13, 0.17),
-        'body_rotation_ratio_pct': (40, 50),
+        'pelvis_torso_contribution_pct': (40, 50),
     },
 }
 
@@ -514,17 +514,21 @@ class RefinedSwingMetrics:
     plant_frame: int
     plant_method: str
     estimated_hand_speed_mph: float
-    overall_efficiency: int
+    # Internal composite grade, not a literature metric. Formula documented in
+    # METRICS.md; versioned so the number can be compared across releases.
+    swing_composite_score_v1: int
     # Driveline-inspired Energy Transfer Metrics
     pelvis_ke_J: float = 0.0
     torso_ke_J: float = 0.0
     arm_ke_J: float = 0.0
-    elbow_ke_J: float = 0.0
+    forearm_ke_J: float = 0.0
     total_energy_transfer_J: float = 0.0
     torso_to_arm_transfer_ratio: float = 0.0
     pelvis_to_torso_transfer_ratio: float = 0.0
     torso_to_pelvis_rot_ratio: float = 0.0
-    kinetic_chain_efficiency_pct: float = 0.0
+    # Share of chain energy reaching the distal segments. "Efficiency" has no
+    # standard definition in the literature — this is our own ratio, hence _proxy_.
+    energy_transfer_proxy_pct: float = 0.0
     # Full 6-DOF Pelvis
     pelvis_tilt_range_deg: float = 0.0
     pelvis_list_range_deg: float = 0.0
@@ -545,7 +549,10 @@ class RefinedSwingMetrics:
     peak_ankle_torque_l_Nm: float = 0.0
     peak_knee_power_r_W: float = 0.0
     peak_knee_power_l_W: float = 0.0
-    # Linear inverse dynamics (pelvis segment F=ma)
+    # Linear inverse dynamics (pelvis segment F=ma).
+    # PROXY, not a true joint reaction force: derived from segment kinematics with
+    # no measured ground reaction force, so the ground-contact term is absent.
+    # Use for relative/between-swing comparison, not absolute load. See METRICS.md.
     peak_pelvis_force_ap_N: float = 0.0   # anterior-posterior (tx)
     peak_pelvis_force_vert_N: float = 0.0  # vertical (ty)
     peak_pelvis_force_lat_N: float = 0.0   # lateral (tz)
@@ -563,9 +570,33 @@ class RefinedSwingMetrics:
     # Blast Motion-aligned metrics
     time_to_contact_s: float = 0.0
     rotational_acceleration_deg_s2: float = 0.0
-    body_rotation_ratio_pct: float = 0.0
+    pelvis_torso_contribution_pct: float = 0.0
     max_hand_speed_mph: float = 0.0
     peak_pelvis_omega_3d_deg_s: float = 0.0
+    # ── Pelvis / lower-half metrics (see METRICS.md for citations) ──────────
+    # X-Factor Stretch: separation gained AFTER transition begins, over and above
+    # the separation already held at the top. Cheetham et al. (2001, 2008) found
+    # stretch — not static X-Factor — is the stronger clubhead/bat-speed correlate.
+    x_factor_stretch_deg: float = 0.0
+    # Second link of the kinetic chain. sequence_timing_ms covers pelvis→torso;
+    # this covers torso→lead arm. Kwon et al. (2013).
+    torso_arm_sequence_gap_ms: float = 0.0
+    # Pelvis rotation opened from swing start to contact. Single-frame read, so it
+    # carries no derivative noise — the most robust metric in this group on
+    # markerless data. Welch et al. (1995); Fortenbaugh et al. (2011): 40–75° in pros.
+    pelvis_rotation_at_contact_deg: float = 0.0
+    # Peak lead-hip internal-rotation torque — the drive behind pelvis rotation.
+    # MacWilliams et al. (1998).
+    peak_lead_hip_ir_torque_Nm: float = 0.0
+    # Rate the pelvis sheds angular velocity after its peak. Putnam (1993): rapid
+    # proximal deceleration is what transfers momentum distally. A pelvis that stays
+    # fast is a pelvis that never handed its energy up the chain.
+    pelvis_decel_rate_deg_s2: float = 0.0
+    # Time from swing start to peak pelvis angular velocity.
+    time_to_peak_pelvis_ms: float = 0.0
+    # Same, measured from front-foot plant — the form reported in the literature.
+    # Welch et al. (1995): elite hitters peak ~50–100 ms after plant.
+    time_to_peak_pelvis_from_plant_ms: float = 0.0
 
 def _build_data_quality(trc_metrics: dict, has_grf: bool = False) -> dict:
     """
@@ -612,7 +643,7 @@ def _build_data_quality(trc_metrics: dict, has_grf: bool = False) -> dict:
             "moderate": [
                 "peak_hip_torque_Nm (no GRF)",
                 "peak_knee_torque_Nm (no GRF)",
-                "kinetic_chain_efficiency_pct",
+                "energy_transfer_proxy_pct",
                 "estimated_hand_speed_mph (angular velocity method)" if not has_trc
                 else "max_hand_speed_mph (TRC wrist markers — valid, but monocular reconstruction has high geometric sensitivity: accuracy degrades when wrist trajectory has large depth component relative to camera axis. Cross-session comparisons unreliable; use within-session trends only.)",
             ],
@@ -1176,7 +1207,9 @@ class RefinedHittingOptimizer:
         peak_shoulder_w_capped = min(peak_shoulder_w, 2.0 * peak_pelvis_w)
         torso_ke  = 0.5 * trunk_I * (peak_shoulder_w_capped ** 2)
         arm_ke    = 0.5 * (upper_arm_I + forearm_I) * 2 * (peak_arm_w_val ** 2)
-        elbow_ke  = 0.5 * forearm_I * 2 * (peak_elb_w_val ** 2)
+        # Forearm segment KE about the elbow. Named for the segment that carries the
+        # energy, not the joint it rotates about — the elbow itself has no inertia.
+        forearm_ke = 0.5 * forearm_I * 2 * (peak_elb_w_val ** 2)
 
         # Bat KE = translational (½mv²) + rotational (½Iω²).
         # Translational term uses measured wrist speed from TRC markers when available
@@ -1190,15 +1223,19 @@ class RefinedHittingOptimizer:
         bat_ke_rot = 0.5 * bat_I * (peak_arm_w_val ** 2)
         bat_ke = bat_ke_trans + bat_ke_rot
 
-        total_energy_transfer = pelvis_ke + torso_ke + arm_ke + elbow_ke + bat_ke
+        total_energy_transfer = pelvis_ke + torso_ke + arm_ke + forearm_ke + bat_ke
 
         torso_to_arm_ratio       = torso_ke / (arm_ke + eps)
         pelvis_to_torso_ratio    = pelvis_ke / (torso_ke + eps)
         torso_to_pelvis_rot_ratio = peak_shoulder_w_capped / (peak_pelvis_w + eps)
 
-        # KCE: fraction of total chain energy that reaches the distal segments (arms + bat)
-        distal_ke = arm_ke + elbow_ke + bat_ke
-        chain_efficiency = (distal_ke / (total_energy_transfer + eps)) * 100.0
+        # Fraction of total chain energy that reaches the distal segments (arms + bat).
+        # Deliberately NOT called "efficiency": the literature has no agreed formula for
+        # kinetic-chain efficiency, and a true one would follow joint-power flow
+        # (Robertson & Winter 1980), not a ratio of peak segment energies. This is our
+        # own defined proxy — see METRICS.md.
+        distal_ke = arm_ke + forearm_ke + bat_ke
+        energy_transfer_proxy = (distal_ke / (total_energy_transfer + eps)) * 100.0
         
         # =========================================================================
         # BLAST MOTION-ALIGNED METRICS
@@ -1219,11 +1256,12 @@ class RefinedHittingOptimizer:
                 arm_alpha = np.gradient(arm_omega, dt)
         peak_rotational_accel = float(np.max(np.abs(arm_alpha[swing_start:])) * 180.0 / np.pi)  # deg/s²
 
-        # Body Rotation Ratio: pelvis/shoulder contribution to total rotation
-        # Blast defines as body rotation / total rotation during downswing (optimal 40-50%)
-        # Approximated as: pelvis_omega contribution vs total (pelvis + arm) omega at peak
+        # Pelvis share of total rotational contribution (pelvis vs pelvis + arm) at peak.
+        # Conceptually aligned with Blast Motion's "Body Rotation", but NOT that metric:
+        # their formula is proprietary and unpublished, so this is our own approximation
+        # and the two should not be expected to agree numerically.
         total_omega_at_peak = peak_pelvis_w + peak_arm_w_val + eps
-        body_rotation_ratio = float((peak_pelvis_w / total_omega_at_peak) * 100.0)
+        pelvis_torso_contribution = float((peak_pelvis_w / total_omega_at_peak) * 100.0)
 
         # ── 3D Angular Velocity Magnitude (matches Driveline's angular_velocity columns) ──
         def _omega_1d(col):
@@ -1242,6 +1280,51 @@ class RefinedHittingOptimizer:
         torso_omega_3d = np.sqrt(lumbar_omega**2 + torso_omega_x**2)
         peak_pelvis_omega_3d = float(np.max(pelvis_omega_3d[swing_start:]))
         peak_torso_omega_3d  = float(np.max(torso_omega_3d[swing_start:]))
+
+        # =========================================================================
+        # PELVIS / LOWER-HALF METRICS  (citations in METRICS.md)
+        # =========================================================================
+        # Contact proxy. Peak pelvis omega is the same event time_to_contact_s uses,
+        # so every "at contact" metric here is anchored to one consistent instant.
+        contact_frame = int(min(max(peak_pelvis_frame_global, swing_start),
+                                len(pelvis_angle) - 1))
+
+        # ── X-Factor Stretch (Cheetham et al. 2001, 2008) ────────────────────────
+        # Separation gained after the transition, above what was already held at the
+        # top. max_separation_deg alone cannot distinguish a hitter who coils to 45°
+        # and holds it from one who coils to 45° and stretches to 60° as the pelvis
+        # fires — the second is the power pattern, and only stretch sees it.
+        sep_at_start = float(abs(separation_full[swing_start])) if swing_start < len(separation_full) else 0.0
+        x_factor_stretch = float(max(0.0, max_separation - sep_at_start))
+
+        # ── Torso → lead arm sequence gap (Kwon et al. 2013) ─────────────────────
+        # sequence_timing_ms already reports pelvis→torso; this is the next link.
+        # Both use the same sub-frame peaks, so the two gaps sum to pelvis→arm.
+        torso_arm_gap_ms = float((peak_arm_frac - peak_shoulder_frac) * dt * 1000.0)
+
+        # ── Pelvis rotation at contact (Welch 1995; Fortenbaugh 2011) ────────────
+        # Rotation opened from swing start to contact. Signed magnitude: direction
+        # depends on handedness, and only the amount of opening is meaningful.
+        pelvis_rot_at_contact = float(
+            abs(pelvis_angle[contact_frame] - pelvis_angle[swing_start]) * 180.0 / np.pi
+        )
+
+        # ── Pelvis deceleration rate after peak (Putnam 1993) ────────────────────
+        # Steepest negative slope of pelvis omega in the 200 ms after its peak. The
+        # proximal segment braking is the mechanism that drives the distal segment;
+        # a pelvis that decelerates slowly is leaking energy rather than passing it.
+        _decel_hi = min(len(pelvis_om3d), peak_hip_frame + int(0.20 * fs) + 1)
+        if _decel_hi - peak_hip_frame >= 3:
+            _decel_seg = pelvis_om3d[peak_hip_frame:_decel_hi]
+            _decel_slope = np.gradient(_decel_seg, dt)          # rad/s²
+            pelvis_decel_rate = float(abs(np.min(_decel_slope)) * 180.0 / np.pi)
+        else:
+            pelvis_decel_rate = 0.0
+
+        # ── Time to peak pelvis angular velocity ─────────────────────────────────
+        # From swing start. The plant-relative form the literature reports is added
+        # later in comprehensive_diagnosis(), where the plant frame is known.
+        time_to_peak_pelvis_ms = float((peak_hip_frac - swing_start) * dt * 1000.0)
 
         return {
             'peak_hip_torque_Nm': float(peak_hip_torque),
@@ -1288,17 +1371,27 @@ class RefinedHittingOptimizer:
             'pelvis_ke_J': float(pelvis_ke),
             'torso_ke_J': float(torso_ke),
             'arm_ke_J': float(arm_ke),
-            'elbow_ke_J': float(elbow_ke),
+            'forearm_ke_J': float(forearm_ke),
             'bat_ke_J': float(bat_ke),
             'total_energy_transfer_J': float(total_energy_transfer),
             'torso_to_arm_transfer_ratio': float(torso_to_arm_ratio),
             'pelvis_to_torso_transfer_ratio': float(pelvis_to_torso_ratio),
             'torso_to_pelvis_rot_ratio': float(torso_to_pelvis_rot_ratio),
-            'kinetic_chain_efficiency_pct': float(chain_efficiency),
+            'energy_transfer_proxy_pct': float(energy_transfer_proxy),
             # Blast Motion-aligned metrics
             'time_to_contact_s': time_to_contact_s,
             'rotational_acceleration_deg_s2': peak_rotational_accel,
-            'body_rotation_ratio_pct': body_rotation_ratio,
+            'pelvis_torso_contribution_pct': pelvis_torso_contribution,
+            # Pelvis / lower-half metrics
+            'x_factor_stretch_deg': x_factor_stretch,
+            'torso_arm_sequence_gap_ms': torso_arm_gap_ms,
+            'pelvis_rotation_at_contact_deg': pelvis_rot_at_contact,
+            'pelvis_decel_rate_deg_s2': pelvis_decel_rate,
+            'time_to_peak_pelvis_ms': time_to_peak_pelvis_ms,
+            # Exported so comprehensive_diagnosis() can express the peak relative to
+            # the plant frame, which is not known until stride analysis has run.
+            'peak_pelvis_frame': float(peak_hip_frac),
+            'contact_frame': int(contact_frame),
         }
         
     def _stride_from_markers(self, trc_data: pd.DataFrame, data: pd.DataFrame,
@@ -1534,6 +1627,25 @@ class RefinedHittingOptimizer:
                 result[f'peak_{seg}_torque_{side}_Nm'] = float(np.max(np.abs(torque)))
                 result[f'peak_{seg}_power_{side}_W']   = float(np.max(np.abs(power)))
 
+        # ── Lead-hip internal-rotation torque (MacWilliams et al. 1998) ─────────
+        # The lead hip is what actually drives pelvis rotation, so its IR torque is
+        # the kinetic counterpart to peak pelvis angular velocity: same event, one
+        # measured as cause and one as effect. A hitter can show respectable pelvis
+        # speed off a passive fall rather than an active drive, and only the torque
+        # separates those.
+        #
+        # Lead leg follows handedness: a right-handed hitter strides onto the left
+        # leg. Where handedness is unknown we leave this at 0 rather than guess —
+        # picking the wrong leg reports the trail hip, which is a different action.
+        lead_hip_side = {'right': 'l', 'left': 'r'}.get(self.handedness)
+        if lead_hip_side is not None:
+            hip_rot = result.get(f'hip_rot_{lead_hip_side}')
+            if hip_rot is not None:
+                hip_rot_alpha = _diff2(np.deg2rad(hip_rot))
+                result['peak_lead_hip_ir_torque_Nm'] = float(
+                    np.max(np.abs(thigh_I * hip_rot_alpha))
+                )
+
         # ── Bilateral arm kinematics ────────────────────────────────────────
         for col, key in [('arm_flex_l', 'arm_flex_l'), ('elbow_flex_l', 'elbow_flex_l'),
                           ('pro_sup_r', 'prosup_r'), ('pro_sup_l', 'prosup_l')]:
@@ -1753,7 +1865,7 @@ class RefinedHittingOptimizer:
                 findings.append("Elite Lower-Half Power Generation.")
                 
             # === DRIVELINE-INSPIRED: ENERGY TRANSFER ANALYSIS ===
-            chain_eff = rotation.get('kinetic_chain_efficiency_pct', 0.0)
+            chain_eff = rotation.get('energy_transfer_proxy_pct', 0.0)
             torso_arm_ratio = rotation.get('torso_to_arm_transfer_ratio', 0.0)
             pelvis_torso_ratio = rotation.get('pelvis_to_torso_transfer_ratio', 0.0)
             torso_pelvis_rot = rotation.get('torso_to_pelvis_rot_ratio', 0.0)
@@ -1871,6 +1983,26 @@ class RefinedHittingOptimizer:
                 recommendations.append("Pelvis should return near center by front foot plant. Excessive lateral displacement at contact reduces rotational power.")
                 efficiency_score -= 5
 
+        # === TIME TO PEAK PELVIS ANGULAR VELOCITY, RELATIVE TO FOOT PLANT ===
+        # Welch et al. (1995) report this interval from front-foot plant, not from
+        # swing start, and elite hitters cluster around 50–100 ms. It is computed
+        # here rather than in calculate_rotational_metrics() because the plant frame
+        # is not known until stride analysis has run.
+        #
+        # Negative means the pelvis peaked before the foot ever landed — the athlete
+        # spun open early instead of rotating against a planted front side. That is a
+        # real and diagnostic pattern, so the sign is preserved rather than clamped.
+        time_to_peak_pelvis_from_plant_ms = 0.0
+        if rotation and stride:
+            _peak_pelvis_frame = rotation.get('peak_pelvis_frame')
+            _plant = stride.get('plant_frame')
+            _dt_kin = kinematics['time'].diff().mean()
+            if (_peak_pelvis_frame is not None and _plant is not None
+                    and _dt_kin and _dt_kin > 0):
+                time_to_peak_pelvis_from_plant_ms = float(
+                    (_peak_pelvis_frame - _plant) * _dt_kin * 1000.0
+                )
+
         metrics = RefinedSwingMetrics(
             peak_hip_torque_Nm=rotation['peak_hip_torque_Nm'] if rotation else 0.0,
             peak_shoulder_torque_Nm=rotation['peak_shoulder_torque_Nm'] if rotation else 0.0,
@@ -1890,17 +2022,17 @@ class RefinedHittingOptimizer:
             plant_frame=stride['plant_frame'] if stride else 0,
             plant_method=stride['plant_method'] if stride else "none",
             estimated_hand_speed_mph=hand_speed['estimated_hand_speed_mph'] if hand_speed else 0.0,
-            overall_efficiency=max(0, efficiency_score),
+            swing_composite_score_v1=max(0, efficiency_score),
             # Driveline Energy Transfer Metrics
             pelvis_ke_J=rotation.get('pelvis_ke_J', 0.0) if rotation else 0.0,
             torso_ke_J=rotation.get('torso_ke_J', 0.0) if rotation else 0.0,
             arm_ke_J=rotation.get('arm_ke_J', 0.0) if rotation else 0.0,
-            elbow_ke_J=rotation.get('elbow_ke_J', 0.0) if rotation else 0.0,
+            forearm_ke_J=rotation.get('forearm_ke_J', 0.0) if rotation else 0.0,
             total_energy_transfer_J=rotation.get('total_energy_transfer_J', 0.0) if rotation else 0.0,
             torso_to_arm_transfer_ratio=rotation.get('torso_to_arm_transfer_ratio', 0.0) if rotation else 0.0,
             pelvis_to_torso_transfer_ratio=rotation.get('pelvis_to_torso_transfer_ratio', 0.0) if rotation else 0.0,
             torso_to_pelvis_rot_ratio=rotation.get('torso_to_pelvis_rot_ratio', 0.0) if rotation else 0.0,
-            kinetic_chain_efficiency_pct=rotation.get('kinetic_chain_efficiency_pct', 0.0) if rotation else 0.0,
+            energy_transfer_proxy_pct=rotation.get('energy_transfer_proxy_pct', 0.0) if rotation else 0.0,
             # Full 6-DOF pelvis
             pelvis_tilt_range_deg=weight_shift.get('pelvis_tilt_range_deg', 0.0),
             pelvis_list_range_deg=weight_shift.get('pelvis_list_range_deg', 0.0),
@@ -1939,9 +2071,17 @@ class RefinedHittingOptimizer:
             # Blast Motion-aligned metrics
             time_to_contact_s=rotation.get('time_to_contact_s', 0.0) if rotation else 0.0,
             rotational_acceleration_deg_s2=rotation.get('rotational_acceleration_deg_s2', 0.0) if rotation else 0.0,
-            body_rotation_ratio_pct=rotation.get('body_rotation_ratio_pct', 0.0) if rotation else 0.0,
+            pelvis_torso_contribution_pct=rotation.get('pelvis_torso_contribution_pct', 0.0) if rotation else 0.0,
             max_hand_speed_mph=trc_metrics.get('max_hand_speed_mph', 0.0),
             peak_pelvis_omega_3d_deg_s=rotation.get('peak_pelvis_omega_3d_deg_s', 0.0) if rotation else 0.0,
+            # Pelvis / lower-half metrics
+            x_factor_stretch_deg=rotation.get('x_factor_stretch_deg', 0.0) if rotation else 0.0,
+            torso_arm_sequence_gap_ms=rotation.get('torso_arm_sequence_gap_ms', 0.0) if rotation else 0.0,
+            pelvis_rotation_at_contact_deg=rotation.get('pelvis_rotation_at_contact_deg', 0.0) if rotation else 0.0,
+            peak_lead_hip_ir_torque_Nm=lower_body.get('peak_lead_hip_ir_torque_Nm', 0.0),
+            pelvis_decel_rate_deg_s2=rotation.get('pelvis_decel_rate_deg_s2', 0.0) if rotation else 0.0,
+            time_to_peak_pelvis_ms=rotation.get('time_to_peak_pelvis_ms', 0.0) if rotation else 0.0,
+            time_to_peak_pelvis_from_plant_ms=time_to_peak_pelvis_from_plant_ms,
         )
         
         # Terminal printing if verbose
@@ -2407,7 +2547,7 @@ class RefinedHittingOptimizer:
         }
 
         # Kinetic Chain Efficiency
-        chain_eff = rotation.get('kinetic_chain_efficiency_pct', 0.0) if rotation else 0.0
+        chain_eff = rotation.get('energy_transfer_proxy_pct', 0.0) if rotation else 0.0
         kce_stars = self._rate_dimension('kinetic_chain_efficiency', chain_eff)
         dims['kinetic_chain_efficiency'] = {
             'label': SWINGAI_LABELS['kinetic_chain_efficiency'],
