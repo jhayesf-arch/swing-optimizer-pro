@@ -10,6 +10,14 @@ const DEMO_DIAGNOSIS = {
         pelvis_ke_J: 98.4, torso_ke_J: 74.1, arm_ke_J: 61.2, bat_ke_J: 38.7,
         time_to_contact_s: 0.155, rotational_acceleration_deg_s2: 8400,
         pelvis_torso_contribution_pct: 44.2,
+        // Pelvis & lower half. Values sit in the ranges the literature reports for
+        // a well-sequenced swing, so the demo shows the panel as it looks when the
+        // capture is good rather than as an empty shell.
+        peak_pelvis_omega_3d_deg_s: 714, time_to_peak_pelvis_from_plant_ms: 78,
+        time_to_peak_pelvis_ms: 145, pelvis_rotation_at_contact_deg: 52.4,
+        x_factor_stretch_deg: 13.6, torso_arm_sequence_gap_ms: 41,
+        pelvis_decel_rate_deg_s2: 9200, peak_lead_hip_ir_torque_Nm: 46.8,
+        pelvis_list_range_deg: 9.3,
     },
     findings: [
         'Optimal Proximal-to-Distal Kinetic Chain demonstrated.',
@@ -843,6 +851,36 @@ document.addEventListener('DOMContentLoaded', () => {
             ${grf.peak_grf_vert_BW ? createMetric('Peak GRF Vert', (grf.peak_grf_vert_BW * 100).toFixed(0), '% BW') : ''}
             ${grf.peak_grf_ap_N ? createMetric('Peak GRF AP', grf.peak_grf_ap_N.toFixed(0), 'N') : ''}
         `;
+
+        // ---- PELVIS & LOWER HALF ----
+        // Each tile is gated on its own value rather than on the panel as a whole:
+        // these come from different signals and fail independently. Lead-hip torque
+        // in particular is 0 whenever handedness is unknown, and an empty tile is
+        // more honest there than a zero that reads like a measurement.
+        //
+        // Timing is shown from foot plant when the plant frame was found, since that
+        // is the anchor the literature uses; otherwise it falls back to swing start
+        // and the label says so, so the two are never mistaken for each other.
+        const plantMs = m.time_to_peak_pelvis_from_plant_ms;
+        const pelvisTimingHtml = (plantMs !== undefined && plantMs !== 0)
+            ? createMetric('Pelvis Peak (from plant)', plantMs.toFixed(0), 'ms')
+            : (m.time_to_peak_pelvis_ms > 0
+                ? createMetric('Pelvis Peak (from start)', m.time_to_peak_pelvis_ms.toFixed(0), 'ms')
+                : '');
+
+        const pelvisPanelEl = document.getElementById('pelvis-metrics');
+        if (pelvisPanelEl) {
+            pelvisPanelEl.innerHTML = `
+                ${m.peak_pelvis_omega_3d_deg_s > 0 ? createMetric('Peak Pelvis Speed', m.peak_pelvis_omega_3d_deg_s.toFixed(0), '°/s') : ''}
+                ${pelvisTimingHtml}
+                ${m.pelvis_rotation_at_contact_deg > 0 ? createMetric('Pelvis Open at Contact', m.pelvis_rotation_at_contact_deg.toFixed(0), '°') : ''}
+                ${m.x_factor_stretch_deg > 0 ? createMetric('X-Factor Stretch', m.x_factor_stretch_deg.toFixed(1), '°') : ''}
+                ${m.torso_arm_sequence_gap_ms !== 0 ? createMetric('Torso→Arm Gap', m.torso_arm_sequence_gap_ms.toFixed(0), 'ms') : ''}
+                ${m.pelvis_decel_rate_deg_s2 > 0 ? createMetric('Pelvis Decel Rate', (m.pelvis_decel_rate_deg_s2 / 1000).toFixed(1), 'k°/s²') : ''}
+                ${m.peak_lead_hip_ir_torque_Nm > 0 ? createMetric('Lead Hip IR Torque', m.peak_lead_hip_ir_torque_Nm.toFixed(1), 'N·m') : ''}
+                ${m.pelvis_list_range_deg > 0 ? createMetric('Pelvis Obliquity', m.pelvis_list_range_deg.toFixed(1), '°') : ''}
+            `;
+        }
 
         // Reset advanced panel state
         document.getElementById('advanced-panels').classList.add('hidden');
