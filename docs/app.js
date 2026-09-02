@@ -801,6 +801,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // ---- FINDINGS & RECOMMENDATIONS ----
+        setMetricEvidence(diagnosis.metric_evidence);
         const findingsList = document.getElementById('findings-list');
         const recList = document.getElementById('recommendation-list');
         
@@ -814,7 +815,9 @@ document.addEventListener('DOMContentLoaded', () => {
         recList.innerHTML = '';
         diagnosis.recommendations.forEach(r => {
             const li = document.createElement('li');
-            li.textContent = r;
+            const chip = prescriptionChip(r, diagnosis.metrics);
+            li.innerHTML = `<span class="rx-text"></span>${chip}`;
+            li.querySelector('.rx-text').textContent = r;
             recList.appendChild(li);
         });
 
@@ -1475,12 +1478,55 @@ document.addEventListener('DOMContentLoaded', () => {
         if (value === 'NO') valClass = 'val-bad';
         if (value === 'YES') valClass = 'val-good';
 
+        const ev = evKey ? __evidence[evKey] : null;
+        // Description comes from the evidence registry rather than a second list,
+        // so the explanation and the citation can never drift apart.
+        const desc = ev && ev.note ? `<div class="metric-desc">${ev.note}</div>` : '';
+        const warnLine = ev && !ev.reliable && ev.caveat
+            ? `<div class="metric-caveat">${ev.caveat}</div>` : '';
         return `
-        <div class="metric-item">
+        <div class="metric-item${ev && !ev.reliable ? ' metric-unreliable' : ''}">
             <div class="metric-label">${label}${evidenceBadge(evKey)}</div>
             <div class="metric-value ${valClass}">${value}<span style="font-size:0.6em; margin-left:2px">${unit}</span></div>
+            ${desc}${warnLine}
         </div>
         `;
+    }
+
+    // Ties each prescription to the number that triggered it. The backend emits
+    // findings and recommendations as prose; this matches a recommendation to the
+    // metric it is about so the athlete sees their own value next to the advice
+    // instead of generic guidance with no anchor.
+    // Ordered most-specific first: recommendations often mention a general term
+    // like "rotational power" while actually being about a specific joint, so a
+    // loose pattern placed early mislabels them.
+    const RX_METRIC_PATTERNS = [
+        [/trail knee|front knee|lead knee|blocking|post up|knee/i, 'peak_knee_torque_l_Nm', 'Your lead knee torque'],
+        [/lateral sway|rotational axis|near center|centered|lateral displacement/i, 'lateral_sway_range_m', 'Your lateral sway'],
+        [/separation|x-?factor|obliques|coil/i,  'max_separation_deg',  'Your separation'],
+        [/sequence|pelvis.?first|ground up|proximal/i, 'sequence_timing_ms', 'Your pelvis\u2192torso lag'],
+        [/hand speed|bat speed|barrel/i,         'max_hand_speed_mph',  'Your hand speed'],
+        [/stride/i,                              'stride_ratio',        'Your stride'],
+        [/pelvis (speed|velocity|rotation)/i,    'peak_pelvis_omega_3d_deg_s', 'Your pelvis speed'],
+        [/hip power|rotational power/i,          'hip_power_per_kg',    'Your hip power'],
+    ];
+    const RX_UNITS = {
+        sequence_timing_ms: 'ms', max_separation_deg: '\u00b0', max_hand_speed_mph: 'mph',
+        lateral_sway_range_m: 'm', stride_ratio: '\u00d7 Ht', hip_power_per_kg: 'W/kg',
+        peak_knee_torque_l_Nm: 'N\u00b7m', peak_pelvis_omega_3d_deg_s: '\u00b0/s',
+    };
+    function prescriptionChip(text, metrics) {
+        for (const [re, key, label] of RX_METRIC_PATTERNS) {
+            if (!re.test(text)) continue;
+            const v = metrics ? metrics[key] : undefined;
+            if (v === undefined || v === null || v === 0) continue;
+            const ev = __evidence[key];
+            const dp = Math.abs(v) < 10 ? 2 : 0;
+            const cls = ev && !ev.reliable ? 'rx-chip rx-chip-warn' : 'rx-chip';
+            const warn = ev && !ev.reliable ? ' \u2014 not reliable on this capture' : '';
+            return `<span class="${cls}">${label}: <strong>${Number(v).toFixed(dp)}${RX_UNITS[key] || ''}</strong>${warn}</span>`;
+        }
+        return '';
     }
 
     // -----------------------------------------

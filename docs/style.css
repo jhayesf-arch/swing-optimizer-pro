@@ -1306,3 +1306,17 @@ label.btn { cursor: pointer; }
   font-size:0.6em;font-weight:700;line-height:1.5;vertical-align:middle;cursor:help;
   background:rgba(245,158,11,.18);color:#f59e0b;border:1px solid rgba(245,158,11,.4)}
 .ev-legend{margin-top:.8rem;font-size:.72rem;opacity:.75;line-height:1.6}
+
+/* Metric description + capture caveat, shown under the value */
+.metric-desc{margin-top:.35rem;font-size:.68rem;line-height:1.45;opacity:.62}
+.metric-caveat{margin-top:.3rem;font-size:.66rem;line-height:1.45;
+  color:#f59e0b;opacity:.9}
+.metric-unreliable .metric-value{opacity:.55}
+
+/* Prescription chips: the athlete's own number next to the advice */
+.rx-chip{display:inline-block;margin-left:.5rem;padding:.12rem .45rem;border-radius:4px;
+  font-size:.7rem;white-space:nowrap;background:rgba(56,189,248,.14);color:#7dd3fc;
+  border:1px solid rgba(56,189,248,.3)}
+.rx-chip-warn{background:rgba(245,158,11,.14);color:#fbbf24;
+  border-color:rgba(245,158,11,.32);white-space:normal}
+.rx-text{display:inline}
