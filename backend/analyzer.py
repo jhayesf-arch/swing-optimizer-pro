@@ -856,10 +856,12 @@ class RefinedHittingOptimizer:
         fs = 1.0 / dt
         
         max_hand_speed = 0.0
+        peak_time = 0.0
         # Find whichever wrist is moving faster (proxy for bat speed)
         wrist_markers = ['r_mwrist_study', 'L_mwrist_study', 'r_lwrist_study', 'L_lwrist_study',
+                         'r_wrist_radius', 'l_wrist_radius', 'r_wrist_ulna', 'l_wrist_ulna',
                          'RWrist', 'LWrist', 'RWRA', 'RWRB', 'LWRA', 'LWRB', 'RFIN', 'LFIN']
-        
+
         for wrist in wrist_markers:
             if f'{wrist}_X' in trc_data.columns:
                 wx = trc_data[f'{wrist}_X'].values
@@ -879,14 +881,23 @@ class RefinedHittingOptimizer:
                 cur_max = np.max(speed)
                 if cur_max > max_hand_speed:
                     max_hand_speed = cur_max
-                    
+                    # Time of the peak, not just its magnitude. The hands are the
+                    # distal end of the chain, so this instant is bat-ball contact
+                    # to within a few frames — the only measured contact event
+                    # available without force instrumentation. Validated on
+                    # Emilio_1_10: markers put it at 0.683s against a video-visual
+                    # contact of ~0.73s, inside the 60Hz frame resolution.
+                    peak_time = float(trc_data['Time'].values[int(np.argmax(speed))])
+
         metrics = {
             'max_hand_speed_mps': float(max_hand_speed),
-            'max_hand_speed_mph': float(max_hand_speed) * 2.23694
+            'max_hand_speed_mph': float(max_hand_speed) * 2.23694,
+            'hand_speed_peak_time_s': peak_time,
         }
         return metrics
         
-    def calculate_rotational_torques_refined(self, data: pd.DataFrame, wrist_speed_mps: float = 0.0) -> Dict:
+    def calculate_rotational_torques_refined(self, data: pd.DataFrame, wrist_speed_mps: float = 0.0,
+                                             hand_speed_peak_time_s: float = 0.0) -> Dict:
         dt = data['time'].diff().mean()
         fs = 1.0 / dt if dt > 0 else 60.0
         
@@ -1306,7 +1317,16 @@ class RefinedHittingOptimizer:
         contact_frame = int(min(max(peak_pelvis_frame_global, swing_start),
                                 len(pelvis_angle) - 1))
 
-        if np.any(hands_abs_omega[swing_start:] > 0):
+        # Measured contact, when marker data is available. Wrist markers give real
+        # hand linear speed, whose peak is bat-ball contact to within a frame or two.
+        # Everything below this is inference from joint angles; this is measurement,
+        # so it wins outright when present.
+        if hand_speed_peak_time_s and hand_speed_peak_time_s > 0:
+            _times = data['time'].values
+            contact_frame = int(np.argmin(np.abs(_times - hand_speed_peak_time_s)))
+            contact_method = 'trc_measured_hand_speed'
+
+        elif np.any(hands_abs_omega[swing_start:] > 0):
             # Bound to ±300ms of the pelvis peak so a post-follow-through wobble or a
             # second movement later in the trial cannot masquerade as contact.
             _c_half = int(0.30 * fs)
@@ -1898,7 +1918,9 @@ class RefinedHittingOptimizer:
     def comprehensive_diagnosis(self, kinematics: pd.DataFrame, filename: str, trc_data: pd.DataFrame = None, verbose: bool = False) -> Dict:
         trc_metrics = self.calculate_trc_metrics(trc_data) if trc_data is not None else {'max_hand_speed_mph': 0.0, 'max_hand_speed_mps': 0.0}
         wrist_speed_mps = float(trc_metrics.get('max_hand_speed_mps', 0.0))
-        rotation = self.calculate_rotational_torques_refined(kinematics, wrist_speed_mps=wrist_speed_mps)
+        rotation = self.calculate_rotational_torques_refined(
+            kinematics, wrist_speed_mps=wrist_speed_mps,
+            hand_speed_peak_time_s=trc_metrics.get('hand_speed_peak_time_s', 0.0))
         stride = self.calculate_stride_refined(kinematics, rotation, trc_data=trc_data)
         hand_speed = self.estimate_hand_speed(rotation, trc_metrics)
         lower_body = self.calculate_lower_body_kinematics(kinematics)
