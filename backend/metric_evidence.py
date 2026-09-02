@@ -186,6 +186,7 @@ def _capture_flags(diagnosis: dict) -> dict:
             'peak_hand_speed', 'hand_deceleration_impact', 'peak_pelvis_omega_fallback'),
         'peak_pelvis_dgs': float(metrics.get('peak_pelvis_omega_3d_deg_s', 0.0) or 0.0),
         'max_separation_deg': float(metrics.get('max_separation_deg', 0.0) or 0.0),
+        'separation_raw_peak_deg': float(rot.get('separation_raw_peak_deg', 0.0) or 0.0),
     }
 
 
@@ -204,7 +205,10 @@ def build_metric_evidence(diagnosis: dict) -> dict:
 
         # Separation-derived metrics inherit the thorax-vs-pelvis signal quality.
         if name in ('max_separation_deg', 'x_factor_stretch_deg'):
-            sep_val = float(f.get('max_separation_deg') or 0.0)
+            # Judge on the larger of the windowed value and the raw signal peak: a
+            # windowed number can look sane while the signal behind it is not.
+            sep_val = max(float(f.get('max_separation_deg') or 0.0),
+                          float(f.get('separation_raw_peak_deg') or 0.0))
             if f['separation_clipped']:
                 reliable = False
                 caveat = ('Thorax-vs-pelvis signal is clipped at its joint limit on '

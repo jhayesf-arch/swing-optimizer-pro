@@ -958,11 +958,16 @@ class RefinedHittingOptimizer:
                     return c
             return None
 
-        n_lsh = pick('l_shoulder', 'LShoulder', 'L_shoulder')
-        n_rsh = pick('r_shoulder', 'RShoulder', 'R_shoulder')
-        n_las = pick('l_ASIS', 'L.ASIS_study', 'LASI', 'LHip')
-        n_ras = pick('r_ASIS', 'r.ASIS_study', 'RASI', 'RHip')
-        n_top = pick('C7', 'Neck', 'sternum')
+        n_lsh = pick('L_shoulder_study', 'l_shoulder', 'LShoulder', 'L_shoulder')
+        n_rsh = pick('r_shoulder_study', 'r_shoulder', 'RShoulder', 'R_shoulder')
+        n_las = pick('L.ASIS_study', 'l_ASIS', 'LASI', 'LHip')
+        n_ras = pick('r.ASIS_study', 'r_ASIS', 'RASI', 'RHip')
+        n_top = pick('C7_study', 'C7', 'Neck', 'sternum')
+        # PSIS pair is optional but strongly preferred: with all four pelvis markers
+        # the transverse plane is defined anatomically instead of being inferred from
+        # the ASIS line plus a trunk vector.
+        n_lps = pick('L.PSIS_study', 'l_PSIS', 'LPSI')
+        n_rps = pick('r.PSIS_study', 'r_PSIS', 'RPSI')
         if not all([n_lsh, n_rsh, n_las, n_ras, n_top]):
             return None
 
@@ -977,28 +982,65 @@ class RefinedHittingOptimizer:
                 cols = [butter_lowpass_filter(c, 15.0, fs) for c in cols]
             return np.column_stack(cols)
 
-        pelvis_mid = (M(n_ras) + M(n_las)) / 2.0
-        trunk = M(n_top) - pelvis_mid
-        tn = np.linalg.norm(trunk, axis=1, keepdims=True)
-        tn[tn == 0] = 1.0
-        trunk_u = trunk / tn
-
-        def axial(v):
-            vp = v - np.sum(v * trunk_u, axis=1, keepdims=True) * trunk_u
-            n = np.linalg.norm(vp, axis=1, keepdims=True)
+        def unit(v):
+            n = np.linalg.norm(v, axis=1, keepdims=True)
             n[n == 0] = 1.0
-            return vp / n
+            return v / n
 
-        sh = axial(M(n_lsh) - M(n_rsh))
-        pel = axial(M(n_las) - M(n_ras))
-        dot = np.clip(np.sum(sh * pel, axis=1), -1.0, 1.0)
-        cross = np.sum(np.cross(pel, sh) * trunk_u, axis=1)
-        sep = np.degrees(np.arctan2(cross, dot))
+        asis_mid = (M(n_ras) + M(n_las)) / 2.0
+        pel_ml = unit(M(n_las) - M(n_ras))          # pelvis medio-lateral axis
+
+        # Pelvis superior axis. With the PSIS pair the transverse plane is defined
+        # anatomically (ISB convention): the ASIS-PSIS plane sets it, independent of
+        # how the trunk above happens to be leaning. Without PSIS we fall back to the
+        # trunk vector, which is the weaker definition the earlier version used
+        # throughout — it lets trunk lean contaminate the axial measure.
+        if n_lps and n_rps:
+            psis_mid = (M(n_rps) + M(n_lps)) / 2.0
+            fwd = unit(asis_mid - psis_mid)          # pelvis anterior axis
+            pel_sup = unit(np.cross(pel_ml, fwd))
+            frame_basis = 'asis_psis'
+        else:
+            pel_sup = unit(M(n_top) - asis_mid)
+            frame_basis = 'trunk_vector'
+
+        # Re-orthogonalise the ML axis against the superior axis so the pair forms a
+        # genuine frame rather than two nearly-parallel vectors.
+        pel_ml = unit(pel_ml - np.sum(pel_ml * pel_sup, axis=1, keepdims=True) * pel_sup)
+
+        # Thorax orientation is taken about the C7-to-shoulder-midpoint axis rather
+        # than from the raw shoulder line alone. The shoulder line carries scapular
+        # protraction/retraction on top of thoracic rotation — the lead shoulder
+        # protracts while the trail retracts through a swing — which inflated the
+        # earlier reading to 91.8 deg on the multi-camera trial, past the ~70 deg
+        # anatomical ceiling. Referencing C7 removes the part of that motion that
+        # translates the shoulders without rotating the thorax.
+        sh_mid = (M(n_lsh) + M(n_rsh)) / 2.0
+        c7 = M(n_top)
+        thx_sup = unit(sh_mid - asis_mid)
+        thx_ml = unit(M(n_lsh) - M(n_rsh))
+        thx_ml = unit(thx_ml - np.sum(thx_ml * thx_sup, axis=1, keepdims=True) * thx_sup)
+
+        # Axial separation: thorax ML axis expressed in the PELVIS transverse plane.
+        # Projecting into the pelvis's own plane — not a global horizontal and not a
+        # generic trunk-normal plane — is what makes this an axial measure rather
+        # than a mixture of twist, lean and tilt.
+        proj = unit(thx_ml - np.sum(thx_ml * pel_sup, axis=1, keepdims=True) * pel_sup)
+        pel_fwd = unit(np.cross(pel_sup, pel_ml))
+        sep = np.degrees(np.arctan2(np.sum(proj * pel_fwd, axis=1),
+                                    np.sum(proj * pel_ml, axis=1)))
+        # Express as deviation from the athlete's own neutral stance rather than as a
+        # raw geometric angle, which carries an arbitrary offset from marker placement.
+        sep = np.unwrap(np.radians(sep)) * 180.0 / np.pi
+        sep = sep - np.median(sep[:max(3, int(0.25 * fs))])
 
         return {
             'separation_deg': sep,
             'time': trc_data['Time'].values,
             'max_separation_deg': float(np.max(np.abs(sep))),
+            'frame_basis': frame_basis,
+            'markers_used': {'shoulders': [n_lsh, n_rsh], 'asis': [n_las, n_ras],
+                             'psis': [n_lps, n_rps], 'top': n_top},
         }
 
     def calculate_rotational_torques_refined(self, data: pd.DataFrame, wrist_speed_mps: float = 0.0,
@@ -1183,6 +1225,7 @@ class RefinedHittingOptimizer:
         # only in the window from swing_start to peak_pelvis_frame.
         separation_full = lumbar_angle * 180.0 / np.pi
         separation_source = 'model_lumbar_rotation'
+        _sep_raw_peak = 0.0
         # Markers win when available: the model coordinate clips at its joint stop
         # and inflates axial separation roughly 2x (see calculate_marker_separation).
         if marker_separation is not None:
@@ -1191,6 +1234,11 @@ class RefinedHittingOptimizer:
                             marker_separation['separation_deg'])
             separation_full = _ms
             separation_source = 'trc_markers'
+            # Peak over the WHOLE signal, kept alongside the windowed value so the
+            # plausibility check sees the raw excursion. A windowed number can sit
+            # under the anatomical ceiling while the signal it came from is wildly
+            # past it — which is exactly how the monocular trial passed.
+            _sep_raw_peak = float(marker_separation.get('max_separation_deg', 0.0))
         pre_peak_sep = separation_full[swing_start:peak_pelvis_frame_global + 1]
         max_separation = float(np.max(np.abs(pre_peak_sep))) if len(pre_peak_sep) > 0 else float(np.max(np.abs(separation_full[swing_start:])))
         
@@ -1630,6 +1678,7 @@ class RefinedHittingOptimizer:
             'x_factor_stretch_deg': x_factor_stretch,
             'separation_signal_saturated': _sep_saturated,
             'separation_source': separation_source,
+            'separation_raw_peak_deg': _sep_raw_peak,
             'torso_arm_sequence_gap_ms': torso_arm_gap_ms,
             'pelvis_rotation_at_contact_deg': pelvis_rot_at_contact,
             'pelvis_rotation_excursion_deg': pelvis_rot_excursion,
@@ -2428,7 +2477,8 @@ class RefinedHittingOptimizer:
             "metric_evidence": _metric_evidence_block(
                 asdict(metrics),
                 {'separation_signal_saturated': rotation.get('separation_signal_saturated') if rotation else False,
-                 'separation_source': rotation.get('separation_source', 'model_lumbar_rotation') if rotation else 'model_lumbar_rotation'}),
+                 'separation_source': rotation.get('separation_source', 'model_lumbar_rotation') if rotation else 'model_lumbar_rotation',
+                 'separation_raw_peak_deg': rotation.get('separation_raw_peak_deg', 0.0) if rotation else 0.0}),
             # Equipment / session context
             **({"instrument": self.instrument} if self.instrument else {}),
             **({"instrument_note": self.instrument_note} if self.instrument_note else {}),
