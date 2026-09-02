@@ -494,6 +494,12 @@ SKILL_LEVEL_BENCHMARKS = {
     },
 }
 
+try:
+    from metric_evidence import build_metric_evidence, TIER_LABELS
+    _HAS_EVIDENCE = True
+except ImportError:
+    _HAS_EVIDENCE = False
+
 @dataclass
 class RefinedSwingMetrics:
     peak_hip_torque_Nm: float
@@ -605,6 +611,17 @@ class RefinedSwingMetrics:
     # Same, measured from front-foot plant — the form reported in the literature.
     # Welch et al. (1995): elite hitters peak ~50–100 ms after plant.
     time_to_peak_pelvis_from_plant_ms: float = 0.0
+
+def _metric_evidence_block(metrics: dict, rotation_ctx: dict) -> dict:
+    """Per-metric evidence tier + per-capture reliability. Degrades to {} if the
+    registry is unavailable, so a missing module cannot break an analysis."""
+    if not _HAS_EVIDENCE:
+        return {}
+    try:
+        return build_metric_evidence({'metrics': metrics, '_rotation_context': rotation_ctx})
+    except Exception:
+        return {}
+
 
 def _build_data_quality(trc_metrics: dict, has_grf: bool = False) -> dict:
     """
@@ -2405,6 +2422,13 @@ class RefinedHittingOptimizer:
             "weight_shift": weight_shift,
             "grf_estimation": grf_data,
             "data_quality": _build_data_quality(trc_metrics, has_grf=bool(grf_data)),
+            # Per-metric evidence tier and whether THIS capture supports it. Kept
+            # separate so a good citation can never mask data that cannot carry
+            # the number — see backend/metric_evidence.py.
+            "metric_evidence": _metric_evidence_block(
+                asdict(metrics),
+                {'separation_signal_saturated': rotation.get('separation_signal_saturated') if rotation else False,
+                 'separation_source': rotation.get('separation_source', 'model_lumbar_rotation') if rotation else 'model_lumbar_rotation'}),
             # Equipment / session context
             **({"instrument": self.instrument} if self.instrument else {}),
             **({"instrument_note": self.instrument_note} if self.instrument_note else {}),

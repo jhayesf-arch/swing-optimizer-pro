@@ -1292,3 +1292,17 @@ label.btn { cursor: pointer; }
 .kine-chip { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; font-weight: 600; color: var(--text-color); }
 .kine-dot { width: 11px; height: 11px; border-radius: 3px; display: inline-block; box-shadow: 0 0 6px currentColor; }
 .kine-peak { font-weight: 400; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* ── Metric evidence badges ────────────────────────────────────────────────
+   A = research-backed, B = literature-based but our operational definition,
+   C = our own measure. The separate "!" marks a metric this particular capture
+   cannot support, which is independent of how well-cited the metric is. */
+.ev-badge{display:inline-block;margin-left:5px;padding:0 4px;border-radius:3px;
+  font-size:0.6em;font-weight:700;line-height:1.5;vertical-align:middle;cursor:help}
+.ev-A{background:rgba(34,197,94,.18);color:#22c55e;border:1px solid rgba(34,197,94,.35)}
+.ev-B{background:rgba(59,130,246,.16);color:#60a5fa;border:1px solid rgba(59,130,246,.32)}
+.ev-C{background:rgba(148,163,184,.16);color:#94a3b8;border:1px solid rgba(148,163,184,.32)}
+.ev-warn{display:inline-block;margin-left:3px;padding:0 4px;border-radius:3px;
+  font-size:0.6em;font-weight:700;line-height:1.5;vertical-align:middle;cursor:help;
+  background:rgba(245,158,11,.18);color:#f59e0b;border:1px solid rgba(245,158,11,.4)}
+.ev-legend{margin-top:.8rem;font-size:.72rem;opacity:.75;line-height:1.6}

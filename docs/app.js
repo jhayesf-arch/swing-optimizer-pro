@@ -819,35 +819,36 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // ---- ADVANCED PHYSICS ----
+        setMetricEvidence(diagnosis.metric_evidence);
         const m = diagnosis.metrics;
         let handSpeedHtml = '';
         if (m.max_hand_speed_mph > 0) {
-            handSpeedHtml = createMetric('Max Hand Speed', m.max_hand_speed_mph.toFixed(1), 'mph');
+            handSpeedHtml = createMetric('Max Hand Speed', m.max_hand_speed_mph.toFixed(1), 'mph', false, 'max_hand_speed_mph');
         }
         
         document.getElementById('rotational-metrics').innerHTML = `
-            ${createMetric('Max Separation', (m.max_separation_deg || 0).toFixed(1), '°')}
+            ${createMetric('Max Separation', (m.max_separation_deg || 0).toFixed(1), '°', false, 'max_separation_deg')}
             ${handSpeedHtml}
-            ${createMetric('Peak Hip Power', (m.peak_hip_power_W || 0).toFixed(0), 'W')}
-            ${createMetric('Rel. Hip Power', (m.hip_power_per_kg || 0).toFixed(1), 'W/kg')}
-            ${createMetric('Sequence Timing', (m.sequence_timing_ms || 0).toFixed(0), 'ms')}
-            ${createMetric('Energy Transfer', (m.energy_transfer_proxy_pct || 0).toFixed(1), '%')}
-            ${createMetric('Torso/Pelvis Ratio', (m.torso_to_pelvis_rot_ratio || 0).toFixed(2), '')}
-            ${createMetric('Total Chain KE', (m.total_energy_transfer_J || 0).toFixed(0), 'J')}
-            ${m.time_to_contact_s > 0 ? createMetric('Time to Contact', (m.time_to_contact_s * 1000).toFixed(0), 'ms') : ''}
-            ${m.rotational_acceleration_deg_s2 > 0 ? createMetric('Rotational Accel', (m.rotational_acceleration_deg_s2 / 1000).toFixed(1), 'k°/s²') : ''}
-            ${m.pelvis_torso_contribution_pct > 0 ? createMetric('Pelvis Rotation Share', (m.pelvis_torso_contribution_pct || 0).toFixed(1), '%') : ''}
+            ${createMetric('Peak Hip Power', (m.peak_hip_power_W || 0).toFixed(0), 'W', false, 'peak_hip_power_W')}
+            ${createMetric('Rel. Hip Power', (m.hip_power_per_kg || 0).toFixed(1), 'W/kg', false, 'hip_power_per_kg')}
+            ${createMetric('Sequence Timing', (m.sequence_timing_ms || 0).toFixed(0), 'ms', false, 'sequence_timing_ms')}
+            ${createMetric('Energy Transfer', (m.energy_transfer_proxy_pct || 0).toFixed(1), '%', false, 'energy_transfer_proxy_pct')}
+            ${createMetric('Torso/Pelvis Ratio', (m.torso_to_pelvis_rot_ratio || 0).toFixed(2), '', false, 'torso_to_pelvis_rot_ratio')}
+            ${createMetric('Total Chain KE', (m.total_energy_transfer_J || 0).toFixed(0), 'J', false, 'total_energy_transfer_J')}
+            ${m.time_to_contact_s > 0 ? createMetric('Time to Contact', (m.time_to_contact_s * 1000).toFixed(0), 'ms', false, 'time_to_contact_s') : ''}
+            ${m.rotational_acceleration_deg_s2 > 0 ? createMetric('Rotational Accel', (m.rotational_acceleration_deg_s2 / 1000).toFixed(1), 'k°/s²', false, 'rotational_acceleration_deg_s2') : ''}
+            ${m.pelvis_torso_contribution_pct > 0 ? createMetric('Pelvis Rotation Share', (m.pelvis_torso_contribution_pct || 0).toFixed(1), '%', false, 'pelvis_torso_contribution_pct') : ''}
         `;
 
         const grf = diagnosis.grf_estimation || {};
         document.getElementById('stride-metrics').innerHTML = `
-            ${createMetric('Stride Efficiency', (m.stride_efficiency_pct || 0).toFixed(0), '%')}
-            ${createMetric('Stride Ratio', (m.stride_ratio || 0).toFixed(2), 'x Ht')}
-            ${createMetric('Proper Sequence', m.proper_sequence ? 'Yes' : 'No', '', true)}
-            ${createMetric('Pelvis KE', (m.pelvis_ke_J || 0).toFixed(1), 'J')}
-            ${createMetric('Torso KE', (m.torso_ke_J || 0).toFixed(1), 'J')}
-            ${createMetric('Arm KE', (m.arm_ke_J || 0).toFixed(1), 'J')}
-            ${createMetric('Bat KE', (m.bat_ke_J || 0).toFixed(1), 'J')}
+            ${createMetric('Stride Efficiency', (m.stride_efficiency_pct || 0).toFixed(0), '%', false, 'stride_efficiency_pct')}
+            ${createMetric('Stride Ratio', (m.stride_ratio || 0).toFixed(2), 'x Ht', false, 'stride_ratio')}
+            ${createMetric('Proper Sequence', m.proper_sequence ? 'Yes' : 'No', '', true, 'proper_sequence')}
+            ${createMetric('Pelvis KE', (m.pelvis_ke_J || 0).toFixed(1), 'J', false, 'pelvis_ke_J')}
+            ${createMetric('Torso KE', (m.torso_ke_J || 0).toFixed(1), 'J', false, 'torso_ke_J')}
+            ${createMetric('Arm KE', (m.arm_ke_J || 0).toFixed(1), 'J', false, 'arm_ke_J')}
+            ${createMetric('Bat KE', (m.bat_ke_J || 0).toFixed(1), 'J', false, 'bat_ke_J')}
             ${grf.peak_grf_vert_BW ? createMetric('Peak GRF Vert', (grf.peak_grf_vert_BW * 100).toFixed(0), '% BW') : ''}
             ${grf.peak_grf_ap_N ? createMetric('Peak GRF AP', grf.peak_grf_ap_N.toFixed(0), 'N') : ''}
         `;
@@ -865,20 +866,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const pelvisTimingHtml = (plantMs !== undefined && plantMs !== 0)
             ? createMetric('Pelvis Peak (from plant)', plantMs.toFixed(0), 'ms')
             : (m.time_to_peak_pelvis_ms > 0
-                ? createMetric('Pelvis Peak (from start)', m.time_to_peak_pelvis_ms.toFixed(0), 'ms')
+                ? createMetric('Pelvis Peak (from start)', m.time_to_peak_pelvis_ms.toFixed(0), 'ms', false, 'time_to_peak_pelvis_ms')
                 : '');
 
         const pelvisPanelEl = document.getElementById('pelvis-metrics');
         if (pelvisPanelEl) {
             pelvisPanelEl.innerHTML = `
-                ${m.peak_pelvis_omega_3d_deg_s > 0 ? createMetric('Peak Pelvis Speed', m.peak_pelvis_omega_3d_deg_s.toFixed(0), '°/s') : ''}
+                ${m.peak_pelvis_omega_3d_deg_s > 0 ? createMetric('Peak Pelvis Speed', m.peak_pelvis_omega_3d_deg_s.toFixed(0), '°/s', false, 'peak_pelvis_omega_3d_deg_s') : ''}
                 ${pelvisTimingHtml}
-                ${m.pelvis_rotation_at_contact_deg > 0 ? createMetric('Pelvis Open at Contact', m.pelvis_rotation_at_contact_deg.toFixed(0), '°') : ''}
-                ${m.pelvis_rotation_excursion_deg > 0 ? createMetric('Pelvis Rotation Swept', m.pelvis_rotation_excursion_deg.toFixed(0), '°') : ''}
-                ${m.x_factor_stretch_deg > 0 ? createMetric('X-Factor Stretch', m.x_factor_stretch_deg.toFixed(1), '°') : ''}
-                ${m.torso_arm_sequence_gap_ms !== 0 ? createMetric('Torso→Arm Gap', m.torso_arm_sequence_gap_ms.toFixed(0), 'ms') : ''}
-                ${m.pelvis_decel_rate_deg_s2 > 0 ? createMetric('Pelvis Decel Rate', (m.pelvis_decel_rate_deg_s2 / 1000).toFixed(1), 'k°/s²') : ''}
-                ${m.peak_lead_hip_ir_torque_Nm > 0 ? createMetric('Lead Hip IR Torque', m.peak_lead_hip_ir_torque_Nm.toFixed(1), 'N·m') : ''}
+                ${m.pelvis_rotation_at_contact_deg > 0 ? createMetric('Pelvis Open at Contact', m.pelvis_rotation_at_contact_deg.toFixed(0), '°', false, 'pelvis_rotation_at_contact_deg') : ''}
+                ${m.pelvis_rotation_excursion_deg > 0 ? createMetric('Pelvis Rotation Swept', m.pelvis_rotation_excursion_deg.toFixed(0), '°', false, 'pelvis_rotation_excursion_deg') : ''}
+                ${m.x_factor_stretch_deg > 0 ? createMetric('X-Factor Stretch', m.x_factor_stretch_deg.toFixed(1), '°', false, 'x_factor_stretch_deg') : ''}
+                ${m.torso_arm_sequence_gap_ms !== 0 ? createMetric('Torso→Arm Gap', m.torso_arm_sequence_gap_ms.toFixed(0), 'ms', false, 'torso_arm_sequence_gap_ms') : ''}
+                ${m.pelvis_decel_rate_deg_s2 > 0 ? createMetric('Pelvis Decel Rate', (m.pelvis_decel_rate_deg_s2 / 1000).toFixed(1), 'k°/s²', false, 'pelvis_decel_rate_deg_s2') : ''}
+                ${m.peak_lead_hip_ir_torque_Nm > 0 ? createMetric('Lead Hip IR Torque', m.peak_lead_hip_ir_torque_Nm.toFixed(1), 'N·m', false, 'peak_lead_hip_ir_torque_Nm') : ''}
             `;
         }
 
@@ -1448,7 +1449,21 @@ document.addEventListener('DOMContentLoaded', () => {
     // -----------------------------------------
     // Advanced Metric Tile
     // -----------------------------------------
-    function createMetric(label, value, unit, isText = false) {
+    // Evidence badge: A research-backed, B literature-based/our definition,
+    // C our own measure. A separate ! marks a metric this capture cannot support,
+    // which is independent of the citation — see backend/metric_evidence.py.
+    let __evidence = {};
+    function setMetricEvidence(ev) { __evidence = ev || {}; }
+    function evidenceBadge(key) {
+        const e = __evidence[key];
+        if (!e) return '';
+        const warn = e.reliable ? '' :
+            `<span class="ev-warn" title="${(e.caveat||'').replace(/"/g,'&quot;')}">!</span>`;
+        const tip = `${e.tier === 'A' ? 'Research-backed' : e.tier === 'B' ? 'Literature-based, our definition' : 'Our own measure'} — ${(e.citation||'').replace(/"/g,'&quot;')}`;
+        return `<span class="ev-badge ev-${e.tier}" title="${tip}">${e.tier}</span>${warn}`;
+    }
+
+    function createMetric(label, value, unit, isText = false, evKey = null) {
         let valClass = '';
         if (!isText) {
             const num = parseFloat(value);
@@ -1462,7 +1477,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         return `
         <div class="metric-item">
-            <div class="metric-label">${label}</div>
+            <div class="metric-label">${label}${evidenceBadge(evKey)}</div>
             <div class="metric-value ${valClass}">${value}<span style="font-size:0.6em; margin-left:2px">${unit}</span></div>
         </div>
         `;
