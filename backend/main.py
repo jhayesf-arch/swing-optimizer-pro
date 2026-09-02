@@ -517,6 +517,11 @@ async def analyze_batch(
                     "recommendations": diag.get("recommendations", []),
                     "grf_estimation": diag.get("grf_estimation", {}),
                     "data_quality": diag.get("data_quality", {}),
+                    # Evidence tier + per-capture reliability, one entry per metric.
+                    # Was silently dropped by the batch shaper, so uploads of two or
+                    # more files rendered every tile without a badge — the caveat
+                    # existed in the payload of a single-file upload only.
+                    "metric_evidence": diag.get("metric_evidence", {}),
                     **extras,
                 })
             except Exception as e:

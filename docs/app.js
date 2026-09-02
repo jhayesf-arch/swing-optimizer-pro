@@ -616,6 +616,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     skeleton_frames: first.skeleton_frames,
                     kinematic_sequence: first.kinematic_sequence,
                     grf_estimation: {},
+                    // Per-swing evidence blocks were assembled from server output but
+                    // never made it into these wrappers, so tiles rendered without
+                    // any badge on multi-swing uploads. The average uses the first
+                    // swing's evidence, since evidence is per-metric not per-value.
+                    metric_evidence: first.metric_evidence || {},
                 },
             });
         }
@@ -643,6 +648,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     skeleton_frames: s.skeleton_frames,
                     kinematic_sequence: s.kinematic_sequence,
                     grf_estimation: s.grf_estimation || {},
+                    metric_evidence: s.metric_evidence || {},
                 },
             });
         });
