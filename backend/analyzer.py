@@ -857,6 +857,7 @@ class RefinedHittingOptimizer:
         
         max_hand_speed = 0.0
         peak_time = 0.0
+        contact_time = 0.0
         # Find whichever wrist is moving faster (proxy for bat speed)
         wrist_markers = ['r_mwrist_study', 'L_mwrist_study', 'r_lwrist_study', 'L_lwrist_study',
                          'r_wrist_radius', 'l_wrist_radius', 'r_wrist_ulna', 'l_wrist_ulna',
@@ -881,18 +882,33 @@ class RefinedHittingOptimizer:
                 cur_max = np.max(speed)
                 if cur_max > max_hand_speed:
                     max_hand_speed = cur_max
-                    # Time of the peak, not just its magnitude. The hands are the
-                    # distal end of the chain, so this instant is bat-ball contact
-                    # to within a few frames — the only measured contact event
-                    # available without force instrumentation. Validated on
-                    # Emilio_1_10: markers put it at 0.683s against a video-visual
-                    # contact of ~0.73s, inside the 60Hz frame resolution.
-                    peak_time = float(trc_data['Time'].values[int(np.argmax(speed))])
+                    times = trc_data['Time'].values
+                    pk = int(np.argmax(speed))
+                    peak_time = float(times[pk])
+
+                    # Contact is the sharpest DECELERATION after the speed peak, not
+                    # the peak itself. The wrists top out while the barrel is still
+                    # whipping past them, so wrist peak speed leads bat-ball contact
+                    # by a few frames; the hands then get braked as the barrel meets
+                    # the ball. This is the hand force-feedback signal, read from
+                    # kinematics.
+                    #
+                    # Validated on Emilio_1_10 against video: peak speed 0.667s,
+                    # deceleration 0.717s, visible contact ~0.730s. The speed peak is
+                    # 4 frames early and costs 17 deg of pelvis rotation at the ~265
+                    # deg/s the pelvis is turning there; the deceleration is inside
+                    # one frame.
+                    contact_time = peak_time
+                    hi = min(len(speed), pk + int(0.15 * fs) + 1)
+                    if hi - pk >= 3:
+                        acc = np.gradient(speed, dt)
+                        contact_time = float(times[int(np.argmin(acc[pk:hi])) + pk])
 
         metrics = {
             'max_hand_speed_mps': float(max_hand_speed),
             'max_hand_speed_mph': float(max_hand_speed) * 2.23694,
             'hand_speed_peak_time_s': peak_time,
+            'hand_contact_time_s': contact_time,
         }
         return metrics
         
@@ -1324,7 +1340,7 @@ class RefinedHittingOptimizer:
         if hand_speed_peak_time_s and hand_speed_peak_time_s > 0:
             _times = data['time'].values
             contact_frame = int(np.argmin(np.abs(_times - hand_speed_peak_time_s)))
-            contact_method = 'trc_measured_hand_speed'
+            contact_method = 'trc_hand_deceleration'
 
         elif np.any(hands_abs_omega[swing_start:] > 0):
             # Bound to ±300ms of the pelvis peak so a post-follow-through wobble or a
@@ -1920,7 +1936,7 @@ class RefinedHittingOptimizer:
         wrist_speed_mps = float(trc_metrics.get('max_hand_speed_mps', 0.0))
         rotation = self.calculate_rotational_torques_refined(
             kinematics, wrist_speed_mps=wrist_speed_mps,
-            hand_speed_peak_time_s=trc_metrics.get('hand_speed_peak_time_s', 0.0))
+            hand_speed_peak_time_s=trc_metrics.get('hand_contact_time_s', 0.0))
         stride = self.calculate_stride_refined(kinematics, rotation, trc_data=trc_data)
         hand_speed = self.estimate_hand_speed(rotation, trc_metrics)
         lower_body = self.calculate_lower_body_kinematics(kinematics)
