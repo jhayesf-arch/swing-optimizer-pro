@@ -931,8 +931,22 @@ class RefinedHittingOptimizer:
         """
         if trc_data is None or len(trc_data) == 0:
             return None
-        need = ['l_shoulder', 'r_shoulder', 'l_ASIS', 'r_ASIS', 'C7']
-        if not all(f'{m}_X' in trc_data.columns for m in need):
+
+        # OpenCap emits two different marker vocabularies: the monocular pipeline
+        # uses sternum/r_shoulder/r_ASIS, while the standard multi-camera
+        # PostAugmentation set uses Neck/RShoulder/r.ASIS_study. Resolve either.
+        def pick(*candidates):
+            for c in candidates:
+                if f'{c}_X' in trc_data.columns:
+                    return c
+            return None
+
+        n_lsh = pick('l_shoulder', 'LShoulder', 'L_shoulder')
+        n_rsh = pick('r_shoulder', 'RShoulder', 'R_shoulder')
+        n_las = pick('l_ASIS', 'L.ASIS_study', 'LASI', 'LHip')
+        n_ras = pick('r_ASIS', 'r.ASIS_study', 'RASI', 'RHip')
+        n_top = pick('C7', 'Neck', 'sternum')
+        if not all([n_lsh, n_rsh, n_las, n_ras, n_top]):
             return None
 
         dt = trc_data['Time'].diff().mean()
@@ -946,8 +960,8 @@ class RefinedHittingOptimizer:
                 cols = [butter_lowpass_filter(c, 15.0, fs) for c in cols]
             return np.column_stack(cols)
 
-        pelvis_mid = (M('r_ASIS') + M('l_ASIS')) / 2.0
-        trunk = M('C7') - pelvis_mid
+        pelvis_mid = (M(n_ras) + M(n_las)) / 2.0
+        trunk = M(n_top) - pelvis_mid
         tn = np.linalg.norm(trunk, axis=1, keepdims=True)
         tn[tn == 0] = 1.0
         trunk_u = trunk / tn
@@ -958,8 +972,8 @@ class RefinedHittingOptimizer:
             n[n == 0] = 1.0
             return vp / n
 
-        sh = axial(M('l_shoulder') - M('r_shoulder'))
-        pel = axial(M('l_ASIS') - M('r_ASIS'))
+        sh = axial(M(n_lsh) - M(n_rsh))
+        pel = axial(M(n_las) - M(n_ras))
         dot = np.clip(np.sum(sh * pel, axis=1), -1.0, 1.0)
         cross = np.sum(np.cross(pel, sh) * trunk_u, axis=1)
         sep = np.degrees(np.arctan2(cross, dot))
