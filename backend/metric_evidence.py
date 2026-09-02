@@ -185,6 +185,7 @@ def _capture_flags(diagnosis: dict) -> dict:
         'contact_inferred': contact_method in (
             'peak_hand_speed', 'hand_deceleration_impact', 'peak_pelvis_omega_fallback'),
         'peak_pelvis_dgs': float(metrics.get('peak_pelvis_omega_3d_deg_s', 0.0) or 0.0),
+        'max_separation_deg': float(metrics.get('max_separation_deg', 0.0) or 0.0),
     }
 
 
@@ -203,11 +204,26 @@ def build_metric_evidence(diagnosis: dict) -> dict:
 
         # Separation-derived metrics inherit the thorax-vs-pelvis signal quality.
         if name in ('max_separation_deg', 'x_factor_stretch_deg'):
+            sep_val = float(f.get('max_separation_deg') or 0.0)
             if f['separation_clipped']:
                 reliable = False
                 caveat = ('Thorax-vs-pelvis signal is clipped at its joint limit on '
                           'this capture, so no separation value can be trusted. '
                           'Common on monocular captures.')
+            elif sep_val > 70.0:
+                # Anatomical plausibility, checked regardless of source. Live humans
+                # reach roughly 50-70 deg of thorax-vs-pelvis axial rotation; elite
+                # X-Factor is 40-60. A larger number is not a big coil, it is a
+                # broken measurement — and it slipped through when only the clip and
+                # the source were checked, because marker-derived values are not
+                # clipped and so were being passed as sound.
+                reliable = False
+                caveat = (f'{sep_val:.0f} deg exceeds the ~70 deg anatomical limit for '
+                          'thorax-vs-pelvis rotation, so this is a measurement '
+                          'artifact rather than a coil. The shoulder-marker line '
+                          'carries scapular motion on top of true thoracic rotation, '
+                          'which inflates it; a dedicated thorax segment '
+                          '(sternum + C7 + T-spine) is needed to separate the two.')
             elif f['separation_source'] == 'model_lumbar_rotation':
                 caveat = ('Taken from the model coordinate. Supply a .trc to compute '
                           'this from markers, which avoids the joint-limit problem.')
