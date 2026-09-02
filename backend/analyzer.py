@@ -912,8 +912,67 @@ class RefinedHittingOptimizer:
         }
         return metrics
         
+    def calculate_marker_separation(self, trc_data: pd.DataFrame) -> Optional[Dict]:
+        """Thorax-vs-pelvis axial separation (X-Factor) computed from markers.
+
+        OpenSim's lumbar_rotation coordinate is not usable for this on OpenCap
+        output: it clips at exactly 90.0 deg (the joint's stop) on 3 of 4 Emilio
+        trials, and where it does not clip it still roughly doubles the true value
+        — 74.0 deg against a marker-derived 38.3 deg on Emilio_1_10, versus an
+        anatomical ceiling near 50-70 deg. Torso markers were checked and are clean,
+        so the inflation is in the model/IK, not the capture.
+
+        Each shoulder/pelvis line is projected onto the plane normal to the TRUNK's
+        own long axis before the angle is taken. Projecting onto the global
+        horizontal instead lets forward trunk tilt leak into the axial measure,
+        which is what produced a 132 deg reading on the same trial.
+
+        Returns None when the required markers are absent.
+        """
+        if trc_data is None or len(trc_data) == 0:
+            return None
+        need = ['l_shoulder', 'r_shoulder', 'l_ASIS', 'r_ASIS', 'C7']
+        if not all(f'{m}_X' in trc_data.columns for m in need):
+            return None
+
+        dt = trc_data['Time'].diff().mean()
+        if dt <= 0 or np.isnan(dt):
+            dt = 1 / 60.0
+        fs = 1.0 / dt
+
+        def M(n):
+            cols = [trc_data[f'{n}_{a}'].values for a in 'XYZ']
+            if HAS_SCIPY:
+                cols = [butter_lowpass_filter(c, 15.0, fs) for c in cols]
+            return np.column_stack(cols)
+
+        pelvis_mid = (M('r_ASIS') + M('l_ASIS')) / 2.0
+        trunk = M('C7') - pelvis_mid
+        tn = np.linalg.norm(trunk, axis=1, keepdims=True)
+        tn[tn == 0] = 1.0
+        trunk_u = trunk / tn
+
+        def axial(v):
+            vp = v - np.sum(v * trunk_u, axis=1, keepdims=True) * trunk_u
+            n = np.linalg.norm(vp, axis=1, keepdims=True)
+            n[n == 0] = 1.0
+            return vp / n
+
+        sh = axial(M('l_shoulder') - M('r_shoulder'))
+        pel = axial(M('l_ASIS') - M('r_ASIS'))
+        dot = np.clip(np.sum(sh * pel, axis=1), -1.0, 1.0)
+        cross = np.sum(np.cross(pel, sh) * trunk_u, axis=1)
+        sep = np.degrees(np.arctan2(cross, dot))
+
+        return {
+            'separation_deg': sep,
+            'time': trc_data['Time'].values,
+            'max_separation_deg': float(np.max(np.abs(sep))),
+        }
+
     def calculate_rotational_torques_refined(self, data: pd.DataFrame, wrist_speed_mps: float = 0.0,
-                                             hand_speed_peak_time_s: float = 0.0) -> Dict:
+                                             hand_speed_peak_time_s: float = 0.0,
+                                             marker_separation: Optional[Dict] = None) -> Dict:
         dt = data['time'].diff().mean()
         fs = 1.0 / dt if dt > 0 else 60.0
         
@@ -1092,6 +1151,15 @@ class RefinedHittingOptimizer:
         # Use lumbar_angle (relative trunk twist) as the separation signal, measured
         # only in the window from swing_start to peak_pelvis_frame.
         separation_full = lumbar_angle * 180.0 / np.pi
+        separation_source = 'model_lumbar_rotation'
+        # Markers win when available: the model coordinate clips at its joint stop
+        # and inflates axial separation roughly 2x (see calculate_marker_separation).
+        if marker_separation is not None:
+            _ms = np.interp(data['time'].values,
+                            marker_separation['time'],
+                            marker_separation['separation_deg'])
+            separation_full = _ms
+            separation_source = 'trc_markers'
         pre_peak_sep = separation_full[swing_start:peak_pelvis_frame_global + 1]
         max_separation = float(np.max(np.abs(pre_peak_sep))) if len(pre_peak_sep) > 0 else float(np.max(np.abs(separation_full[swing_start:])))
         
@@ -1411,7 +1479,23 @@ class RefinedHittingOptimizer:
         # against the stop rather than the athlete's real coil. Any separation number
         # taken from a clipped signal is meaningless, so report 0 and flag it rather
         # than publish a figure that looks like a measurement.
-        _sep_saturated = bool(np.max(np.abs(separation_full)) >= 70.0)
+        # Detect actual clipping rather than large magnitude. A clipped coordinate
+        # sits pinned at one value for several consecutive frames; a real rotation
+        # passes through its peak. Testing magnitude alone wrongly condemned honest
+        # marker data, whose follow-through separation is legitimately large.
+        # Only the model coordinate can clip — markers have no joint stop.
+        # Tested on the RAW coordinate, not the filtered one: the low-pass rounds the
+        # clipped plateau into a smooth peak, so the filtered signal no longer shows
+        # the repeated values that identify a clip. Emilio_1_10 sits at exactly 90.0
+        # for 29 raw frames and 1_16 for 18, while 1_7 and 1_8 reach their peaks for
+        # 2 and 1 frames — real rotations passing through a maximum.
+        _sep_saturated = False
+        if separation_source == 'model_lumbar_rotation' and 'lumbar_rotation' in data.columns:
+            _raw = np.abs(data['lumbar_rotation'].values)
+            if len(_raw):
+                _pk = float(np.max(_raw))
+                _at_pk = int(np.sum(np.abs(_raw - _pk) < 0.05))
+                _sep_saturated = bool(_pk >= 70.0 and _at_pk >= 3)
         if _sep_saturated:
             x_factor_stretch = 0.0
 
@@ -1514,6 +1598,7 @@ class RefinedHittingOptimizer:
             # Pelvis / lower-half metrics
             'x_factor_stretch_deg': x_factor_stretch,
             'separation_signal_saturated': _sep_saturated,
+            'separation_source': separation_source,
             'torso_arm_sequence_gap_ms': torso_arm_gap_ms,
             'pelvis_rotation_at_contact_deg': pelvis_rot_at_contact,
             'pelvis_rotation_excursion_deg': pelvis_rot_excursion,
@@ -1936,7 +2021,8 @@ class RefinedHittingOptimizer:
         wrist_speed_mps = float(trc_metrics.get('max_hand_speed_mps', 0.0))
         rotation = self.calculate_rotational_torques_refined(
             kinematics, wrist_speed_mps=wrist_speed_mps,
-            hand_speed_peak_time_s=trc_metrics.get('hand_contact_time_s', 0.0))
+            hand_speed_peak_time_s=trc_metrics.get('hand_contact_time_s', 0.0),
+            marker_separation=self.calculate_marker_separation(trc_data))
         stride = self.calculate_stride_refined(kinematics, rotation, trc_data=trc_data)
         hand_speed = self.estimate_hand_speed(rotation, trc_metrics)
         lower_body = self.calculate_lower_body_kinematics(kinematics)
