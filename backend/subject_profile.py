@@ -39,9 +39,9 @@ from typing import Dict, List, Optional, Set
 from analyzer import (
     DRILL_LIBRARY,
     RefinedHittingOptimizer,
-    SWINGAI_LABELS,
-    SWINGAI_PHASES,
-    SWINGAI_WEIGHTS,
+    DIMENSION_LABELS,
+    SWING_PHASES,
+    DIMENSION_WEIGHTS,
     load_cohort_model,
 )
 
@@ -138,7 +138,7 @@ def analyze_subject(
                 continue
             trc_data = opt.load_trc_file(trc) if trc and os.path.exists(trc) else None
             diag = opt.comprehensive_diagnosis(kin, os.path.basename(mot), trc_data=trc_data)
-            rep = diag.get("swingai_report", {})
+            rep = diag.get("phase_report", {})
             swings.append({
                 "index": len(swings) + 1,
                 "name": stem,
@@ -240,8 +240,8 @@ def aggregate_swings(
         return (d is not None and d.get("available") is not False
                 and isinstance(d.get("value"), (int, float)))
 
-    dim_keys = [k for k in SWINGAI_WEIGHTS if any(_measured(s, k) for s in usable)]
-    unavailable_keys = [k for k in SWINGAI_WEIGHTS
+    dim_keys = [k for k in DIMENSION_WEIGHTS if any(_measured(s, k) for s in usable)]
+    unavailable_keys = [k for k in DIMENSION_WEIGHTS
                         if k not in dim_keys and any(k in s["dimensions"] for s in usable)]
     stats: Dict[str, Dict] = {}
     for key in dim_keys:
@@ -276,7 +276,7 @@ def aggregate_swings(
     for key in unavailable_keys:
         src = next((s["dimensions"][key] for s in usable if key in s["dimensions"]), {})
         avg_dims[key] = {
-            "label": src.get("label", SWINGAI_LABELS.get(key, key)),
+            "label": src.get("label", DIMENSION_LABELS.get(key, key)),
             "unit": src.get("unit", ""), "description": src.get("description", ""),
             "value": None, "stars": 0, "badge": "unavailable", "available": False,
             "unavailable_reason": src.get("unavailable_reason", "not measurable in these captures"),
@@ -295,7 +295,7 @@ def aggregate_swings(
         avg_stars = int(round(statistics.fmean(star_vals))) if star_vals else 3
 
         entry = {
-            "label": template.get("label", SWINGAI_LABELS.get(key, key)),
+            "label": template.get("label", DIMENSION_LABELS.get(key, key)),
             "unit": template.get("unit", ""),
             "description": template.get("description", ""),
             "value": _round_smart(st["mean"]),
@@ -315,7 +315,7 @@ def aggregate_swings(
     # Prescriptions for the average, ranked by bat-speed impact (same rule as
     # a single swing: dimension weight x star deficit).
     prescriptions = []
-    for key, weight in SWINGAI_WEIGHTS.items():
+    for key, weight in DIMENSION_WEIGHTS.items():
         d = avg_dims.get(key)
         if not d or d.get("available") is False or d["stars"] >= 4:
             continue
@@ -333,7 +333,7 @@ def aggregate_swings(
         p["priority"] = i + 1
 
     phases = {}
-    for phase_key, meta in SWINGAI_PHASES.items():
+    for phase_key, meta in SWING_PHASES.items():
         pdims = [{**avg_dims[d], "key": d} for d in meta["dimensions"] if d in avg_dims]
         if not pdims:
             continue
@@ -349,7 +349,7 @@ def aggregate_swings(
     scores = [s["swing_score"] for s in usable]
     pcts = [s["overall_percentile"] for s in usable if isinstance(s.get("overall_percentile"), (int, float))]
     weighted_consistency = [
-        (SWINGAI_WEIGHTS[k], stats[k]["consistency"])
+        (DIMENSION_WEIGHTS[k], stats[k]["consistency"])
         for k in dim_keys if stats[k]["consistency"] is not None
     ]
     overall_consistency = (
@@ -478,7 +478,7 @@ def _print_summary(p: Dict) -> None:
     if flagged:
         print("\n  Excluded from the average as outliers:")
         for k, s in flagged.items():
-            print(f"    - {SWINGAI_LABELS.get(k, k)}: swing(s) {s['excluded_swings']}")
+            print(f"    - {DIMENSION_LABELS.get(k, k)}: swing(s) {s['excluded_swings']}")
 
     least = sorted(
         [(k, d) for k, d in avg["dimensions"].items() if d.get("consistency") is not None],

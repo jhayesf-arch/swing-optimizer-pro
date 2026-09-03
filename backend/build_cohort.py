@@ -51,7 +51,7 @@ import json
 import os
 import sys
 
-from analyzer import RefinedHittingOptimizer, SWINGAI_LABELS
+from analyzer import RefinedHittingOptimizer, DIMENSION_LABELS
 
 MANIFEST_COLUMNS = [
     'mot_file', 'trc_file', 'level',
@@ -118,7 +118,7 @@ def _run_swing(buckets, mot, trc, level, h_m, w_kg, bat_kg, bat_m, handedness=No
         if cq.get('usable') is False:
             reasons = "; ".join(cq.get('reasons', [])) or "low capture quality"
             return f"skipped (quality {cq.get('score')}/100): {reasons}"
-        dims = diag.get('swingai_report', {}).get('dimensions', {})
+        dims = diag.get('phase_report', {}).get('dimensions', {})
         for key, d in dims.items():
             val = d.get('value')
             if isinstance(val, (int, float)):

@@ -310,7 +310,7 @@ header p { color: var(--text-muted); font-size: 1.1rem; }
 }
 
 /* ============================================================
-   PHASE CARDS GRID (SwingAI 4-Phase Layout)
+   PHASE CARDS GRID (4-Phase Layout)
    ============================================================ */
 .phase-cards-grid {
     display: grid;

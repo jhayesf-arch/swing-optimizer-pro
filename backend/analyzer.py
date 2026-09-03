@@ -56,13 +56,13 @@ SEGMENT_PARAMS = {
 }
 
 # ============================================================
-# SWINGAI-INSPIRED 12-DIMENSION THRESHOLD TABLE
-# Maps each of SwingAI's 4 phases / 12 dimensions onto our
+# 12-DIMENSION THRESHOLD TABLE
+# Maps each of the 4 phases / 12 dimensions onto our
 # computed physics metrics, with per-skill-level corridors
 # that yield a 1-5 star rating (5 = elite / Excellent,
 # 3-4 = Satisfactory, 1-2 = Off-Target).
 # ============================================================
-SWINGAI_THRESHOLDS = {
+DIMENSION_THRESHOLDS = {
     # PHASE 1 — BALANCE & LOAD
     'negative_move': {
         # Pelvis backward shift before stride (m).
@@ -244,7 +244,7 @@ SWINGAI_THRESHOLDS = {
 PERCENTILE_ANCHORS = [5.0, 25.0, 50.0, 75.0, 92.0]
 
 # Dimension weights for Swing Score (must sum to 1.0)
-SWINGAI_WEIGHTS = {
+DIMENSION_WEIGHTS = {
     'negative_move': 0.04,
     'pelvis_load': 0.05,
     'upper_torso_load': 0.04,
@@ -261,9 +261,9 @@ SWINGAI_WEIGHTS = {
     'follow_through_quality': 0.04,
     'lead_leg_block': 0.07,  # OBP: lead-knee extension is a top bat-speed correlate
 }
-# NOTE: weights need not sum to 1.0 — build_swingai_report normalises by total weight.
+# NOTE: weights need not sum to 1.0 — build_phase_report normalises by total weight.
 
-SWINGAI_LABELS = {
+DIMENSION_LABELS = {
     'negative_move': 'Negative Move',
     'pelvis_load': 'Pelvis Load',
     'upper_torso_load': 'Upper Torso Load',
@@ -281,7 +281,7 @@ SWINGAI_LABELS = {
     'lead_leg_block': 'Lead-Leg Block',
 }
 
-SWINGAI_PHASES = {
+SWING_PHASES = {
     'balance_load': {
         'label': 'Balance & Load',
         'icon': '',
@@ -2443,13 +2443,13 @@ class RefinedHittingOptimizer:
             for finding in findings:
                 print(f"   {finding}")
 
-        swingai_report = self.build_swingai_report(rotation, stride, trc_metrics, lower_body)
+        phase_report = self.build_phase_report(rotation, stride, trc_metrics, lower_body)
 
         # Score the capture itself, separately from the swing, so a check swing or
         # a mistracked trial can be held out of multi-swing averages with a reason.
         _dt = kinematics['time'].diff().mean() if 'time' in kinematics.columns else None
         capture_quality = assess_capture_quality(
-            rotation, swingai_report.get('dimensions', {}),
+            rotation, phase_report.get('dimensions', {}),
             has_markers=trc_data is not None, dt=_dt,
         )
 
@@ -2464,8 +2464,8 @@ class RefinedHittingOptimizer:
             "recommendations": recommendations,
             "efficiency_score": max(0, efficiency_score),
             "reference_values": SKILL_LEVEL_BENCHMARKS.get(self.skill_level, SKILL_LEVEL_BENCHMARKS['high_school']),
-            "swingai_report": swingai_report,
-            "swing_score": swingai_report['swing_score'],
+            "phase_report": phase_report,
+            "swing_score": phase_report['swing_score'],
             "lower_body": {k: v for k, v in lower_body.items() if not isinstance(v, np.ndarray)},
             "linear_inverse_dynamics": {k: v for k, v in linear_id.items() if not isinstance(v, np.ndarray)},
             "weight_shift": weight_shift,
@@ -2488,7 +2488,7 @@ class RefinedHittingOptimizer:
         """Rate a single dimension 1-5 based on per-skill-level threshold table.
         For 'invert=True' dimensions (like direction-at-contact), lower value is better.
         Returns 1-5."""
-        thresholds = SWINGAI_THRESHOLDS.get(key, {}).get(self.skill_level, [])
+        thresholds = DIMENSION_THRESHOLDS.get(key, {}).get(self.skill_level, [])
         if not thresholds:
             return 3  # fallback
         
@@ -2506,7 +2506,7 @@ class RefinedHittingOptimizer:
             return rating
 
     def _rating_to_badge(self, stars: int) -> str:
-        """Convert a 1-5 star rating to a SwingAI-style color badge label."""
+        """Convert a 1-5 star rating to a color badge label."""
         if stars >= 5:
             return 'excellent'
         elif stars >= 3:
@@ -2604,7 +2604,7 @@ class RefinedHittingOptimizer:
     def _percentile_for(self, key: str, value: float) -> Optional[float]:
         """Translate a raw dimension value into an approximate cohort percentile (1-99)
         by interpolating the value across the level's 5 star-boundary thresholds."""
-        thr = SWINGAI_THRESHOLDS.get(key, {}).get(self.skill_level, [])
+        thr = DIMENSION_THRESHOLDS.get(key, {}).get(self.skill_level, [])
         if not thr:
             return None
         vals = [t[0] for t in sorted(thr, key=lambda x: x[1])]  # thresholds in star order 1..5
@@ -2634,8 +2634,8 @@ class RefinedHittingOptimizer:
                 return round(ys[i] + frac * (ys[i + 1] - ys[i]), 0)
         return 50.0
 
-    def build_swingai_report(self, rotation: Dict, stride: Dict, trc_metrics: Dict, lower_body: Dict = None) -> Dict:
-        """Build a SwingAI-mirrored 12-dimension report from computed physics outputs.
+    def build_phase_report(self, rotation: Dict, stride: Dict, trc_metrics: Dict, lower_body: Dict = None) -> Dict:
+        """Build a 12-dimension report from computed physics outputs.
         Returns a structured dict with phases, dimension detail, and an aggregate Swing Score."""
         dims = {}
 
@@ -2658,7 +2658,7 @@ class RefinedHittingOptimizer:
             neg_move_stars = 2
 
         dims['negative_move'] = {
-            'label': SWINGAI_LABELS['negative_move'],
+            'label': DIMENSION_LABELS['negative_move'],
             'stars': neg_move_stars,
             'badge': self._rating_to_badge(neg_move_stars),
             'value': round(neg_move_proxy, 3),
@@ -2686,7 +2686,7 @@ class RefinedHittingOptimizer:
 
         pl_stars = self._rate_dimension('pelvis_load', pelvis_ke_load)
         dims['pelvis_load'] = {
-            'label': SWINGAI_LABELS['pelvis_load'],
+            'label': DIMENSION_LABELS['pelvis_load'],
             'stars': pl_stars,
             'badge': self._rating_to_badge(pl_stars),
             'value': round(pelvis_ke_load, 1),
@@ -2700,7 +2700,7 @@ class RefinedHittingOptimizer:
         torso_ke_capped = min(torso_ke_load, pelvis_ke_load * 4.0) if pelvis_ke_load > 0 else torso_ke_load
         utl_stars = self._rate_dimension('upper_torso_load', torso_ke_capped)
         dims['upper_torso_load'] = {
-            'label': SWINGAI_LABELS['upper_torso_load'],
+            'label': DIMENSION_LABELS['upper_torso_load'],
             'stars': utl_stars,
             'badge': self._rating_to_badge(utl_stars),
             'value': round(torso_ke_capped, 1),
@@ -2720,7 +2720,7 @@ class RefinedHittingOptimizer:
         stride_ratio = stride['stride_ratio'] if stride else 0.0
         sl_stars = self._rate_dimension('stride_length', stride_ratio)
         dims['stride_length'] = {
-            'label': SWINGAI_LABELS['stride_length'],
+            'label': DIMENSION_LABELS['stride_length'],
             'stars': sl_stars if stride_ok else 0,
             'badge': self._rating_to_badge(sl_stars) if stride_ok else 'unavailable',
             'value': round(stride_ratio, 2) if stride_ok else None,
@@ -2735,7 +2735,7 @@ class RefinedHittingOptimizer:
         fm_val = min(stride_eff, 115.0) if stride_eff <= 115.0 else max(0, 115.0 - (stride_eff - 115.0))
         fm_stars = self._rate_dimension('forward_move', fm_val)
         dims['forward_move'] = {
-            'label': SWINGAI_LABELS['forward_move'],
+            'label': DIMENSION_LABELS['forward_move'],
             'stars': fm_stars if stride_ok else 0,
             'badge': self._rating_to_badge(fm_stars) if stride_ok else 'unavailable',
             'value': round(stride_eff, 1) if stride_ok else None,
@@ -2756,7 +2756,7 @@ class RefinedHittingOptimizer:
             sep_score_val = sep_deg
         mhs_stars = self._rate_dimension('max_hip_shoulder_separation', sep_score_val)
         dims['max_hip_shoulder_separation'] = {
-            'label': SWINGAI_LABELS['max_hip_shoulder_separation'],
+            'label': DIMENSION_LABELS['max_hip_shoulder_separation'],
             'stars': mhs_stars,
             'badge': self._rating_to_badge(mhs_stars),
             'value': round(sep_deg, 1),
@@ -2776,7 +2776,7 @@ class RefinedHittingOptimizer:
             pelvis_rot_range = 0.0
         prr_stars = self._rate_dimension('pelvis_rotation_range', pelvis_rot_range)
         dims['pelvis_rotation_range'] = {
-            'label': SWINGAI_LABELS['pelvis_rotation_range'],
+            'label': DIMENSION_LABELS['pelvis_rotation_range'],
             'stars': prr_stars,
             'badge': self._rating_to_badge(prr_stars),
             'value': round(pelvis_rot_range, 1),
@@ -2798,7 +2798,7 @@ class RefinedHittingOptimizer:
             torso_rot_range = 0.0
         utrr_stars = self._rate_dimension('upper_torso_rotation_range', torso_rot_range)
         dims['upper_torso_rotation_range'] = {
-            'label': SWINGAI_LABELS['upper_torso_rotation_range'],
+            'label': DIMENSION_LABELS['upper_torso_rotation_range'],
             'stars': utrr_stars,
             'badge': self._rating_to_badge(utrr_stars),
             'value': round(torso_rot_range, 1),
@@ -2819,7 +2819,7 @@ class RefinedHittingOptimizer:
             pelvis_dev = 45.0
         pdc_stars = self._rate_dimension('pelvis_direction_at_contact', pelvis_dev, invert=True)
         dims['pelvis_direction_at_contact'] = {
-            'label': SWINGAI_LABELS['pelvis_direction_at_contact'],
+            'label': DIMENSION_LABELS['pelvis_direction_at_contact'],
             'stars': pdc_stars,
             'badge': self._rating_to_badge(pdc_stars),
             'value': round(pelvis_dev, 1),
@@ -2834,7 +2834,7 @@ class RefinedHittingOptimizer:
             torso_dev = 50.0
         utdc_stars = self._rate_dimension('upper_torso_direction_at_contact', float(torso_dev), invert=True)
         dims['upper_torso_direction_at_contact'] = {
-            'label': SWINGAI_LABELS['upper_torso_direction_at_contact'],
+            'label': DIMENSION_LABELS['upper_torso_direction_at_contact'],
             'stars': utdc_stars,
             'badge': self._rating_to_badge(utdc_stars),
             'value': round(torso_dev, 1),
@@ -2847,7 +2847,7 @@ class RefinedHittingOptimizer:
         llb_val = llb.get('lead_leg_block_deg', 0.0)
         llb_stars = self._rate_dimension('lead_leg_block', llb_val)
         dims['lead_leg_block'] = {
-            'label': SWINGAI_LABELS['lead_leg_block'],
+            'label': DIMENSION_LABELS['lead_leg_block'],
             'stars': llb_stars,
             'badge': self._rating_to_badge(llb_stars),
             'value': round(llb_val, 1),
@@ -2860,7 +2860,7 @@ class RefinedHittingOptimizer:
         chain_eff = rotation.get('energy_transfer_proxy_pct', 0.0) if rotation else 0.0
         kce_stars = self._rate_dimension('kinetic_chain_efficiency', chain_eff)
         dims['kinetic_chain_efficiency'] = {
-            'label': SWINGAI_LABELS['kinetic_chain_efficiency'],
+            'label': DIMENSION_LABELS['kinetic_chain_efficiency'],
             'stars': kce_stars,
             'badge': self._rating_to_badge(kce_stars),
             'value': round(chain_eff, 1),
@@ -2890,7 +2890,7 @@ class RefinedHittingOptimizer:
         else:
             sq_stars = 2
         dims['sequence_quality'] = {
-            'label': SWINGAI_LABELS['sequence_quality'],
+            'label': DIMENSION_LABELS['sequence_quality'],
             'stars': sq_stars,
             'badge': self._rating_to_badge(sq_stars),
             'value': round(rotation.get('sequence_timing_ms', 0.0) if rotation else 0.0, 1),
@@ -2911,7 +2911,7 @@ class RefinedHittingOptimizer:
             hand_spd = hs_result.get('estimated_hand_speed_mph', 0.0) if hs_result else 0.0
         hs_stars = self._rate_dimension('hand_speed', hand_spd)
         dims['hand_speed'] = {
-            'label': SWINGAI_LABELS['hand_speed'],
+            'label': DIMENSION_LABELS['hand_speed'],
             'stars': hs_stars,
             'badge': self._rating_to_badge(hs_stars),
             'value': round(hand_spd, 1),
@@ -2947,7 +2947,7 @@ class RefinedHittingOptimizer:
                 ft_range = float(np.abs(post_peak[end_idx] - post_peak[0]) * 180.0 / np.pi)
         ft_stars = self._rate_dimension('follow_through_quality', ft_range)
         dims['follow_through_quality'] = {
-            'label': SWINGAI_LABELS['follow_through_quality'],
+            'label': DIMENSION_LABELS['follow_through_quality'],
             'stars': ft_stars,
             'badge': self._rating_to_badge(ft_stars),
             'value': round(ft_range, 1),
@@ -2967,7 +2967,7 @@ class RefinedHittingOptimizer:
         pct_weight = 0.0
         pct_weighted_sum = 0.0
         n_empirical = 0
-        for dim_key, weight in SWINGAI_WEIGHTS.items():
+        for dim_key, weight in DIMENSION_WEIGHTS.items():
             # A dimension the capture couldn't measure carries no weight — scoring
             # it would penalise the athlete for a limitation of the data.
             if dims[dim_key].get('available') is False:
@@ -3012,7 +3012,7 @@ class RefinedHittingOptimizer:
         # impact = dimension weight × star deficit (how far below a 5-star it is).
         # ------------------------------------------------------------------
         prescriptions = []
-        for dim_key, weight in SWINGAI_WEIGHTS.items():
+        for dim_key, weight in DIMENSION_WEIGHTS.items():
             if dims[dim_key].get('available') is False:
                 continue  # never prescribe a drill for something we didn't measure
             stars = dims[dim_key]['stars']
@@ -3023,7 +3023,7 @@ class RefinedHittingOptimizer:
                 continue
             prescriptions.append({
                 'key': dim_key,
-                'label': SWINGAI_LABELS.get(dim_key, dim_key),
+                'label': DIMENSION_LABELS.get(dim_key, dim_key),
                 'stars': stars,
                 'percentile': dims[dim_key].get('percentile', 50),
                 'impact': round(weight * (5 - stars), 4),
@@ -3039,7 +3039,7 @@ class RefinedHittingOptimizer:
         # Assemble phases
         # ------------------------------------------------------------------
         phases = {}
-        for phase_key, phase_meta in SWINGAI_PHASES.items():
+        for phase_key, phase_meta in SWING_PHASES.items():
             phase_dims = [{**dims[d], 'key': d} for d in phase_meta['dimensions'] if d in dims]
             rated = [d for d in phase_dims if d.get('available') is not False]
             phase_avg_stars = sum(d['stars'] for d in rated) / max(1, len(rated))

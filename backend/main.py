@@ -479,7 +479,7 @@ async def analyze_batch(
                 trc_path = trc_by_stem.get(stem.lower())
                 trc_data = opt.load_trc_file(trc_path) if trc_path else None
                 diag = opt.comprehensive_diagnosis(kin, name, trc_data=trc_data)
-                rep = diag.get("swingai_report", {})
+                rep = diag.get("phase_report", {})
 
                 # Kinematic sequence is small and worth having per swing; skeleton
                 # frames are large, so only the first swing carries them.

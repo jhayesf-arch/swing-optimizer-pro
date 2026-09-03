@@ -32,7 +32,7 @@ const DEMO_DIAGNOSIS = {
         'Good foundation. To push toward elite: focus on violent hip deceleration at front foot plant to whip stored energy into the torso and arms.',
         'Focus on lead-leg bracing at contact and sequential deceleration of the pelvis to whip maximum energy into the hands.',
     ],
-    swingai_report: {
+    phase_report: {
         skill_level: 'college',
         swing_score: 74,
         overall_percentile: 71,
@@ -224,7 +224,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function exportReport() {
         if (!lastAnalysis) return;
         const { diagnosis, filename } = lastAnalysis;
-        const rep = diagnosis.swingai_report || {};
+        const rep = diagnosis.phase_report || {};
         const m = diagnosis.metrics || {};
         const skillLabels = { youth: 'Youth', high_school: 'High School', college: 'College', professional: 'Professional' };
         const skill = skillLabels[rep.skill_level || selectedSkillLevel] || (rep.skill_level || '—');
@@ -469,7 +469,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({
                     question,
                     dim_key: dimKey || null,
-                    report: lastAnalysis.diagnosis?.swingai_report || {},
+                    report: lastAnalysis.diagnosis?.phase_report || {},
                     metrics: lastAnalysis.diagnosis?.metrics || {},
                     capture_note: captureNote || null,
                     history: coachHistory.slice(-8),
@@ -611,7 +611,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     swing_score: avg.swing_score,
                     efficiency_score: Math.round(mean(swings.map(s => s.efficiency_score || 0))),
                     metrics: data.average_metrics || {},
-                    swingai_report: { ...avg, percentile_library_dims: libDims(avg.dimensions) },
+                    phase_report: { ...avg, percentile_library_dims: libDims(avg.dimensions) },
                     findings: [], recommendations: [],
                     skeleton_frames: first.skeleton_frames,
                     kinematic_sequence: first.kinematic_sequence,
@@ -633,7 +633,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     swing_score: s.swing_score,
                     efficiency_score: s.efficiency_score,
                     metrics: s.metrics || {},
-                    swingai_report: {
+                    phase_report: {
                         swing_score: s.swing_score,
                         overall_percentile: s.overall_percentile,
                         percentile_basis: s.percentile_basis,
@@ -739,7 +739,7 @@ document.addEventListener('DOMContentLoaded', () => {
         animateCount(document.getElementById('efficiency-number'), effScore, 0);
 
         // Overall cohort percentile + basis (your own library vs research benchmarks)
-        const overallPct = diagnosis.swingai_report?.overall_percentile;
+        const overallPct = diagnosis.phase_report?.overall_percentile;
         const opEl = document.getElementById('overall-pct-number');
         if (typeof overallPct === 'number') {
             animateCount(opEl, overallPct, 0);
@@ -747,14 +747,14 @@ document.addEventListener('DOMContentLoaded', () => {
             opEl.classList.add(overallPct >= 65 ? 'val-good' : overallPct >= 40 ? 'val-warn' : 'val-bad');
         } else { opEl.textContent = '--'; }
 
-        const basis = diagnosis.swingai_report?.percentile_basis;
-        const libDims = diagnosis.swingai_report?.percentile_library_dims || 0;
+        const basis = diagnosis.phase_report?.percentile_basis;
+        const libDims = diagnosis.phase_report?.percentile_library_dims || 0;
         const opLabel = document.getElementById('overall-pct-label');
         const note = document.getElementById('pct-basis-note');
 
         // Averaged multi-swing view: say so explicitly, since these numbers mean
         // something different from a single trial.
-        const rep = diagnosis.swingai_report || {};
+        const rep = diagnosis.phase_report || {};
         const avgNote = document.getElementById('avg-basis-note');
         if (avgNote) {
             if (rep.is_average) {
@@ -782,7 +782,7 @@ document.addEventListener('DOMContentLoaded', () => {
             youth: 'Youth', high_school: 'High School',
             college: 'College', professional: 'Professional'
         };
-        const skillLevel = diagnosis.swingai_report?.skill_level || selectedSkillLevel;
+        const skillLevel = diagnosis.phase_report?.skill_level || selectedSkillLevel;
         document.getElementById('skill-badge-display').textContent = skillLabels[skillLevel] || skillLevel;
 
         // Hide data-warning (no longer needed without exit velo guess)
@@ -798,10 +798,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // from the per-frame skeleton joints already in the response.
         renderKinematicSequence(diagnosis.kinematic_sequence || computeSequenceFromSkeleton(diagnosis.skeleton_frames));
 
-        // ---- SWINGAI 4-PHASE CARDS ----
-        if (diagnosis.swingai_report) {
-            renderSwingAIReport(diagnosis.swingai_report);
-            renderCoachingFocus(diagnosis.swingai_report);
+        // ---- 4-PHASE CARDS ----
+        if (diagnosis.phase_report) {
+            renderPhaseReport(diagnosis.phase_report);
+            renderCoachingFocus(diagnosis.phase_report);
             setTimeout(() => init3DSkeleton(diagnosis.skeleton_frames), 100);
             attachSkeletonClickHandlers();
         }
@@ -1225,11 +1225,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // -----------------------------------------
-    // SwingAI Report Renderer
+    // 4-Phase Report Renderer
     // -----------------------------------------
     const PHASE_ORDER = ['balance_load', 'stride', 'power_move', 'contact'];
 
-    function renderSwingAIReport(report) {
+    function renderPhaseReport(report) {
         const grid = document.getElementById('phase-cards-grid');
         grid.innerHTML = '';
 
