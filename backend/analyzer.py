@@ -611,6 +611,20 @@ class RefinedSwingMetrics:
     # Same, measured from front-foot plant — the form reported in the literature.
     # Welch et al. (1995): elite hitters peak ~50–100 ms after plant.
     time_to_peak_pelvis_from_plant_ms: float = 0.0
+    # ── Bat-ball contact force (kinematics-derived) ─────────────────────────
+    # Order-of-magnitude estimate from the hand deceleration spike at contact;
+    # at 60 Hz with a 15 Hz filter the true 1 ms impact transient is largely
+    # smoothed away, so real peak forces (4-9 kN) will read lower.
+    peak_contact_force_N: float = 0.0
+    contact_impulse_Ns: float = 0.0
+    # ── Whole-body ground reaction force (CoM-derived, requires .trc) ───────
+    # Newton's second law on the whole-body centre of mass built from de Leva
+    # segment fractions. Fluit et al. 2014 report ~10-15% BW vertical MAE vs
+    # a force plate; 0.0 when no .trc is supplied.
+    peak_grf_vert_N: float = 0.0
+    peak_grf_vert_BW: float = 0.0    # peak vertical GRF as fraction of body weight
+    peak_grf_ap_N: float = 0.0
+    peak_grf_ml_N: float = 0.0
 
 def _metric_evidence_block(metrics: dict, rotation_ctx: dict) -> dict:
     """Per-metric evidence tier + per-capture reliability. Degrades to {} if the
@@ -875,6 +889,8 @@ class RefinedHittingOptimizer:
         max_hand_speed = 0.0
         peak_time = 0.0
         contact_time = 0.0
+        contact_impulse = 0.0
+        contact_force = 0.0
         # Find whichever wrist is moving faster (proxy for bat speed)
         wrist_markers = ['r_mwrist_study', 'L_mwrist_study', 'r_lwrist_study', 'L_lwrist_study',
                          'r_wrist_radius', 'l_wrist_radius', 'r_wrist_ulna', 'l_wrist_ulna',
@@ -919,13 +935,41 @@ class RefinedHittingOptimizer:
                     hi = min(len(speed), pk + int(0.15 * fs) + 1)
                     if hi - pk >= 3:
                         acc = np.gradient(speed, dt)
-                        contact_time = float(times[int(np.argmin(acc[pk:hi])) + pk])
+                        _decel_frame = int(np.argmin(acc[pk:hi])) + pk
+                        contact_time = float(times[_decel_frame])
+
+                        # Contact-force estimate. Treat the hand+bat system as one
+                        # rigid body being braked by the ball impulse:
+                        #     J = m_effective · Δv_hand    (impulse-momentum)
+                        #     F_peak ≈ |m_effective · min(acc)|   (Newton at the
+                        #                                          brake spike)
+                        #
+                        # m_effective is the mass the hands are moving into the
+                        # ball — both forearms plus the bat. Not exact, but close
+                        # enough to compare between swings: heavier bat or harder
+                        # brake both push the number up as they should.
+                        #
+                        # At 60 Hz with a 15 Hz filter a real ~1 ms impact
+                        # transient is largely smoothed away, so treat this as
+                        # order-of-magnitude — real peak contact forces in
+                        # baseball are ~4-9 kN and this will read lower.
+                        _m_forearm = self.body_mass_kg * SEGMENT_PARAMS['forearm']['mass_pct']
+                        m_eff = 2.0 * _m_forearm + getattr(self, 'bat_mass_kg', 0.85)
+                        # Δv over the 3-frame window centred on the brake peak
+                        _lo = max(0, _decel_frame - 1)
+                        _hi = min(len(speed) - 1, _decel_frame + 1)
+                        dv = float(speed[_lo] - speed[_hi])   # positive: braking
+                        dt_win = float(times[_hi] - times[_lo]) or dt
+                        contact_impulse = float(m_eff * max(0.0, dv))
+                        contact_force = float(m_eff * abs(np.min(acc[pk:hi])))
 
         metrics = {
             'max_hand_speed_mps': float(max_hand_speed),
             'max_hand_speed_mph': float(max_hand_speed) * 2.23694,
             'hand_speed_peak_time_s': peak_time,
             'hand_contact_time_s': contact_time,
+            'contact_impulse_Ns': contact_impulse,
+            'peak_contact_force_N': contact_force,
         }
         return metrics
         
@@ -2116,15 +2160,33 @@ class RefinedHittingOptimizer:
         # unreliable values. The TRC path measured translational marker speed, not
         # angular velocity, which made it less accurate than the corrected joint-angle path.
 
-        # GRF estimation from whole-body CoM (requires TRC markers)
+        # GRF estimation from whole-body CoM (requires TRC markers).
+        # Prep pass: the CoM computation reads midHip, which some pipelines emit
+        # and others don't. Where it is absent but the ASIS pair is present, build
+        # it from the average — the mono pipeline in particular ships r/l hip
+        # markers separately with no midHip, so without this the whole GRF chain
+        # falls silently to {} on those trials.
         grf_data = {}
         if trc_data is not None:
             try:
+                if 'midHip_X' not in trc_data.columns and 'RHip_X' in trc_data.columns:
+                    # Build a new frame with the synthesised columns rather than
+                    # three separate .assign() calls, which pandas flags as
+                    # fragmenting the underlying blocks.
+                    mid = pd.DataFrame({
+                        f'midHip_{a}': (trc_data[f'RHip_{a}'].values +
+                                        trc_data[f'LHip_{a}'].values) / 2.0
+                        for a in 'XYZ'
+                    }, index=trc_data.index)
+                    trc_data = pd.concat([trc_data, mid], axis=1)
                 from grf_estimation import estimate_grf, grf_summary
                 grf_result = estimate_grf(trc_data, body_mass_kg=self.body_mass_kg)
                 grf_data = grf_summary(grf_result, self.body_mass_kg)
-            except Exception:
-                pass
+            except Exception as _e:
+                # Silent failure was hiding real bugs (the trapz removal in NumPy 2
+                # took this out for a full session before anyone noticed). Log so the
+                # next break is visible.
+                print(f"[grf] estimation failed: {type(_e).__name__}: {_e}")
         
         findings = []
         recommendations = []
@@ -2384,6 +2446,13 @@ class RefinedHittingOptimizer:
             pelvis_decel_rate_deg_s2=rotation.get('pelvis_decel_rate_deg_s2', 0.0) if rotation else 0.0,
             time_to_peak_pelvis_ms=rotation.get('time_to_peak_pelvis_ms', 0.0) if rotation else 0.0,
             time_to_peak_pelvis_from_plant_ms=time_to_peak_pelvis_from_plant_ms,
+            # Contact force + whole-body GRF (both require .trc; default to 0)
+            peak_contact_force_N=trc_metrics.get('peak_contact_force_N', 0.0),
+            contact_impulse_Ns=trc_metrics.get('contact_impulse_Ns', 0.0),
+            peak_grf_vert_N=grf_data.get('peak_grf_vert_N', 0.0),
+            peak_grf_vert_BW=grf_data.get('peak_grf_vert_BW', 0.0),
+            peak_grf_ap_N=grf_data.get('peak_grf_ap_N', 0.0),
+            peak_grf_ml_N=grf_data.get('peak_grf_ml_N', 0.0),
         )
         
         # Terminal printing if verbose

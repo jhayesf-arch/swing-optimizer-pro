@@ -152,7 +152,9 @@ def estimate_grf(trc_df: pd.DataFrame, body_mass_kg: float,
     l_contact = l_heel_y < (np.min(l_heel_y) + 0.02)
 
     peak_vert = float(np.max(grf_vert))
-    impulse   = float(np.trapz(np.maximum(grf_vert, 0), time))
+    # np.trapz was removed in NumPy 2.x; np.trapezoid is the drop-in replacement.
+    _trapz = getattr(np, 'trapezoid', getattr(np, 'trapz', None))
+    impulse   = float(_trapz(np.maximum(grf_vert, 0), time))
 
     return {
         'com_pos':   com_f,

@@ -17,6 +17,8 @@ const DEMO_DIAGNOSIS = {
         time_to_peak_pelvis_ms: 145, pelvis_rotation_at_contact_deg: 52.4,
         x_factor_stretch_deg: 13.6, torso_arm_sequence_gap_ms: 41,
         pelvis_decel_rate_deg_s2: 9200, peak_lead_hip_ir_torque_Nm: 46.8,
+        peak_grf_vert_N: 1350, peak_grf_vert_BW: 1.62, peak_grf_ap_N: 480, peak_grf_ml_N: 320,
+        peak_contact_force_N: 940, contact_impulse_Ns: 31.5,
         pelvis_rotation_excursion_deg: 79, contact_detection_method: 'peak_hand_speed',
     },
     findings: [
@@ -889,6 +891,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${m.torso_arm_sequence_gap_ms !== 0 ? createMetric('Torso→Arm Gap', m.torso_arm_sequence_gap_ms.toFixed(0), 'ms', false, 'torso_arm_sequence_gap_ms') : ''}
                 ${m.pelvis_decel_rate_deg_s2 > 0 ? createMetric('Pelvis Decel Rate', (m.pelvis_decel_rate_deg_s2 / 1000).toFixed(1), 'k°/s²', false, 'pelvis_decel_rate_deg_s2') : ''}
                 ${m.peak_lead_hip_ir_torque_Nm > 0 ? createMetric('Lead Hip IR Torque', m.peak_lead_hip_ir_torque_Nm.toFixed(1), 'N·m', false, 'peak_lead_hip_ir_torque_Nm') : ''}
+                ${m.peak_grf_vert_BW > 0 ? createMetric('Peak Vertical GRF', (m.peak_grf_vert_BW * 100).toFixed(0), '% BW', false, 'peak_grf_vert_BW') : ''}
+                ${m.peak_contact_force_N > 0 ? createMetric('Contact Force (est)', m.peak_contact_force_N.toFixed(0), 'N', false, 'peak_contact_force_N') : ''}
             `;
         }
 

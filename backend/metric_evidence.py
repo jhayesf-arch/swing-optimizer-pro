@@ -158,6 +158,29 @@ METRIC_EVIDENCE = {
     'time_to_contact_s': (
         B, 'Blast Motion (proprietary), conceptually',
         'Their formula is unpublished; ours is an approximation, not a match.'),
+    'peak_contact_force_N': (
+        C, 'kinematic estimate (m_eff * hand deceleration)',
+        'Order-of-magnitude estimate from the hand deceleration spike at contact. '
+        'At 60 Hz with a 15 Hz filter the true 1 ms impact transient is largely '
+        'smoothed away, so real peak forces (~4-9 kN in baseball) will read lower. '
+        'Comparable between swings, not as absolute impact load.'),
+    'contact_impulse_Ns': (
+        C, 'impulse-momentum (m_eff * Δv_hand)',
+        'Momentum change the hands absorb through the deceleration window. Less '
+        'sensitive to the filter smoothing than the peak force above.'),
+    'peak_grf_vert_N': (
+        B, 'Fluit et al. 2014; whole-body CoM Newton',
+        'Vertical GRF from CoM acceleration. ~10-15% BW vertical MAE vs force '
+        'plate. Requires a .trc for the segment CoM computation.'),
+    'peak_grf_vert_BW': (
+        B, 'Fluit et al. 2014; Welch 1995 reference ~123% BW',
+        'Vertical GRF as fraction of body weight; the form the literature reports.'),
+    'peak_grf_ap_N': (
+        B, 'Fluit et al. 2014; whole-body CoM Newton',
+        'Fore-aft GRF from CoM acceleration.'),
+    'peak_grf_ml_N': (
+        B, 'Fluit et al. 2014; whole-body CoM Newton',
+        'Medio-lateral GRF from CoM acceleration.'),
     'pelvis_torso_contribution_pct': (
         C, 'Blast Motion (proprietary), conceptually',
         'Their "Body Rotation" formula is unpublished. Our own approximation; '
