@@ -181,6 +181,36 @@ METRIC_EVIDENCE = {
     'peak_grf_ml_N': (
         B, 'Fluit et al. 2014; whole-body CoM Newton',
         'Medio-lateral GRF from CoM acceleration.'),
+    # Bottom-up ID moments (Newton-Euler chain with GRF, α=0 first pass).
+    # Physics is standard, our CoP model and per-foot GRF split are ours; not
+    # yet validated against a force plate. Moves to A once Cortex comparison
+    # closes the loop.
+    'peak_ankle_moment_id_l_Nm': (B, 'Newton-Euler chain (bottom_up_id.py)',
+        'Left ankle moment from GRF + gravity + inertia — the load-bearing '
+        'estimate, not τ = I·α alone.'),
+    'peak_ankle_moment_id_r_Nm': (B, 'Newton-Euler chain (bottom_up_id.py)',
+        'Right ankle moment from GRF + gravity + inertia.'),
+    'peak_knee_moment_id_l_Nm': (B, 'Newton-Euler chain (bottom_up_id.py)',
+        'Left knee moment — for a right-handed hitter, this is the lead-leg '
+        '"posting up" moment. Baseball literature reports 150-250 N·m.'),
+    'peak_knee_moment_id_r_Nm': (B, 'Newton-Euler chain (bottom_up_id.py)',
+        'Right knee moment.'),
+    'peak_hip_moment_id_l_Nm': (B, 'Newton-Euler chain (bottom_up_id.py)',
+        'Left hip moment; 200-400 N·m in elite baseball hitters.'),
+    'peak_hip_moment_id_r_Nm': (B, 'Newton-Euler chain (bottom_up_id.py)',
+        'Right hip moment.'),
+    'peak_ankle_force_id_l_N': (B, 'Newton-Euler chain (bottom_up_id.py)',
+        'Left ankle joint reaction force magnitude.'),
+    'peak_ankle_force_id_r_N': (B, 'Newton-Euler chain (bottom_up_id.py)',
+        'Right ankle joint reaction force magnitude.'),
+    'peak_knee_force_id_l_N': (B, 'Newton-Euler chain (bottom_up_id.py)',
+        'Left knee joint reaction force magnitude.'),
+    'peak_knee_force_id_r_N': (B, 'Newton-Euler chain (bottom_up_id.py)',
+        'Right knee joint reaction force magnitude.'),
+    'peak_hip_force_id_l_N': (B, 'Newton-Euler chain (bottom_up_id.py)',
+        'Left hip joint reaction force magnitude.'),
+    'peak_hip_force_id_r_N': (B, 'Newton-Euler chain (bottom_up_id.py)',
+        'Right hip joint reaction force magnitude.'),
     'pelvis_torso_contribution_pct': (
         C, 'Blast Motion (proprietary), conceptually',
         'Their "Body Rotation" formula is unpublished. Our own approximation; '

@@ -19,6 +19,13 @@ const DEMO_DIAGNOSIS = {
         pelvis_decel_rate_deg_s2: 9200, peak_lead_hip_ir_torque_Nm: 46.8,
         peak_grf_vert_N: 1350, peak_grf_vert_BW: 1.62, peak_grf_ap_N: 480, peak_grf_ml_N: 320,
         peak_contact_force_N: 940, contact_impulse_Ns: 31.5,
+        // Bottom-up ID demo values, in the range the literature reports for a
+        // full-effort adult right-handed baseball swing (Nesbit 2005;
+        // Fortenbaugh 2011). Lead > trail, as expected.
+        peak_hip_moment_id_l_Nm: 320, peak_hip_moment_id_r_Nm: 210,
+        peak_knee_moment_id_l_Nm: 195, peak_knee_moment_id_r_Nm: 120,
+        peak_ankle_moment_id_l_Nm: 140, peak_ankle_moment_id_r_Nm: 85,
+        peak_hip_force_id_l_N: 1180, peak_knee_force_id_l_N: 1220,
         pelvis_rotation_excursion_deg: 79, contact_detection_method: 'peak_hand_speed',
     },
     findings: [
@@ -894,6 +901,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${m.peak_grf_vert_BW > 0 ? createMetric('Peak Vertical GRF', (m.peak_grf_vert_BW * 100).toFixed(0), '% BW', false, 'peak_grf_vert_BW') : ''}
                 ${m.peak_contact_force_N > 0 ? createMetric('Contact Force (est)', m.peak_contact_force_N.toFixed(0), 'N', false, 'peak_contact_force_N') : ''}
             `;
+        }
+
+        // ── JOINT LOADS (bottom-up ID) ───────────────────────────────────
+        // Rendered only when we actually computed it (needs a .trc). Hides the
+        // whole heading + grid when absent so the panel doesn't show empty
+        // tiles that read as data problems.
+        const idEl = document.getElementById('id-metrics');
+        const idHeader = document.getElementById('id-heading');
+        const idHasData = m.peak_hip_moment_id_l_Nm > 0 || m.peak_hip_moment_id_r_Nm > 0;
+        if (idEl) {
+            if (idHasData) {
+                if (idHeader) idHeader.style.display = '';
+                idEl.style.display = '';
+                idEl.innerHTML = `
+                    ${createMetric('Lead Hip Moment',   m.peak_hip_moment_id_l_Nm.toFixed(0),   'N·m', false, 'peak_hip_moment_id_l_Nm')}
+                    ${createMetric('Trail Hip Moment',  m.peak_hip_moment_id_r_Nm.toFixed(0),   'N·m', false, 'peak_hip_moment_id_r_Nm')}
+                    ${createMetric('Lead Knee Moment',  m.peak_knee_moment_id_l_Nm.toFixed(0),  'N·m', false, 'peak_knee_moment_id_l_Nm')}
+                    ${createMetric('Trail Knee Moment', m.peak_knee_moment_id_r_Nm.toFixed(0),  'N·m', false, 'peak_knee_moment_id_r_Nm')}
+                    ${createMetric('Lead Ankle Moment', m.peak_ankle_moment_id_l_Nm.toFixed(0), 'N·m', false, 'peak_ankle_moment_id_l_Nm')}
+                    ${createMetric('Trail Ankle Moment',m.peak_ankle_moment_id_r_Nm.toFixed(0), 'N·m', false, 'peak_ankle_moment_id_r_Nm')}
+                    ${createMetric('Lead Hip Force',    m.peak_hip_force_id_l_N.toFixed(0),    'N',   false, 'peak_hip_force_id_l_N')}
+                    ${createMetric('Lead Knee Force',   m.peak_knee_force_id_l_N.toFixed(0),   'N',   false, 'peak_knee_force_id_l_N')}
+                `;
+            } else {
+                if (idHeader) idHeader.style.display = 'none';
+                idEl.style.display = 'none';
+                idEl.innerHTML = '';
+            }
         }
 
         // Reset advanced panel state

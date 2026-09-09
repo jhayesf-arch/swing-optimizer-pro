@@ -625,6 +625,23 @@ class RefinedSwingMetrics:
     peak_grf_vert_BW: float = 0.0    # peak vertical GRF as fraction of body weight
     peak_grf_ap_N: float = 0.0
     peak_grf_ml_N: float = 0.0
+    # ── Bottom-up inverse dynamics (per-joint moments) ──────────────────────
+    # Newton-Euler chain from GRF up through foot → shank → thigh, per leg.
+    # Includes gravity through the leg and the ground reaction path, which
+    # τ = I·α alone did not. Populated only when both .trc and GRF succeed;
+    # 0.0 otherwise. See backend/bottom_up_id.py for the derivation.
+    peak_ankle_moment_id_l_Nm: float = 0.0
+    peak_ankle_moment_id_r_Nm: float = 0.0
+    peak_knee_moment_id_l_Nm:  float = 0.0
+    peak_knee_moment_id_r_Nm:  float = 0.0
+    peak_hip_moment_id_l_Nm:   float = 0.0
+    peak_hip_moment_id_r_Nm:   float = 0.0
+    peak_ankle_force_id_l_N: float = 0.0
+    peak_ankle_force_id_r_N: float = 0.0
+    peak_knee_force_id_l_N:  float = 0.0
+    peak_knee_force_id_r_N:  float = 0.0
+    peak_hip_force_id_l_N:   float = 0.0
+    peak_hip_force_id_r_N:   float = 0.0
 
 def _metric_evidence_block(metrics: dict, rotation_ctx: dict) -> dict:
     """Per-metric evidence tier + per-capture reliability. Degrades to {} if the
@@ -2187,6 +2204,30 @@ class RefinedHittingOptimizer:
                 # took this out for a full session before anyone noticed). Log so the
                 # next break is visible.
                 print(f"[grf] estimation failed: {type(_e).__name__}: {_e}")
+
+        # Bottom-up inverse dynamics — GRF path through each leg. Requires both
+        # the .trc (marker positions) and a working GRF result. Silent {} on
+        # anything else so the rest of the analysis still runs; failure reason
+        # printed for the same "no silent bugs" reason.
+        id_data = {}
+        if trc_data is not None and grf_data:
+            try:
+                from bottom_up_id import bottom_up_lower_body
+                # grf_summary strips the time series; re-run estimate_grf to get
+                # them. Cheap enough (double diff on ~200 frames) not to cache.
+                from grf_estimation import estimate_grf
+                _grf = estimate_grf(trc_data, body_mass_kg=self.body_mass_kg)
+                _ss = int((rotation or {}).get('swing_start_frame') or 0)
+                id_data = bottom_up_lower_body(
+                    trc_data, kinematics,
+                    grf_ts=_grf['grf_total'],
+                    grf_time=trc_data['Time'].values,
+                    body_mass_kg=self.body_mass_kg,
+                    body_height_m=self.body_height_m,
+                    swing_start_frame=_ss,
+                )
+            except Exception as _e:
+                print(f"[id] bottom-up ID failed: {type(_e).__name__}: {_e}")
         
         findings = []
         recommendations = []
@@ -2453,6 +2494,19 @@ class RefinedHittingOptimizer:
             peak_grf_vert_BW=grf_data.get('peak_grf_vert_BW', 0.0),
             peak_grf_ap_N=grf_data.get('peak_grf_ap_N', 0.0),
             peak_grf_ml_N=grf_data.get('peak_grf_ml_N', 0.0),
+            # Bottom-up ID outputs. All zero when trc absent or GRF failed.
+            peak_ankle_moment_id_l_Nm=id_data.get('peak_ankle_moment_id_l_Nm', 0.0),
+            peak_ankle_moment_id_r_Nm=id_data.get('peak_ankle_moment_id_r_Nm', 0.0),
+            peak_knee_moment_id_l_Nm=id_data.get('peak_knee_moment_id_l_Nm', 0.0),
+            peak_knee_moment_id_r_Nm=id_data.get('peak_knee_moment_id_r_Nm', 0.0),
+            peak_hip_moment_id_l_Nm=id_data.get('peak_hip_moment_id_l_Nm', 0.0),
+            peak_hip_moment_id_r_Nm=id_data.get('peak_hip_moment_id_r_Nm', 0.0),
+            peak_ankle_force_id_l_N=id_data.get('peak_ankle_force_id_l_N', 0.0),
+            peak_ankle_force_id_r_N=id_data.get('peak_ankle_force_id_r_N', 0.0),
+            peak_knee_force_id_l_N=id_data.get('peak_knee_force_id_l_N', 0.0),
+            peak_knee_force_id_r_N=id_data.get('peak_knee_force_id_r_N', 0.0),
+            peak_hip_force_id_l_N=id_data.get('peak_hip_force_id_l_N', 0.0),
+            peak_hip_force_id_r_N=id_data.get('peak_hip_force_id_r_N', 0.0),
         )
         
         # Terminal printing if verbose
