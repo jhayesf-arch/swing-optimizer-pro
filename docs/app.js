@@ -109,6 +109,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const fileInput = document.getElementById('file-input');
     const trcInput = document.getElementById('trc-input');
     const trcLabel = document.getElementById('trc-label');
+    // Optional dynamics inputs: a reference (Cortex / OpenCap sim / OpenSim .sto)
+    // to compare against, and the athlete's scaled .osim for OpenSim ID.
+    const refInput = document.getElementById('ref-input');
+    const modelInput = document.getElementById('model-input');
+    const dynLabel = document.getElementById('dyn-label');
 
     const uploadSection = document.getElementById('upload-section');
     const resultsSection = document.getElementById('results-section');
@@ -189,6 +194,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    function updateDynLabel() {
+        const parts = [];
+        const nr = refInput && refInput.files ? refInput.files.length : 0;
+        if (nr) parts.push(nr === 1 ? `✓ ${refInput.files[0].name}` : `✓ ${nr} references`);
+        if (modelInput && modelInput.files && modelInput.files[0]) parts.push(`✓ ${modelInput.files[0].name}`);
+        if (dynLabel) dynLabel.textContent = parts.join('  ·  ');
+    }
+    if (refInput) refInput.addEventListener('change', updateDynLabel);
+    if (modelInput) modelInput.addEventListener('change', updateDynLabel);
+
     document.getElementById('load-demo').addEventListener('click', () => {
         hideViewSelector();
         renderDashboard(DEMO_DIAGNOSIS, 'demo_swing.mot');
@@ -212,6 +227,9 @@ document.addEventListener('DOMContentLoaded', () => {
         fileInput.value = '';
         trcInput.value = '';
         trcLabel.textContent = '';
+        if (refInput) refInput.value = '';
+        if (modelInput) modelInput.value = '';
+        if (dynLabel) dynLabel.textContent = '';
         droppedTrcFiles = [];
         hideViewSelector();
     });
@@ -366,6 +384,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const trcFile = trcInput.files[0];
         if (trcFile) formData.append('trc_file', trcFile);
+        if (refInput && refInput.files[0]) formData.append('reference_file', refInput.files[0]);
+        if (modelInput && modelInput.files[0]) formData.append('model_file', modelInput.files[0]);
 
         const demo = getDemographics();
         formData.append('height_m', demo.height_m);
@@ -561,6 +581,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const trcs = (trcInput.files && trcInput.files.length)
             ? Array.from(trcInput.files) : droppedTrcFiles;
         trcs.forEach(f => formData.append('trc_files', f));
+        if (refInput && refInput.files) Array.from(refInput.files).forEach(f => formData.append('reference_files', f));
+        if (modelInput && modelInput.files[0]) formData.append('model_file', modelInput.files[0]);
 
         const demo = getDemographics();
         formData.append('height_m', demo.height_m);
@@ -658,6 +680,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     kinematic_sequence: s.kinematic_sequence,
                     grf_estimation: s.grf_estimation || {},
                     metric_evidence: s.metric_evidence || {},
+                    dynamics_comparison: s.dynamics_comparison || null,
+                    dynamics_reference_error: s.dynamics_reference_error || null,
+                    opensim_id_status: s.opensim_id_status || null,
                 },
             });
         });
@@ -930,6 +955,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 idEl.innerHTML = '';
             }
         }
+        renderDynamicsComparison(diagnosis);
 
         // Reset advanced panel state
         document.getElementById('advanced-panels').classList.add('hidden');
@@ -1511,6 +1537,58 @@ document.addEventListener('DOMContentLoaded', () => {
         return `<span class="ev-badge ev-${e.tier}" title="${tip}">${e.tier}</span>${warn}`;
     }
 
+    // ── Dynamics comparison table ─────────────────────────────────────────
+    // Each column is an independent source (see backend/dynamics_compare.py).
+    // Hidden entirely when fewer than two sources have data. A reference that
+    // failed to parse, or an OpenSim run that could not happen, is explained in
+    // the notes line rather than left as a silently missing column.
+    function renderDynamicsComparison(diagnosis) {
+        const wrap = document.getElementById('dyn-compare');
+        const table = document.getElementById('dyn-table');
+        const notesEl = document.getElementById('dyn-notes');
+        if (!wrap || !table) return;
+        const cmp = diagnosis.dynamics_comparison;
+        const notes = [];
+        if (diagnosis.dynamics_reference_error) notes.push('Reference not used: ' + diagnosis.dynamics_reference_error);
+        const st = diagnosis.opensim_id_status;
+        if (st && st.reason) notes.push('OpenSim: ' + st.reason);
+        if (!cmp || !cmp.rows || !cmp.rows.length) {
+            // Still surface why nothing could be compared when the user asked for it.
+            if (notes.length && diagnosis.dynamics_reference_error) {
+                wrap.style.display = '';
+                table.innerHTML = '';
+                notesEl.textContent = notes.join('  ');
+            } else {
+                wrap.style.display = 'none';
+            }
+            return;
+        }
+        (cmp.notes || []).forEach(n => notes.push(n));
+        const res = cmp.residuals || {};
+        if (res.pelvis_residual_force_N) {
+            const bw = res.pelvis_residual_force_BW != null ? ` (${(res.pelvis_residual_force_BW * 100).toFixed(0)}% BW)` : '';
+            notes.push(`OpenSim pelvis residual ${res.pelvis_residual_force_N.toFixed(0)} N${bw} — small means the applied ground force agrees with the motion.`);
+        }
+        const esc = t => String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+        const baseLabel = (cmp.sources.find(x => x.key === cmp.baseline) || {}).label || cmp.baseline;
+        let html = '<thead><tr><th>Quantity</th>';
+        cmp.sources.forEach(src => { html += `<th>${esc(src.label)}</th>`; });
+        html += `<th title="Ours relative to ${esc(baseLabel)}">Δ ours</th></tr></thead><tbody>`;
+        cmp.rows.forEach(r => {
+            html += `<tr><td>${esc(r.quantity)} <span class="dyn-unit">${esc(r.unit)}</span></td>`;
+            cmp.sources.forEach(src => {
+                const v = r.values[src.key];
+                html += `<td>${v == null ? '<span class="dyn-na">—</span>' : Math.round(v)}</td>`;
+            });
+            const d = r.delta_pct;
+            const cls = d == null ? '' : Math.abs(d) <= 15 ? 'dyn-good' : Math.abs(d) <= 30 ? 'dyn-warn' : 'dyn-bad';
+            html += `<td class="${cls}">${d == null ? '<span class="dyn-na">—</span>' : (d > 0 ? '+' : '') + d.toFixed(0) + '%'}</td></tr>`;
+        });
+        table.innerHTML = html + '</tbody>';
+        notesEl.textContent = notes.join('  ');
+        wrap.style.display = '';
+    }
+
     function createMetric(label, value, unit, isText = false, evKey = null) {
         let valClass = '';
         if (!isText) {
@@ -1882,8 +1960,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const vFov = (camera.fov * Math.PI) / 180;
             const hFov = 2 * Math.atan(Math.tan(vFov / 2) * (camera.aspect || 1));
             const radius = Math.max(box.getBoundingSphere(new THREE.Sphere()).radius, 0.1);
-            const dist = Math.max(halfH / Math.tan(vFov / 2),
-                                  halfW / Math.tan(hFov / 2)) * 1.12;
+            // Fit the NEAR face of the box, not its centre plane. Under a
+            // perspective camera the parts of the figure closest to the lens
+            // project larger; fitting the centre let a swing with ~1 m of depth
+            // (arms and lead leg reaching toward the camera) overflow the frame
+            // top and bottom by roughly a third. halfD uses max(x, z) because the
+            // pivot is rotated, so either horizontal extent can face the camera.
+            const halfD = Math.max(Math.max(size.x, size.z) / 2, 0.05);
+            const dist = (Math.max(halfH / Math.tan(vFov / 2),
+                                   halfW / Math.tan(hFov / 2)) + halfD) * 1.06;
             camera.position.set(0, 0, dist);
             camera.near = Math.max(dist - radius * 2, 0.001);
             camera.far = dist + radius * 4;

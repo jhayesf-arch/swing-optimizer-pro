@@ -8,10 +8,12 @@ from analyzer import RefinedHittingOptimizer
 from subject_profile import aggregate_swings
 
 try:
-    from opensim_id import run_inverse_dynamics, summarize_id_results
-    HAS_OPENSIM_ID = True
+    from opensim_id import (run_inverse_dynamics, summarize_id_results,
+                            summarize_id_magnitudes, HAS_OPENSIM)
+    HAS_OPENSIM_ID = bool(HAS_OPENSIM)
 except Exception:
     HAS_OPENSIM_ID = False
+from dynamics_compare import build_comparison, load_reference, reference_stem
 
 app = FastAPI(title="Hitting Optimizer API")
 
@@ -35,23 +37,84 @@ FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "../docs")
 TMP_DIR = os.path.join(os.path.dirname(__file__), "tmp")
 os.makedirs(TMP_DIR, exist_ok=True)
 
-DEFAULT_MODEL = os.path.expanduser(
+# Last-resort model when none is uploaded with the trial. OPENSIM_MODEL_PATH
+# wins; the Desktop path keeps an existing local setup working. Either way it is
+# one specific athlete's scaled model, so the status reports when it was used.
+ENV_MODEL = os.environ.get("OPENSIM_MODEL_PATH")
+DEFAULT_MODEL = ENV_MODEL or os.path.expanduser(
     "~/Desktop/OpenCapData_94fba876-8deb-4074-afe5-8d7872fec1ae"
     "/OpenSimData/Model/LaiUhlrich2022_scaled.osim"
 )
 
 
-def _run_id(file_path, model_path, bat_mass_kg, bat_length_m, diagnosis):
-    """Run OpenSim ID and attach results to diagnosis dict. Silent on failure."""
-    if HAS_OPENSIM_ID and os.path.exists(model_path):
+def _run_id(file_path, model_path, bat_mass_kg, bat_length_m, diagnosis,
+            foot_loads=None, body_mass_kg=None, model_uploaded=False):
+    """Run OpenSim ID and attach results to the diagnosis.
+
+    Always records diagnosis['opensim_id_status'] so the report can say WHY the
+    OpenSim column is empty, rather than silently leaving it blank — on Render
+    it is always empty because opensim is a conda-only package.
+    """
+    status = {'ran': False, 'external_loads': False,
+              'model': os.path.basename(model_path) if model_path else None,
+              'model_source': ('uploaded' if model_uploaded else
+                               'OPENSIM_MODEL_PATH' if ENV_MODEL else 'default')}
+    diagnosis['opensim_id_status'] = status
+    if not HAS_OPENSIM_ID:
+        status['reason'] = ('OpenSim is not installed on this server. It runs when the '
+                            'backend is started locally from an env with opensim '
+                            '(see DYNAMICS_REFERENCE.md).')
+        return None
+    if not model_path or not os.path.exists(model_path):
+        status['reason'] = ('No scaled .osim model. Upload the athlete\'s '
+                            'LaiUhlrich2022_scaled.osim with the trial, or set '
+                            'OPENSIM_MODEL_PATH.')
+        return None
+    try:
+        id_result = run_inverse_dynamics(
+            file_path, model_path=model_path,
+            bat_mass_kg=bat_mass_kg, bat_length_m=bat_length_m,
+            external_loads=foot_loads,
+        )
+    except Exception as e:
+        status['reason'] = f'OpenSim ID failed: {type(e).__name__}: {e}'
+        print(f"[opensim_id] {status['reason']}")
+        return None
+    diagnosis['opensim_id'] = summarize_id_results(id_result)
+    mags = summarize_id_magnitudes(id_result['dataframe'], body_mass_kg)
+    diagnosis['opensim_id_magnitudes'] = mags
+    status.update(ran=True, external_loads=bool(id_result.get('external_loads_applied')))
+    if not model_uploaded and not ENV_MODEL:
+        status['reason'] = ('Ran with the default model, which belongs to a different '
+                            'session — upload this athlete\'s scaled .osim for '
+                            'correct segment masses.')
+    return mags
+
+
+async def _save_upload(upload, allowed_exts):
+    """Write an optional UploadFile to TMP_DIR. Returns the path or None."""
+    if not upload or not upload.filename:
+        return None
+    if os.path.splitext(upload.filename)[1].lower() not in allowed_exts:
+        return None
+    path = os.path.join(TMP_DIR, os.path.basename(upload.filename))
+    with open(path, "wb") as fh:
+        fh.write(await upload.read())
+    return path
+
+
+def _attach_dynamics(diagnosis, id_mags, reference_path, handedness, body_mass_kg):
+    """Build the three-source comparison and pop the numpy hand-off."""
+    diagnosis.pop('_foot_loads', None)
+    reference = None
+    if reference_path:
         try:
-            id_result = run_inverse_dynamics(
-                file_path, model_path=model_path,
-                bat_mass_kg=bat_mass_kg, bat_length_m=bat_length_m
-            )
-            diagnosis['opensim_id'] = summarize_id_results(id_result)
-        except Exception:
-            pass
+            reference = load_reference(reference_path, body_mass_kg)
+        except ValueError as e:
+            diagnosis['dynamics_reference_error'] = str(e)
+    comp = build_comparison(diagnosis.get('metrics') or {}, id_mags, reference, handedness)
+    if comp:
+        diagnosis['dynamics_comparison'] = comp
 
 
 # Key markers for stick figure (subset of 63 TRC markers)
@@ -365,6 +428,8 @@ def health():
 async def analyze_upload(
     file: UploadFile = File(...),
     trc_file: UploadFile = File(None),
+    model_file: UploadFile = File(None),
+    reference_file: UploadFile = File(None),
     height_m: float = Form(1.83),
     weight_kg: float = Form(82.0),
     skill_level: str = Form('high_school'),
@@ -384,6 +449,8 @@ async def analyze_upload(
         trc_path = os.path.join(TMP_DIR, trc_file.filename)
         with open(trc_path, "wb") as f:
             f.write(await trc_file.read())
+    model_path = await _save_upload(model_file, ('.osim',))
+    ref_path = await _save_upload(reference_file, ('.json', '.sto'))
 
     try:
         optimizer = RefinedHittingOptimizer(
@@ -412,7 +479,10 @@ async def analyze_upload(
             diagnosis['kinematic_sequence'] = _kinematic_sequence(kinematics, diagnosis.get('_rotation'))
         except Exception:
             pass
-        _run_id(file_path, DEFAULT_MODEL, bat_mass_kg, bat_length_m, diagnosis)
+        id_mags = _run_id(file_path, model_path or DEFAULT_MODEL, bat_mass_kg, bat_length_m,
+                          diagnosis, foot_loads=diagnosis.get('_foot_loads'),
+                          body_mass_kg=weight_kg, model_uploaded=bool(model_path))
+        _attach_dynamics(diagnosis, id_mags, ref_path, handedness, weight_kg)
         diagnosis.pop('_rotation', None)   # numpy arrays — not JSON-serialisable
         return JSONResponse(content={"filename": file.filename, "success": True, "data": diagnosis})
     except Exception as e:
@@ -421,13 +491,16 @@ async def analyze_upload(
     finally:
         if os.path.exists(file_path):
             os.remove(file_path)
-        if trc_path and os.path.exists(trc_path):
-            os.remove(trc_path)
+        for p in (trc_path, model_path, ref_path):
+            if p and os.path.exists(p):
+                os.remove(p)
 
 @app.post("/api/analyze/batch")
 async def analyze_batch(
     files: List[UploadFile] = File(...),
     trc_files: List[UploadFile] = File(None),
+    model_file: UploadFile = File(None),
+    reference_files: List[UploadFile] = File(None),
     height_m: float = Form(1.83),
     weight_kg: float = Form(82.0),
     skill_level: str = Form('high_school'),
@@ -457,6 +530,17 @@ async def analyze_batch(
                 fh.write(await tf.read())
             written.append(path)
             trc_by_stem[os.path.splitext(os.path.basename(tf.filename))[0].lower()] = path
+
+        # One scaled model per batch (one athlete); references pair by stem.
+        model_path = await _save_upload(model_file, ('.osim',))
+        if model_path:
+            written.append(model_path)
+        ref_by_stem = {}
+        for rf in (reference_files or []):
+            rp = await _save_upload(rf, ('.json', '.sto'))
+            if rp:
+                written.append(rp)
+                ref_by_stem[reference_stem(rf.filename)] = rp
 
         swings, errors = [], []
         for uf in mots:
@@ -497,6 +581,14 @@ async def analyze_batch(
                     )
                 except Exception:
                     pass
+                # A lone reference file with a lone swing pairs regardless of name.
+                ref_path = ref_by_stem.get(stem.lower())
+                if ref_path is None and len(ref_by_stem) == 1 and len(mots) == 1:
+                    ref_path = next(iter(ref_by_stem.values()))
+                id_mags = _run_id(mot_path, model_path or DEFAULT_MODEL, bat_mass_kg,
+                                  bat_length_m, diag, foot_loads=diag.get('_foot_loads'),
+                                  body_mass_kg=weight_kg, model_uploaded=bool(model_path))
+                _attach_dynamics(diag, id_mags, ref_path, handedness, weight_kg)
                 diag.pop('_rotation', None)
 
                 swings.append({
@@ -522,6 +614,9 @@ async def analyze_batch(
                     # more files rendered every tile without a badge — the caveat
                     # existed in the payload of a single-file upload only.
                     "metric_evidence": diag.get("metric_evidence", {}),
+                    "dynamics_comparison": diag.get("dynamics_comparison"),
+                    "dynamics_reference_error": diag.get("dynamics_reference_error"),
+                    "opensim_id_status": diag.get("opensim_id_status"),
                     **extras,
                 })
             except Exception as e:

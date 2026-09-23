@@ -8,7 +8,7 @@
     <title>Swing Optimizer Pro — Biomechanics Report</title>
     <meta name="description" content="Research-grade baseball hitting biomechanics analysis. Powered by OpenCap motion capture data with 12-dimension scoring framework.">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Outfit:wght@700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=19">
 </head>
 <body>
     <div class="background-effects">
@@ -44,6 +44,15 @@
                             <input type="file" id="trc-input" accept=".trc" multiple hidden>
                         </label>
                         <p class="small text-muted" id="trc-label" style="margin-top:4px;"></p>
+                        <label class="btn btn-secondary btn-sm" style="margin-top:6px;">
+                            + Add Dynamics Reference <span class="small text-muted">(.json / .sto, optional)</span>
+                            <input type="file" id="ref-input" accept=".json,.sto" multiple hidden>
+                        </label>
+                        <label class="btn btn-secondary btn-sm" style="margin-top:6px;">
+                            + Add Scaled Model <span class="small text-muted">(.osim, optional)</span>
+                            <input type="file" id="model-input" accept=".osim" hidden>
+                        </label>
+                        <p class="small text-muted" id="dyn-label" style="margin-top:4px;"></p>
                     </div>
                 </div>
                 <div style="text-align:center;margin-top:1.25rem;">
@@ -190,6 +199,13 @@
                     <h4 class="panel-title" style="font-size:1rem;margin-top:1.4rem;margin-bottom:0.2rem;" id="id-heading">Joint Loads &mdash; Lower Body</h4>
                     <p class="small text-muted" style="margin-top:0;margin-bottom:0.8rem;max-width:680px;">Peak moment and reaction force at each joint, per leg, from a Newton-Euler chain built up from the ground reaction force. <em>Requires a <strong>.trc</strong> file.</em> These are the loads the body is <em>actually carrying</em>, not just the rotational-inertia term the earlier metrics used.</p>
                     <div class="metrics-grid" id="id-metrics"></div>
+
+                    <div id="dyn-compare" style="display:none;">
+                        <h4 class="panel-title" style="font-size:1rem;margin-top:1.4rem;margin-bottom:0.2rem;">Dynamics Comparison</h4>
+                        <p class="small text-muted" style="margin-top:0;margin-bottom:0.8rem;max-width:680px;">The same joint loads from independent sources. Our estimate and OpenSim share one ground reaction force, so a gap between them is in the moment math; a force-plate reference measures the ground force itself, so a gap there is in our GRF.</p>
+                        <div class="dyn-table-wrap"><table class="dyn-table" id="dyn-table"></table></div>
+                        <p class="small text-muted" id="dyn-notes" style="margin-top:0.6rem;"></p>
+                    </div>
 
                     <div class="ev-legend">
                         <span class="ev-badge ev-A">A</span> research-backed &nbsp;
@@ -366,6 +382,6 @@
     <div id="print-report" aria-hidden="true"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-    <script src="app.js?v=18"></script>
+    <script src="app.js?v=19"></script>
 </body>
 </html>

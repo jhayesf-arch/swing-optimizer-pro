@@ -19,6 +19,7 @@ import xml.etree.ElementTree as ET
 import math
 import numpy as np
 import pandas as pd
+from typing import Optional
 
 try:
     import opensim as osim
@@ -26,7 +27,10 @@ try:
 except ImportError:
     HAS_OPENSIM = False
 
-DEFAULT_MODEL = os.path.expanduser(
+# Scaled model is per-athlete (OpenCap session → OpenSimData/Model/*.osim).
+# Prefer a model uploaded with the trial; otherwise OPENSIM_MODEL_PATH; the old
+# Desktop path stays as the last fallback so an existing local setup still runs.
+DEFAULT_MODEL = os.environ.get("OPENSIM_MODEL_PATH") or os.path.expanduser(
     "~/Desktop/OpenCapData_94fba876-8deb-4074-afe5-8d7872fec1ae"
     "/OpenSimData/Model/LaiUhlrich2022_scaled.osim"
 )
@@ -43,7 +47,8 @@ def run_inverse_dynamics(mot_path: str, model_path: str = DEFAULT_MODEL,
                           lowpass_hz: float = 15.0,
                           bat_mass_kg: float = 0.0,
                           bat_length_m: float = 0.0,
-                          use_shoulder_model: bool = False) -> dict:
+                          use_shoulder_model: bool = False,
+                          external_loads: Optional[dict] = None) -> dict:
     """
     Run OpenSim Inverse Dynamics on a swing .mot file.
 
@@ -51,6 +56,11 @@ def run_inverse_dynamics(mot_path: str, model_path: str = DEFAULT_MODEL,
     ----------
     use_shoulder_model : if True, use the ISB shoulder model (adds scapular DOFs)
                          instead of the standard ball-and-socket arm model.
+    external_loads : per-foot ground reaction forces to apply, as produced by
+                     bottom_up_id (keys time, grf_l, grf_r, cop_l, cop_r; ground
+                     frame, N and m). Without them ID sees no ground force at all
+                     and the lower-limb moments are missing the load the legs
+                     carry — the pelvis residuals then absorb it instead.
     """
     if use_shoulder_model:
         try:
@@ -103,6 +113,9 @@ def run_inverse_dynamics(mot_path: str, model_path: str = DEFAULT_MODEL,
         force_set = osim.ArrayStr()
         force_set.append("Muscles")
         id_tool.setExcludedForces(force_set)
+        if external_loads is not None:
+            xml_path = write_external_loads(external_loads, tmpdir)
+            id_tool.setExternalLoadsFileName(xml_path)
         id_tool.run()
 
         if not os.path.exists(sto_path):
@@ -114,7 +127,71 @@ def run_inverse_dynamics(mot_path: str, model_path: str = DEFAULT_MODEL,
 
     joints = _extract_peak_kinetics(df)
     return {'sto_path': out_sto, 'joints': joints, 'dataframe': df,
-            'swing_t_start': t_start, 'swing_t_end': t_end}
+            'swing_t_start': t_start, 'swing_t_end': t_end,
+            'external_loads_applied': external_loads is not None,
+            'model_path': model_path}
+
+
+# ── External loads ───────────────────────────────────────────────────────────
+
+# Body each foot's ground reaction is applied to on the LaiUhlrich2022 model.
+_FOOT_BODY = {'r': 'calcn_r', 'l': 'calcn_l'}
+
+
+def write_external_loads(loads: dict, out_dir: str) -> str:
+    """Write an OpenSim ExternalLoads pair (.xml + .mot) for per-foot GRF.
+
+    Force and point are both expressed in ground, which is the frame OpenCap's
+    .trc markers — and therefore our GRF and CoP — are in. Column names follow
+    OpenSim's identifier convention: force_identifier "ground_force_r_v" reads
+    columns ground_force_r_vx/vy/vz, and so on. No free torque is modelled, so
+    the torque columns are zero.
+
+    Pure file writing — importable and testable without opensim installed.
+    Returns the .xml path.
+    """
+    t = np.asarray(loads['time'], dtype=float)
+    cols = {'time': t}
+    for side in ('r', 'l'):
+        F = np.nan_to_num(np.asarray(loads[f'grf_{side}'], dtype=float))
+        P = np.nan_to_num(np.asarray(loads[f'cop_{side}'], dtype=float))
+        for j, ax in enumerate('xyz'):
+            cols[f'ground_force_{side}_v{ax}'] = F[:, j]
+        for j, ax in enumerate('xyz'):
+            cols[f'ground_force_{side}_p{ax}'] = P[:, j]
+        for ax in 'xyz':
+            cols[f'ground_torque_{side}_{ax}'] = np.zeros_like(t)
+
+    mot_path = os.path.join(out_dir, 'external_loads.mot')
+    names = list(cols.keys())
+    with open(mot_path, 'w') as f:
+        f.write('external_loads\nversion=1\n')
+        f.write(f'nRows={len(t)}\nnColumns={len(names)}\ninDegrees=no\nendheader\n')
+        f.write('\t'.join(names) + '\n')
+        data = np.column_stack([cols[n] for n in names])
+        for row in data:
+            f.write('\t'.join(f'{v:.6f}' for v in row) + '\n')
+
+    root = ET.Element('OpenSimDocument', Version='40000')
+    el = ET.SubElement(root, 'ExternalLoads', name='externalloads')
+    objs = ET.SubElement(el, 'objects')
+    for side in ('r', 'l'):
+        ef = ET.SubElement(objs, 'ExternalForce', name=f'grf_{side}')
+        for tag, val in [('applied_to_body', _FOOT_BODY[side]),
+                         ('force_expressed_in_body', 'ground'),
+                         ('point_expressed_in_body', 'ground'),
+                         ('force_identifier', f'ground_force_{side}_v'),
+                         ('point_identifier', f'ground_force_{side}_p'),
+                         ('torque_identifier', f'ground_torque_{side}_'),
+                         ('data_source_name', 'Unassigned')]:
+            ET.SubElement(ef, tag).text = val
+    ET.SubElement(el, 'groups')
+    ET.SubElement(el, 'datafile').text = mot_path
+    ET.SubElement(el, 'external_loads_model_kinematics_file').text = ''
+    ET.SubElement(el, 'lowpass_cutoff_frequency_for_load_kinematics').text = '-1'
+    xml_path = os.path.join(out_dir, 'external_loads.xml')
+    ET.ElementTree(root).write(xml_path, encoding='UTF-8', xml_declaration=True)
+    return xml_path
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -292,6 +369,54 @@ def summarize_id_results(id_result: dict) -> dict:
         'peak_prosup_torque_r_Nm':   _peak('pro_sup_r'),
         'peak_prosup_torque_l_Nm':   _peak('pro_sup_l'),
     }
+
+
+def summarize_id_magnitudes(df: pd.DataFrame, body_mass_kg: Optional[float] = None) -> dict:
+    """Peak joint-moment magnitudes, shaped to compare against bottom-up ID.
+
+    OpenSim reports one generalized force per coordinate; the bottom-up chain
+    reports a 3-D moment vector. The hip has three coordinates, so its magnitude
+    is the per-frame norm of all three. The knee has one (flexion), so frontal-
+    and transverse-plane knee load that the bottom-up vector includes has no
+    coordinate here — expect bottom-up ≥ OpenSim at the knee by construction.
+    The ankle combines ankle_angle and subtalar.
+
+    Pelvis residuals are the six forces/moments OpenSim needs at the pelvis to
+    balance the motion. With good ground reaction forces applied they should be
+    small; large residuals mean the applied GRF and the kinematics disagree.
+    """
+    def _series(name, suffixes):
+        """First existing column for a coordinate, or None."""
+        for suf in suffixes:
+            if name + suf in df.columns:
+                return df[name + suf].values.astype(float)
+        return None
+
+    def _norm_peak(names, suffixes):
+        arrs = [a for a in (_series(n, suffixes) for n in names) if a is not None]
+        if not arrs:
+            return 0.0
+        return float(np.max(np.sqrt(np.sum(np.vstack(arrs) ** 2, axis=0))))
+
+    def norm_peak(*names):
+        return _norm_peak(names, ('_moment', ''))
+
+    def res_peak(*names):
+        return _norm_peak(names, ('_force', '_moment', ''))
+
+    out = {
+        'hip_moment_l_Nm':   norm_peak('hip_flexion_l', 'hip_adduction_l', 'hip_rotation_l'),
+        'hip_moment_r_Nm':   norm_peak('hip_flexion_r', 'hip_adduction_r', 'hip_rotation_r'),
+        'knee_moment_l_Nm':  norm_peak('knee_angle_l'),
+        'knee_moment_r_Nm':  norm_peak('knee_angle_r'),
+        'ankle_moment_l_Nm': norm_peak('ankle_angle_l', 'subtalar_angle_l'),
+        'ankle_moment_r_Nm': norm_peak('ankle_angle_r', 'subtalar_angle_r'),
+        'pelvis_residual_force_N':   res_peak('pelvis_tx', 'pelvis_ty', 'pelvis_tz'),
+        'pelvis_residual_moment_Nm': res_peak('pelvis_tilt', 'pelvis_list', 'pelvis_rotation'),
+    }
+    if body_mass_kg:
+        out['pelvis_residual_force_BW'] = out['pelvis_residual_force_N'] / (body_mass_kg * 9.81)
+    return out
 
 
 if __name__ == '__main__':

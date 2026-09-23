@@ -211,6 +211,12 @@ METRIC_EVIDENCE = {
         'Left hip joint reaction force magnitude.'),
     'peak_hip_force_id_r_N': (B, 'Newton-Euler chain (bottom_up_id.py)',
         'Right hip joint reaction force magnitude.'),
+    'peak_grf_vert_l_N': (B, 'Fluit et al. 2014; per-foot split is ours',
+        'Left-foot peak vertical GRF: whole-body CoM GRF split between the feet by '
+        'relative ankle height. A force plate measures this directly — the '
+        'cleanest single check against Cortex.'),
+    'peak_grf_vert_r_N': (B, 'Fluit et al. 2014; per-foot split is ours',
+        'Right-foot peak vertical GRF (same method as the left).'),
     'pelvis_torso_contribution_pct': (
         C, 'Blast Motion (proprietary), conceptually',
         'Their "Body Rotation" formula is unpublished. Our own approximation; '

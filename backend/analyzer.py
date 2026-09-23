@@ -642,6 +642,10 @@ class RefinedSwingMetrics:
     peak_knee_force_id_r_N:  float = 0.0
     peak_hip_force_id_l_N:   float = 0.0
     peak_hip_force_id_r_N:   float = 0.0
+    # Per-foot peak vertical GRF from the sigmoid split — the quantity a force
+    # plate measures directly, so the cleanest single check against Cortex.
+    peak_grf_vert_l_N: float = 0.0
+    peak_grf_vert_r_N: float = 0.0
 
 def _metric_evidence_block(metrics: dict, rotation_ctx: dict) -> dict:
     """Per-metric evidence tier + per-capture reliability. Degrades to {} if the
@@ -2507,6 +2511,8 @@ class RefinedHittingOptimizer:
             peak_knee_force_id_r_N=id_data.get('peak_knee_force_id_r_N', 0.0),
             peak_hip_force_id_l_N=id_data.get('peak_hip_force_id_l_N', 0.0),
             peak_hip_force_id_r_N=id_data.get('peak_hip_force_id_r_N', 0.0),
+            peak_grf_vert_l_N=id_data.get('peak_grf_vert_l_N', 0.0),
+            peak_grf_vert_r_N=id_data.get('peak_grf_vert_r_N', 0.0),
         )
         
         # Terminal printing if verbose
@@ -2581,6 +2587,9 @@ class RefinedHittingOptimizer:
             # the same segment velocities the metrics use. Contains numpy arrays —
             # callers MUST pop it before JSON serialisation.
             "_rotation": rotation,
+            # Per-foot GRF + CoP time series for OpenSim external loads. numpy —
+            # callers MUST pop it before JSON serialisation, like _rotation.
+            "_foot_loads": id_data.pop('_foot_loads', None) if isinstance(id_data, dict) else None,
             "capture_quality": capture_quality,
             "metrics": asdict(metrics),
             "findings": findings,

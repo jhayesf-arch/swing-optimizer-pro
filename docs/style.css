@@ -1320,3 +1320,18 @@ label.btn { cursor: pointer; }
 .rx-chip-warn{background:rgba(245,158,11,.14);color:#fbbf24;
   border-color:rgba(245,158,11,.32);white-space:normal}
 .rx-text{display:inline}
+
+/* ── Dynamics comparison table ──────────────────────────────────────────── */
+.dyn-table-wrap { overflow-x: auto; }
+.dyn-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.dyn-table th, .dyn-table td { padding: 0.45rem 0.6rem; text-align: right;
+  border-bottom: 1px solid rgba(148,163,184,.14); white-space: nowrap; }
+.dyn-table th:first-child, .dyn-table td:first-child { text-align: left; }
+.dyn-table th { font-weight: 600; font-size: 0.72rem; text-transform: uppercase;
+  letter-spacing: .05em; opacity: .75; }
+.dyn-table td { font-variant-numeric: tabular-nums; }
+.dyn-unit { opacity: .5; font-size: .72rem; margin-left: 2px; }
+.dyn-na { opacity: .35; }
+.dyn-good { color: #22c55e; }
+.dyn-warn { color: #f59e0b; }
+.dyn-bad  { color: #ef4444; }
