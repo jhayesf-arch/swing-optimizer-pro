@@ -15,17 +15,17 @@ dominant load. Adding the GRF path drops the systematic error from ~30% to
 
 The math (derivation in METRIC_FORMULAS.md § Bottom-up ID):
 
-    F_ankle = m_foot · (a_foot_com + g) − F_grf_side
+    F_ankle = m_foot · (a_foot_com − g⃗) − F_grf_side        (g⃗ = (0, −9.81, 0))
     M_ankle = I_foot · α_foot
               − (r_cop  − r_foot_com)  × F_grf_side
               − (r_ankle − r_foot_com) × F_ankle
 
-    F_knee  = m_shank · (a_shank_com + g) + F_ankle
+    F_knee  = m_shank · (a_shank_com − g⃗) + F_ankle
     M_knee  = I_shank · α_shank + M_ankle
               − (r_ankle − r_shank_com) × (−F_ankle)
               − (r_knee  − r_shank_com) ×  F_knee
 
-    F_hip   = m_thigh · (a_thigh_com + g) + F_knee
+    F_hip   = m_thigh · (a_thigh_com − g⃗) + F_knee
     M_hip   = I_thigh · α_thigh + M_knee
               − (r_knee − r_thigh_com) × (−F_knee)
               − (r_hip  − r_thigh_com) ×  F_hip
@@ -58,7 +58,12 @@ SEG = {
     'shank': {'mass_pct': 0.0465, 'length_pct': 0.246, 'com_pct': 0.433, 'rg_pct': 0.302},
     'thigh': {'mass_pct': 0.1000, 'length_pct': 0.245, 'com_pct': 0.433, 'rg_pct': 0.323},
 }
-G_MPS2 = np.array([0.0, -9.81, 0.0])   # ground frame; Y is up on all OpenCap output
+# Gravity vector in the ground frame (Y is up on all OpenCap output). Newton on a
+# segment reads F_prox + F_dist + m·G_VEC = m·a, so every segment term below is
+# m·(a − G_VEC). An earlier version ADDED G_VEC, flipping the sign of every
+# segment's weight; together with a GRF that omitted body weight, a motionless
+# athlete's ankle carried −10.7 N instead of −357 N.
+G_VEC = np.array([0.0, -9.81, 0.0])
 
 
 # ── Marker helpers ─────────────────────────────────────────────────────────
@@ -95,10 +100,14 @@ def _second_deriv(x: np.ndarray, dt: float, fs: float) -> np.ndarray:
 
 # ── Per-frame quantities ───────────────────────────────────────────────────
 
-def _foot_kinematics(trc: pd.DataFrame, side: str, fs: float, dt: float) -> Dict:
+def _foot_kinematics(trc: pd.DataFrame, side: str, fs: float, dt: float,
+                     floor_y: Optional[float] = None) -> Dict:
     """Ankle, knee, hip, heel, toe positions per frame plus foot CoM and CoP.
 
-    CoP model: 60% of heel-to-toe distance forward. Static, per the module note.
+    CoP model: 60% of heel-to-toe distance forward, then dropped onto the floor.
+    The heel and toe markers sit a few centimetres above the ground, and the
+    ground force acts AT the ground; leaving CoP at marker height puts a spurious
+    lever arm under every horizontal GRF component (~0.03 m × several hundred N).
     """
     s = side.upper()
     ln = side.lower()
@@ -116,6 +125,9 @@ def _foot_kinematics(trc: pd.DataFrame, side: str, fs: float, dt: float) -> Dict
     r_heel  = _M(trc, n_heel, fs)
     r_toe   = _M(trc, n_toe,  fs)
     r_cop   = r_heel + 0.60 * (r_toe - r_heel)
+    if floor_y is not None:
+        r_cop = r_cop.copy()
+        r_cop[:, 1] = floor_y
     # Foot CoM ≈ midway heel-to-toe (de Leva foot com_pct is measured from a
     # different landmark that we don't have; midpoint is the standard proxy).
     r_foot_com = 0.5 * (r_heel + r_toe)
@@ -162,14 +174,14 @@ def _cross_ts(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
 def _leg_id(side: str, trc: pd.DataFrame, F_grf_side: np.ndarray,
             body_mass_kg: float, body_height_m: float,
-            fs: float, dt: float) -> Optional[Dict]:
+            fs: float, dt: float, floor_y: Optional[float] = None) -> Optional[Dict]:
     """Bottom-up Newton-Euler from foot to hip, one leg.
 
     Returns per-frame joint moment vectors (N,3) and force vectors — all
     expressed in the ground frame. Peaks are magnitudes over the whole trial;
     the analyzer's swing-window trim happens in the caller.
     """
-    fk = _foot_kinematics(trc, side, fs, dt)
+    fk = _foot_kinematics(trc, side, fs, dt, floor_y=floor_y)
     if not fk:
         return None
 
@@ -197,25 +209,25 @@ def _leg_id(side: str, trc: pd.DataFrame, F_grf_side: np.ndarray,
     α_zero = np.zeros_like(a_foot_com)
 
     # Foot: F_grf acts at CoP, F_ankle at ankle.
-    F_ankle = m_foot  * (a_foot_com  + G_MPS2) - F_grf_side
+    F_ankle = m_foot  * (a_foot_com  - G_VEC) - F_grf_side
     M_ankle = I_foot * α_zero \
               - _cross_ts(fk['r_cop']   - fk['r_foot_com'], F_grf_side) \
               - _cross_ts(fk['r_ankle'] - fk['r_foot_com'], F_ankle)
 
     # Shank: sees -F_ankle at ankle, F_knee at knee.
-    F_knee = m_shank * (a_shank_com + G_MPS2) + F_ankle
+    F_knee = m_shank * (a_shank_com - G_VEC) + F_ankle
     M_knee = I_shank * α_zero + M_ankle \
              - _cross_ts(fk['r_ankle'] - r_shank_com, -F_ankle) \
              - _cross_ts(fk['r_knee']  - r_shank_com,  F_knee)
 
     # Thigh: sees -F_knee at knee, F_hip at hip.
-    F_hip = m_thigh * (a_thigh_com + G_MPS2) + F_knee
+    F_hip = m_thigh * (a_thigh_com - G_VEC) + F_knee
     M_hip = I_thigh * α_zero + M_knee \
             - _cross_ts(fk['r_knee'] - r_thigh_com, -F_knee) \
             - _cross_ts(fk['r_hip']  - r_thigh_com,  F_hip)
 
     return dict(M_ankle=M_ankle, M_knee=M_knee, M_hip=M_hip,
-                F_ankle=F_ankle, F_knee=F_knee, F_hip=F_hip)
+                F_ankle=F_ankle, F_knee=F_knee, F_hip=F_hip, r_cop=fk['r_cop'])
 
 
 # ── Public entry point ─────────────────────────────────────────────────────
@@ -258,8 +270,20 @@ def bottom_up_lower_body(trc_df: pd.DataFrame, mot_df: pd.DataFrame,
 
     split = split_grf_by_foot(grf_ts, r_ankle_l, r_ankle_r, trc_time, grf_time)
 
-    left  = _leg_id('L', trc_df, split['F_grf_l'], body_mass_kg, body_height_m, fs, dt)
-    right = _leg_id('R', trc_df, split['F_grf_r'], body_mass_kg, body_height_m, fs, dt)
+    # Floor height: the 1st percentile of the lowest foot marker across both
+    # feet. The percentile rather than the minimum keeps one noisy frame from
+    # sinking the floor.
+    foot_ys = []
+    for nm in (_pick(trc_df, 'LHeel', 'l_calc_study', 'L_calc_study'),
+               _pick(trc_df, 'RHeel', 'r_calc_study'),
+               _pick(trc_df, 'LBigToe', 'l_toe_study', 'L_toe_study'),
+               _pick(trc_df, 'RBigToe', 'r_toe_study')):
+        if nm:
+            foot_ys.append(_M(trc_df, nm, fs)[:, 1])
+    floor_y = float(np.percentile(np.min(np.vstack(foot_ys), axis=0), 1)) if foot_ys else None
+
+    left  = _leg_id('L', trc_df, split['F_grf_l'], body_mass_kg, body_height_m, fs, dt, floor_y)
+    right = _leg_id('R', trc_df, split['F_grf_r'], body_mass_kg, body_height_m, fs, dt, floor_y)
     if left is None or right is None:
         return {}
 
@@ -286,6 +310,18 @@ def bottom_up_lower_body(trc_df: pd.DataFrame, mot_df: pd.DataFrame,
         'peak_knee_force_id_r_N':  _peak(right['F_knee']),
         'peak_hip_force_id_l_N':   _peak(left['F_hip']),
         'peak_hip_force_id_r_N':   _peak(right['F_hip']),
-        'method': 'bottom_up_ID (GRF from CoM Newton, α=0 approximation, static CoP)',
+        # Per-foot peak vertical GRF. A force plate measures this directly, so it
+        # is the cleanest single comparison against Cortex: it isolates the
+        # per-foot split from everything the moment chain adds on top.
+        'peak_grf_vert_l_N': float(np.max(split['F_grf_l'][max(0, swing_start_frame):, 1])) if len(split['F_grf_l']) else 0.0,
+        'peak_grf_vert_r_N': float(np.max(split['F_grf_r'][max(0, swing_start_frame):, 1])) if len(split['F_grf_r']) else 0.0,
+        'method': 'bottom_up_ID (GRF from CoM Newton, α=0 approximation, static CoP on floor)',
+        # Per-frame loads for OpenSim external loads. numpy — callers must pop
+        # before JSON serialisation.
+        '_foot_loads': {
+            'time': trc_time,
+            'grf_l': split['F_grf_l'], 'grf_r': split['F_grf_r'],
+            'cop_l': left['r_cop'],    'cop_r': right['r_cop'],
+        },
     }
     return out

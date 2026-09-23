@@ -136,7 +136,12 @@ def estimate_grf(trc_df: pd.DataFrame, body_mass_kg: float,
     # GRF_vert = m * (a_y + g)  [y is vertical in OpenCap]
     # GRF_AP   = m * a_x
     # GRF_ML   = m * a_z
+    # Total GRF vector must include body weight: F_grf = m·(a − g_vec) with
+    # g_vec = (0, −g, 0). This array previously omitted gravity (m·a only), so
+    # anything consuming grf_total — the bottom-up ID chain — never saw body
+    # weight: a motionless standing athlete read 0 N of ground force.
     grf = body_mass_kg * acc
+    grf[:, 1] += body_mass_kg * g
     grf_vert = body_mass_kg * (acc[:, 1] + g)  # add gravity back
     grf_ap   = body_mass_kg * acc[:, 0]
     grf_ml   = body_mass_kg * acc[:, 2]
