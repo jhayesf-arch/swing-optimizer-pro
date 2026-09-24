@@ -165,6 +165,83 @@ def split_grf_by_foot(grf_ts: np.ndarray, r_ankle_l: np.ndarray, r_ankle_r: np.n
     }
 
 
+# ── Athlete-specific segment parameters from a scaled OpenSim model ────────
+
+def segment_params_from_osim(path: str) -> Optional[Dict]:
+    """Per-side segment masses and centre-of-mass positions from a scaled .osim.
+
+    The generic de Leva table is a population average; OpenCap's scaled model is
+    this athlete. On one real model the thigh is 12.4% of body mass against de
+    Leva's 10.0%. Reading the model also means our chain and OpenSim ID use the
+    same body, so any gap left between them is the moment method alone.
+
+    CoM position is returned as a fraction of the way from the proximal to the
+    distal joint centre, measured along the segment's long (y) axis in its own
+    body frame — which is how the chain places the CoM between markers.
+
+    Pure XML parsing, no opensim needed. Returns None when the file lacks the
+    leg bodies, so callers fall back to de Leva.
+    """
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.parse(path).getroot()
+    except Exception:
+        return None
+
+    bodies = {}
+    for b in root.iter('Body'):
+        try:
+            mc = [float(x) for x in (b.findtext('mass_center') or '0 0 0').split()]
+            bodies[b.get('name')] = {'mass': float(b.findtext('mass') or 0), 'mc': mc}
+        except ValueError:
+            continue
+
+    # Joint offsets: for each joint, the translation of its parent-side and
+    # child-side frames, keyed by the body each frame is attached to.
+    joints = {}
+    for j in root.iter():
+        if not j.tag.endswith('Joint') or j.get('name') is None:
+            continue
+        frames = {}
+        for f in j.iter('PhysicalOffsetFrame'):
+            body = (f.findtext('socket_parent') or '').split('/')[-1]
+            try:
+                frames[body] = [float(x) for x in (f.findtext('translation') or '0 0 0').split()]
+            except ValueError:
+                pass
+        joints[j.get('name')] = frames
+
+    def joint_y(body, other):
+        """y of the joint connecting `body` and `other`, in `body`'s frame."""
+        for frames in joints.values():
+            if body in frames and other in frames:
+                return frames[body][1]
+        return None
+
+    total = sum(b['mass'] for b in bodies.values())
+    out = {'total_mass_kg': total, 'mass': {}, 'com_frac': {}}
+    for s in ('r', 'l'):
+        femur, tibia = f'femur_{s}', f'tibia_{s}'
+        if femur not in bodies or tibia not in bodies:
+            return None
+        out['mass'][f'thigh_{s}'] = bodies[femur]['mass']
+        out['mass'][f'shank_{s}'] = bodies[tibia]['mass']
+        out['mass'][f'foot_{s}'] = sum(bodies.get(f'{n}_{s}', {}).get('mass', 0.0)
+                                       for n in ('calcn', 'talus', 'toes'))
+        for seg, body, prox, dist in (('thigh', femur, f'pelvis', tibia),
+                                      ('shank', tibia, femur, f'talus_{s}')):
+            y_prox = joint_y(body, prox)
+            y_dist = joint_y(body, dist)
+            y_com = bodies[body]['mc'][1]
+            frac = None
+            if y_prox is not None and y_dist is not None and abs(y_dist - y_prox) > 1e-6:
+                frac = (y_com - y_prox) / (y_dist - y_prox)
+            # Outside this band is not a leg segment — keep the population value.
+            out['com_frac'][f'{seg}_{s}'] = frac if frac is not None and 0.3 <= frac <= 0.6 \
+                else SEG[seg]['com_pct']
+    return out
+
+
 # ── Chain ──────────────────────────────────────────────────────────────────
 
 def _cross_ts(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -174,7 +251,8 @@ def _cross_ts(a: np.ndarray, b: np.ndarray) -> np.ndarray:
 
 def _leg_id(side: str, trc: pd.DataFrame, F_grf_side: np.ndarray,
             body_mass_kg: float, body_height_m: float,
-            fs: float, dt: float, floor_y: Optional[float] = None) -> Optional[Dict]:
+            fs: float, dt: float, floor_y: Optional[float] = None,
+            seg_params: Optional[Dict] = None) -> Optional[Dict]:
     """Bottom-up Newton-Euler from foot to hip, one leg.
 
     Returns per-frame joint moment vectors (N,3) and force vectors — all
@@ -185,15 +263,28 @@ def _leg_id(side: str, trc: pd.DataFrame, F_grf_side: np.ndarray,
     if not fk:
         return None
 
-    m_foot  = body_mass_kg * SEG['foot' ]['mass_pct']
-    m_shank = body_mass_kg * SEG['shank']['mass_pct']
-    m_thigh = body_mass_kg * SEG['thigh']['mass_pct']
+    sd = side.lower()
+    if seg_params:
+        m_foot  = seg_params['mass'][f'foot_{sd}']
+        m_shank = seg_params['mass'][f'shank_{sd}']
+        m_thigh = seg_params['mass'][f'thigh_{sd}']
+        c_shank = seg_params['com_frac'][f'shank_{sd}']
+        c_thigh = seg_params['com_frac'][f'thigh_{sd}']
+    else:
+        m_foot  = body_mass_kg * SEG['foot' ]['mass_pct']
+        m_shank = body_mass_kg * SEG['shank']['mass_pct']
+        m_thigh = body_mass_kg * SEG['thigh']['mass_pct']
+        c_shank = SEG['shank']['com_pct']
+        c_thigh = SEG['thigh']['com_pct']
     I_foot  = m_foot  * (body_height_m * SEG['foot' ]['length_pct'] * SEG['foot' ]['rg_pct'])**2
     I_shank = m_shank * (body_height_m * SEG['shank']['length_pct'] * SEG['shank']['rg_pct'])**2
     I_thigh = m_thigh * (body_height_m * SEG['thigh']['length_pct'] * SEG['thigh']['rg_pct'])**2
 
-    r_shank_com = fk['r_knee'] + 0.567 * (fk['r_ankle'] - fk['r_knee'])   # 1 - 0.433
-    r_thigh_com = fk['r_hip']  + 0.567 * (fk['r_knee']  - fk['r_hip'])
+    # CoM measured FROM THE PROXIMAL joint (knee for the shank, hip for the
+    # thigh), as de Leva tabulates it. An earlier version used 1 − com_pct and
+    # put both CoMs 56.7% of the way down instead of 43.3%.
+    r_shank_com = fk['r_knee'] + c_shank * (fk['r_ankle'] - fk['r_knee'])
+    r_thigh_com = fk['r_hip']  + c_thigh * (fk['r_knee']  - fk['r_hip'])
 
     a_foot_com  = _second_deriv(fk['r_foot_com'], dt, fs)
     a_shank_com = _second_deriv(r_shank_com,      dt, fs)
@@ -235,7 +326,8 @@ def _leg_id(side: str, trc: pd.DataFrame, F_grf_side: np.ndarray,
 def bottom_up_lower_body(trc_df: pd.DataFrame, mot_df: pd.DataFrame,
                          grf_ts: np.ndarray, grf_time: np.ndarray,
                          body_mass_kg: float, body_height_m: float,
-                         swing_start_frame: int = 0) -> Dict:
+                         swing_start_frame: int = 0,
+                         seg_params: Optional[Dict] = None) -> Dict:
     """Peak ankle, knee and hip moment magnitudes per side.
 
     Parameters
@@ -282,8 +374,8 @@ def bottom_up_lower_body(trc_df: pd.DataFrame, mot_df: pd.DataFrame,
             foot_ys.append(_M(trc_df, nm, fs)[:, 1])
     floor_y = float(np.percentile(np.min(np.vstack(foot_ys), axis=0), 1)) if foot_ys else None
 
-    left  = _leg_id('L', trc_df, split['F_grf_l'], body_mass_kg, body_height_m, fs, dt, floor_y)
-    right = _leg_id('R', trc_df, split['F_grf_r'], body_mass_kg, body_height_m, fs, dt, floor_y)
+    left  = _leg_id('L', trc_df, split['F_grf_l'], body_mass_kg, body_height_m, fs, dt, floor_y, seg_params)
+    right = _leg_id('R', trc_df, split['F_grf_r'], body_mass_kg, body_height_m, fs, dt, floor_y, seg_params)
     if left is None or right is None:
         return {}
 
@@ -316,6 +408,7 @@ def bottom_up_lower_body(trc_df: pd.DataFrame, mot_df: pd.DataFrame,
         'peak_grf_vert_l_N': float(np.max(split['F_grf_l'][max(0, swing_start_frame):, 1])) if len(split['F_grf_l']) else 0.0,
         'peak_grf_vert_r_N': float(np.max(split['F_grf_r'][max(0, swing_start_frame):, 1])) if len(split['F_grf_r']) else 0.0,
         'method': 'bottom_up_ID (GRF from CoM Newton, α=0 approximation, static CoP on floor)',
+        'segment_source': 'scaled .osim' if seg_params else 'de Leva 1996 (population average)',
         # Per-frame loads for OpenSim external loads. numpy — callers must pop
         # before JSON serialisation.
         '_foot_loads': {

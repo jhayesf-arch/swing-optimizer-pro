@@ -114,6 +114,16 @@ def _attach_dynamics(diagnosis, id_mags, reference_path, handedness, body_mass_k
             diagnosis['dynamics_reference_error'] = str(e)
     comp = build_comparison(diagnosis.get('metrics') or {}, id_mags, reference, handedness)
     if comp:
+        seg = diagnosis.get('segment_params') or {}
+        comp['notes'].insert(0, f"Leg segment masses: {seg.get('source', 'de Leva 1996')}.")
+        mm, em = seg.get('model_mass_kg'), seg.get('entered_mass_kg')
+        # The ground force is computed from the entered weight; OpenSim's body
+        # from the model. If they disagree the two cannot balance, and the gap
+        # shows up as residual that looks like a method error but is a typo.
+        if mm and em and abs(mm - em) / mm > 0.03:
+            comp['notes'].insert(1, f"Entered weight {em} kg differs from the model's "
+                                    f"{mm} kg — enter {mm} kg so the ground force and "
+                                    f"the model agree.")
         diagnosis['dynamics_comparison'] = comp
 
 
@@ -464,7 +474,10 @@ async def analyze_upload(
             return JSONResponse(status_code=400, content={"success": False, "error": "Invalid or empty .mot file"})
 
         trc_data = optimizer.load_trc_file(trc_path) if trc_path else None
-        diagnosis = optimizer.comprehensive_diagnosis(kinematics, file.filename, trc_data=trc_data)
+        # Only an athlete-specific model feeds our segment masses — never the
+        # Desktop fallback, which belongs to a different session.
+        diagnosis = optimizer.comprehensive_diagnosis(kinematics, file.filename, trc_data=trc_data,
+                                                      model_path=model_path or ENV_MODEL)
         if trc_data is not None:
             try:
                 diagnosis['skeleton_frames'] = _extract_skeleton_frames(trc_data, kinematics)
@@ -562,7 +575,8 @@ async def analyze_batch(
                     continue
                 trc_path = trc_by_stem.get(stem.lower())
                 trc_data = opt.load_trc_file(trc_path) if trc_path else None
-                diag = opt.comprehensive_diagnosis(kin, name, trc_data=trc_data)
+                diag = opt.comprehensive_diagnosis(kin, name, trc_data=trc_data,
+                                                   model_path=model_path or ENV_MODEL)
                 rep = diag.get("phase_report", {})
 
                 # Kinematic sequence is small and worth having per swing; skeleton

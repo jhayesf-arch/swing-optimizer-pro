@@ -19,7 +19,7 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from grf_estimation import estimate_grf                     # noqa: E402
-from bottom_up_id import _leg_id, split_grf_by_foot, SEG    # noqa: E402
+from bottom_up_id import _leg_id, split_grf_by_foot, SEG, segment_params_from_osim  # noqa: E402
 from opensim_id import write_external_loads, summarize_id_magnitudes  # noqa: E402
 from dynamics_compare import build_comparison, reference_stem         # noqa: E402
 
@@ -62,6 +62,59 @@ def test_static_ankle_carries_half_body_weight_minus_foot():
     split = split_grf_by_foot(grf, ank('L'), ank('R'), t, t)
     leg = _leg_id('L', trc, split['F_grf_l'], M, H, FS, 1 / FS)
     expected = -(M * G / 2 - M * SEG['foot']['mass_pct'] * G)   # shank pushes DOWN on foot
+    assert abs(leg['F_ankle'][N // 2][1] - expected) < 0.5, leg['F_ankle'][N // 2]
+
+
+# A minimal model with the same structure as OpenCap's LaiUhlrich2022_scaled:
+# femur origin at the hip, knee 0.48 m below it; tibia origin at the knee,
+# ankle 0.49 m below. Thigh CoM at 0.20 m -> 0.4167; shank CoM at 0.23 -> 0.4694.
+_OSIM = """<OpenSimDocument Version="40000"><Model name="t"><BodySet><objects>
+<Body name="pelvis"><mass>11</mass><mass_center>0 0 0</mass_center></Body>
+{bodies}</objects></BodySet><JointSet><objects>{joints}</objects></JointSet></Model></OpenSimDocument>"""
+
+
+def _osim_text():
+    bodies, joints = '', ''
+    for s in 'rl':
+        bodies += (f'<Body name="femur_{s}"><mass>10</mass><mass_center>0 -0.20 0</mass_center></Body>'
+                   f'<Body name="tibia_{s}"><mass>4</mass><mass_center>0 -0.23 0</mass_center></Body>'
+                   f'<Body name="talus_{s}"><mass>0.1</mass><mass_center>0 0 0</mass_center></Body>'
+                   f'<Body name="calcn_{s}"><mass>1.4</mass><mass_center>0.1 0 0</mass_center></Body>'
+                   f'<Body name="toes_{s}"><mass>0.25</mass><mass_center>0 0 0</mass_center></Body>')
+        for name, a, ta, b, tb in ((f'hip_{s}', 'pelvis', '0 0 0', f'femur_{s}', '0 0 0'),
+                                   (f'knee_{s}', f'femur_{s}', '0 -0.48 0', f'tibia_{s}', '0 0 0'),
+                                   (f'ankle_{s}', f'tibia_{s}', '0 -0.49 0', f'talus_{s}', '0 0 0')):
+            joints += (f'<CustomJoint name="{name}"><frames>'
+                       f'<PhysicalOffsetFrame name="p"><socket_parent>/bodyset/{a}</socket_parent><translation>{ta}</translation></PhysicalOffsetFrame>'
+                       f'<PhysicalOffsetFrame name="c"><socket_parent>/bodyset/{b}</socket_parent><translation>{tb}</translation></PhysicalOffsetFrame>'
+                       f'</frames></CustomJoint>')
+    return _OSIM.format(bodies=bodies, joints=joints)
+
+
+def test_segment_params_from_osim():
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, 'm.osim')
+        open(path, 'w').write(_osim_text())
+        p = segment_params_from_osim(path)
+    assert abs(p['mass']['thigh_l'] - 10) < 1e-9 and abs(p['mass']['foot_r'] - 1.75) < 1e-9
+    assert abs(p['com_frac']['thigh_r'] - 0.20 / 0.48) < 1e-9
+    assert abs(p['com_frac']['shank_l'] - 0.23 / 0.49) < 1e-9
+    assert abs(p['total_mass_kg'] - (11 + 2 * 15.75)) < 1e-9
+    assert segment_params_from_osim(__file__) is None     # not a model -> fall back
+
+
+def test_model_masses_reach_the_chain():
+    """With a model, the ankle load uses the model's foot mass, not de Leva's."""
+    trc, t = _static_trc()
+    grf = estimate_grf(trc, M)['grf_total']
+    ank = lambda side: np.array([_POSE[f'{side}Ankle']] * N)
+    split = split_grf_by_foot(grf, ank('L'), ank('R'), t, t)
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, 'm.osim')
+        open(path, 'w').write(_osim_text())
+        params = segment_params_from_osim(path)
+    leg = _leg_id('L', trc, split['F_grf_l'], M, H, FS, 1 / FS, seg_params=params)
+    expected = -(M * G / 2 - 1.75 * G)
     assert abs(leg['F_ankle'][N // 2][1] - expected) < 0.5, leg['F_ankle'][N // 2]
 
 

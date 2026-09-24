@@ -2161,7 +2161,8 @@ class RefinedHittingOptimizer:
             'indeterminate': indeterminate,
         }
 
-    def comprehensive_diagnosis(self, kinematics: pd.DataFrame, filename: str, trc_data: pd.DataFrame = None, verbose: bool = False) -> Dict:
+    def comprehensive_diagnosis(self, kinematics: pd.DataFrame, filename: str, trc_data: pd.DataFrame = None, verbose: bool = False,
+                                model_path: Optional[str] = None) -> Dict:
         trc_metrics = self.calculate_trc_metrics(trc_data) if trc_data is not None else {'max_hand_speed_mph': 0.0, 'max_hand_speed_mps': 0.0}
         wrist_speed_mps = float(trc_metrics.get('max_hand_speed_mps', 0.0))
         rotation = self.calculate_rotational_torques_refined(
@@ -2214,6 +2215,20 @@ class RefinedHittingOptimizer:
         # anything else so the rest of the analysis still runs; failure reason
         # printed for the same "no silent bugs" reason.
         id_data = {}
+        # Athlete-specific leg segments from the scaled model when one is given,
+        # otherwise the de Leva population table.
+        seg_params = None
+        segment_info = {'source': 'de Leva 1996 (population average)'}
+        if model_path:
+            try:
+                from bottom_up_id import segment_params_from_osim
+                seg_params = segment_params_from_osim(model_path)
+            except Exception as _e:
+                print(f"[id] could not read model {model_path}: {_e}")
+            if seg_params:
+                segment_info = {'source': 'scaled .osim',
+                                'model_mass_kg': round(seg_params['total_mass_kg'], 1),
+                                'entered_mass_kg': round(self.body_mass_kg, 1)}
         if trc_data is not None and grf_data:
             try:
                 from bottom_up_id import bottom_up_lower_body
@@ -2229,6 +2244,7 @@ class RefinedHittingOptimizer:
                     body_mass_kg=self.body_mass_kg,
                     body_height_m=self.body_height_m,
                     swing_start_frame=_ss,
+                    seg_params=seg_params,
                 )
             except Exception as _e:
                 print(f"[id] bottom-up ID failed: {type(_e).__name__}: {_e}")
@@ -2587,6 +2603,7 @@ class RefinedHittingOptimizer:
             # the same segment velocities the metrics use. Contains numpy arrays —
             # callers MUST pop it before JSON serialisation.
             "_rotation": rotation,
+            "segment_params": segment_info,
             # Per-foot GRF + CoP time series for OpenSim external loads. numpy —
             # callers MUST pop it before JSON serialisation, like _rotation.
             "_foot_loads": id_data.pop('_foot_loads', None) if isinstance(id_data, dict) else None,
