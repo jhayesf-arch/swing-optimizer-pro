@@ -495,7 +495,7 @@ SKILL_LEVEL_BENCHMARKS = {
 }
 
 try:
-    from metric_evidence import build_metric_evidence, TIER_LABELS
+    from metric_evidence import build_metric_evidence, detect_ik_branch_jumps, TIER_LABELS
     _HAS_EVIDENCE = True
 except ImportError:
     _HAS_EVIDENCE = False
@@ -1744,6 +1744,10 @@ class RefinedHittingOptimizer:
             'separation_signal_saturated': _sep_saturated,
             'separation_source': separation_source,
             'separation_raw_peak_deg': _sep_raw_peak,
+            # Single-frame arm IK jumps inside the swing window (see metric_evidence).
+            'ik_branch_jumps': (detect_ik_branch_jumps(data, swing_start)
+                                if _HAS_EVIDENCE else {}),
+            'lead_arm_side': lead_arm_side,
             'torso_arm_sequence_gap_ms': torso_arm_gap_ms,
             'pelvis_rotation_at_contact_deg': pelvis_rot_at_contact,
             'pelvis_rotation_excursion_deg': pelvis_rot_excursion,
@@ -2627,7 +2631,9 @@ class RefinedHittingOptimizer:
                 asdict(metrics),
                 {'separation_signal_saturated': rotation.get('separation_signal_saturated') if rotation else False,
                  'separation_source': rotation.get('separation_source', 'model_lumbar_rotation') if rotation else 'model_lumbar_rotation',
-                 'separation_raw_peak_deg': rotation.get('separation_raw_peak_deg', 0.0) if rotation else 0.0}),
+                 'separation_raw_peak_deg': rotation.get('separation_raw_peak_deg', 0.0) if rotation else 0.0,
+                 'ik_branch_jumps': rotation.get('ik_branch_jumps', {}) if rotation else {},
+                 'lead_arm_side': rotation.get('lead_arm_side', 'l') if rotation else 'l'}),
             # Equipment / session context
             **({"instrument": self.instrument} if self.instrument else {}),
             **({"instrument_note": self.instrument_note} if self.instrument_note else {}),

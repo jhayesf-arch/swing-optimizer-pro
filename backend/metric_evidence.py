@@ -228,6 +228,70 @@ METRIC_EVIDENCE = {
 }
 
 
+# ── IK branch jumps ────────────────────────────────────────────────────────
+# When the elbow reaches full extension it sits on its 0 deg joint limit, and
+# the markers can no longer tell which way the arm will leave it. IK then snaps
+# to a new solution in a single frame. On a real swing (Quinn_1_60fps) the lead
+# elbow went 1 -> 101 deg in one 60 Hz frame (~6,000 deg/s); OpenCap's own
+# solution of the same trial jumped 2 -> 67 deg ten frames earlier. Running
+# Stanford's OpenSim 4.3 made no difference, so this is a property of the data,
+# not a solver version, and it lands near contact, when the lead arm straightens.
+#
+# The limits sit above the fastest values measured anywhere in sport, so an
+# exceedance in one frame can only be an artifact: elbow extension in pitching
+# peaks ~2,300-2,500 deg/s, shoulder internal rotation ~7,000 deg/s
+# (Fleisig et al. 1995), and hitting is slower than both.
+IK_JUMP_LIMITS_DEG_S = {
+    'elbow_flex': 3000.0,
+    'pro_sup': 3000.0,
+    'arm_flex': 3000.0,
+    'arm_add': 3000.0,
+    'arm_rot': 7500.0,
+}
+
+
+def detect_ik_branch_jumps(kinematics, start_frame: int = 0) -> dict:
+    """Return {coordinate: [times in s]} for arm coordinates that change faster
+    in one frame than any human joint can.
+
+    Runs on the raw (unfiltered) coordinates. The filter used for metrics would
+    smear a one-frame jump into a smooth but still impossible spike that no
+    longer looks like a step.
+    """
+    if kinematics is None or 'time' not in getattr(kinematics, 'columns', ()):
+        return {}
+    import numpy as np
+    t = kinematics['time'].to_numpy(dtype=float)[start_frame:]
+    if len(t) < 2:
+        return {}
+    dt = np.diff(t)
+    dt[dt <= 0] = np.nan
+    jumps = {}
+    for base, limit in IK_JUMP_LIMITS_DEG_S.items():
+        for side in ('l', 'r'):
+            col = f'{base}_{side}'
+            if col not in kinematics.columns:
+                continue
+            q = kinematics[col].to_numpy(dtype=float)[start_frame:]
+            rate = np.abs(np.diff(q)) / dt
+            hits = np.where(rate > limit)[0]
+            if hits.size:
+                jumps[col] = [round(float(t[i + 1]), 3) for i in hits]
+    return jumps
+
+
+# Metrics computed from each arm's IK coordinates. Lead-arm metrics follow the
+# hitter's lead side, which is resolved when flags are read.
+_ARM_METRICS_BY_SIDE = {
+    'l': ('peak_elbow_flex_l_deg', 'peak_arm_flex_l_deg', 'peak_prosup_l_deg'),
+    'r': ('peak_prosup_r_deg',),
+}
+_LEAD_ARM_METRICS = (
+    'arm_ke_J', 'forearm_ke_J', 'total_energy_transfer_J', 'torso_to_arm_transfer_ratio',
+    'energy_transfer_proxy_pct', 'torso_arm_sequence_gap_ms', 'estimated_hand_speed_mph',
+)
+
+
 def _capture_flags(diagnosis: dict) -> dict:
     """Read the capture conditions that decide which metrics this trial supports."""
     rot = diagnosis.get('_rotation_context') or {}
@@ -246,6 +310,8 @@ def _capture_flags(diagnosis: dict) -> dict:
         'peak_pelvis_dgs': float(metrics.get('peak_pelvis_omega_3d_deg_s', 0.0) or 0.0),
         'max_separation_deg': float(metrics.get('max_separation_deg', 0.0) or 0.0),
         'separation_raw_peak_deg': float(rot.get('separation_raw_peak_deg', 0.0) or 0.0),
+        'ik_branch_jumps': rot.get('ik_branch_jumps') or {},
+        'lead_arm_side': rot.get('lead_arm_side', 'l'),
     }
 
 
@@ -258,6 +324,26 @@ def build_metric_evidence(diagnosis: dict) -> dict:
     """
     f = _capture_flags(diagnosis)
     out = {}
+
+    # Which metrics an arm IK jump invalidates, and the caveat that explains it.
+    jump_caveats = {}
+    for side in ('l', 'r'):
+        side_jumps = {c: ts for c, ts in f['ik_branch_jumps'].items() if c.endswith('_' + side)}
+        if not side_jumps:
+            continue
+        times = sorted({t for ts in side_jumps.values() for t in ts})
+        arm = 'left' if side == 'l' else 'right'
+        text = (f'The {arm}-arm joint angles jump faster than any human joint can '
+                f'({", ".join(sorted(side_jumps))} at t={times[0]:.2f}'
+                f'{"" if len(times) == 1 else f"-{times[-1]:.2f}"} s). This happens '
+                'when the arm reaches full extension: the markers cannot tell which '
+                'way it bends out, so the joint-angle solver snaps between solutions. '
+                'OpenCap\'s own output shows the same artifact.')
+        names = list(_ARM_METRICS_BY_SIDE[side]) + ['arm_flex_asymmetry_deg']
+        if side == f['lead_arm_side']:
+            names += _LEAD_ARM_METRICS
+        for n in names:
+            jump_caveats.setdefault(n, text)
 
     for name, (tier, citation, note) in METRIC_EVIDENCE.items():
         reliable, caveat = True, ''
@@ -316,6 +402,10 @@ def build_metric_evidence(diagnosis: dict) -> dict:
                 caveat = (f'Peak pelvis speed {f["peak_pelvis_dgs"]:.0f} deg/s is well '
                           'below competitive range; this may not be a full-intent '
                           'swing, and sequence timing is not interpretable if not.')
+
+        if name in jump_caveats:
+            reliable = False
+            caveat = jump_caveats[name]
 
         # Every kinetic output lacks measured ground reaction force.
         if name.endswith(('_Nm', '_W', '_N')) or name.endswith('_ke_J'):
