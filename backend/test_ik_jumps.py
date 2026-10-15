@@ -66,6 +66,26 @@ def test_clean_capture_changes_nothing():
     assert _evidence({})['forearm_ke_J']['reliable']
 
 
+def test_radian_mot_is_loaded_in_degrees():
+    """The jump limits (and every angle metric) assume degrees. A radian file
+    must be converted, or a 100 deg snap reads as 1.7 'deg' and slips through."""
+    import os
+    import tempfile
+    from analyzer import RefinedHittingOptimizer
+    elbow = np.where(T < 1.0, 0.0, np.radians(100.0))
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, 'rad.mot')
+        with open(p, 'w') as f:
+            f.write('Coordinates\nversion=1\nnRows=%d\nnColumns=3\ninDegrees=no\nendheader\n' % len(T))
+            f.write('time\telbow_flex_l\tpelvis_tx\n')
+            for t, e in zip(T, elbow):
+                f.write(f'{t:.6f}\t{e:.8f}\t0.5\n')
+        k = RefinedHittingOptimizer(80.0, 1.8).load_mot_file(p)
+    assert abs(k['elbow_flex_l'].max() - 100.0) < 1e-4
+    assert k['pelvis_tx'].iloc[0] == 0.5          # translations stay in metres
+    assert list(detect_ik_branch_jumps(k)) == ['elbow_flex_l']
+
+
 if __name__ == '__main__':
     tests = [v for k, v in dict(globals()).items() if k.startswith('test_')]
     for fn in tests:

@@ -840,15 +840,25 @@ class RefinedHittingOptimizer:
             lines = f.readlines()
         header_end = 0
         event_times = {}
+        in_degrees = True
         for i, line in enumerate(lines):
             if 'endheader' in line.lower():
                 header_end = i + 1
                 break
+            if line.strip().lower().startswith('indegrees='):
+                in_degrees = line.split('=', 1)[1].strip().lower() == 'yes'
             if '=' in line and any(k in line for k in ('fp_10_time', 'contact_time')):
                 key, val = line.strip().split('=', 1)
                 event_times[key.strip()] = float(val.strip())
         data = pd.read_csv(filepath, sep='\t', skiprows=header_end, skipinitialspace=True)
         data.columns = data.columns.str.strip()
+        # Everything downstream assumes degrees. A radian file (inDegrees=no, e.g.
+        # from an OpenSim tool or a script) would otherwise be read 57x too small.
+        # Translations (pelvis_tx/ty/tz) are in metres either way.
+        if not in_degrees:
+            rot = [c for c in data.columns
+                   if c != 'time' and not c.endswith(('_tx', '_ty', '_tz'))]
+            data[rot] = np.degrees(data[rot])
         # Attach event times as metadata via attrs (pandas 1.0+)
         data.attrs.update(event_times)
         return data
