@@ -667,6 +667,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     phase_report: { ...avg, percentile_library_dims: libDims(avg.dimensions) },
                     findings: [], recommendations: [],
                     skeleton_frames: first.skeleton_frames,
+                    bones: first.bones,
                     kinematic_sequence: first.kinematic_sequence,
                     grf_estimation: {},
                     // Per-swing evidence blocks were assembled from server output but
@@ -699,6 +700,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     },
                     findings: s.findings || [], recommendations: s.recommendations || [],
                     skeleton_frames: s.skeleton_frames,
+                    bones: s.bones,
                     kinematic_sequence: s.kinematic_sequence,
                     grf_estimation: s.grf_estimation || {},
                     metric_evidence: s.metric_evidence || {},
@@ -1215,8 +1217,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const io = new IntersectionObserver(entries => entries.forEach(e => {
             if (e.isIntersecting) { e.target.classList.add('in-view'); io.unobserve(e.target); }
         }), { threshold: 0.12, rootMargin: '0px 0px -6% 0px' });
+        // Only elements registered here start hidden (class "reveal"), so anything
+        // rendered later, such as a re-drawn list, is never left invisible.
         document.querySelectorAll('.reading > *, .phase-card, .metric-item, .priority-item').forEach(el => {
-            el.classList.remove('in-view'); io.observe(el);
+            el.classList.remove('in-view'); el.classList.add('reveal'); io.observe(el);
         });
     }
 

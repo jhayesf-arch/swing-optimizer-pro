@@ -138,7 +138,10 @@ h1, h2, h3, .panel-title, .phase-label, .upload-intro h1, .modal-content h2, .wo
 .topbar-status[data-state="ready"]::before { background: var(--good); }
 .topbar-status[data-state="waking"]::before { background: var(--warn); }
 
-.container { max-width: 1440px; margin: 0 auto; padding: 0 var(--gutter) 6rem; }
+/* Up to 1440px the page fills the window; on wider screens it takes 1440px plus
+   three-quarters of the extra width, so the report column reaches out instead
+   of leaving a wide empty band. */
+.container { max-width: max(1440px, calc(1440px + (100vw - 1440px) * 0.75)); margin: 0 auto; padding: 0 var(--gutter) 6rem; }
 
 /* ── Panels: a tone step from the ground, no lines, no shadows ───────── */
 .glass-card, .panel {
@@ -204,7 +207,7 @@ label.btn { cursor: pointer; }
 
 @media (min-width: 1100px) {
     .results-layout {
-        display: grid; grid-template-columns: minmax(400px, 42%) minmax(0, 1fr);
+        display: grid; grid-template-columns: minmax(400px, min(42%, 720px)) minmax(0, 1fr);
         gap: 0 clamp(2rem, 3.5vw, 4rem); align-items: start;
     }
     .stage {
@@ -771,20 +774,16 @@ label.btn { cursor: pointer; }
 @media (max-width: 620px) { .replay { grid-template-columns: auto 1fr auto; } #replay-speed { grid-column: 1 / 2; } #replay-mode { grid-column: 2 / -1; justify-self: start; } }
 
 /* Scroll reveals (only once the script has armed them) */
-html.reveal-ready .reading > *:not(.in-view),
-html.reveal-ready .phase-card:not(.in-view) { opacity: 0; transform: translateY(26px); }
-html.reveal-ready .reading > *, html.reveal-ready .phase-card {
-    transition: opacity 0.6s var(--ease), transform 0.7s var(--ease);
-}
-html.reveal-ready .metric-item:not(.in-view), html.reveal-ready .priority-item:not(.in-view) { opacity: 0; transform: translateY(14px); }
-html.reveal-ready .metric-item, html.reveal-ready .priority-item { transition: opacity 0.5s var(--ease), transform 0.6s var(--ease); }
+html.reveal-ready .reveal:not(.in-view) { opacity: 0; transform: translateY(26px); }
+html.reveal-ready .reveal { transition: opacity 0.6s var(--ease), transform 0.7s var(--ease); }
+html.reveal-ready .metric-item.reveal:not(.in-view), html.reveal-ready .priority-item.reveal:not(.in-view) { transform: translateY(14px); }
 html.reveal-ready .metric-item:nth-child(3n+2), html.reveal-ready .priority-item:nth-child(2) { transition-delay: 0.06s; }
 html.reveal-ready .metric-item:nth-child(3n), html.reveal-ready .priority-item:nth-child(3) { transition-delay: 0.12s; }
 html.reveal-ready .priority-item:nth-child(4) { transition-delay: 0.18s; }
 
 /* Percentile bars fill when their card arrives */
 .dim-pct-fill { transform-origin: left center; transition: transform 1s var(--ease) 0.15s; }
-html.reveal-ready .phase-card:not(.in-view) .dim-pct-fill { transform: scaleX(0); }
+html.reveal-ready .phase-card.reveal:not(.in-view) .dim-pct-fill { transform: scaleX(0); }
 
 /* Loading: an electric-blue sweep across the top while a swing is analysed */
 .loading-overlay::before {
@@ -804,7 +803,7 @@ html.reveal-ready .phase-card:not(.in-view) .dim-pct-fill { transform: scaleX(0)
 
 @media (prefers-reduced-motion: reduce) {
     .loading-overlay::before, .topbar-status::before, .swing-score-hero .score-number { animation: none !important; }
-    html.reveal-ready .reading > *, html.reveal-ready .phase-card, html.reveal-ready .metric-item, html.reveal-ready .priority-item { opacity: 1 !important; transform: none !important; }
+    html.reveal-ready .reveal { opacity: 1 !important; transform: none !important; }
 }
 
 #replay-mode[hidden] { display: none; }

@@ -14,6 +14,7 @@ try:
 except Exception:
     HAS_OPENSIM_ID = False
 from dynamics_compare import build_comparison, load_reference, reference_stem
+from bones import attach_bones
 
 app = FastAPI(title="Hitting Optimizer API")
 
@@ -286,11 +287,14 @@ def _extract_skeleton_frames(trc_df, mot_df, max_frames: int = 60) -> dict:
     t_contact = mot_times[peak]
     contact_idx = int(np.argmin(np.abs(trc_sub['Time'].values - t_contact))) if 'Time' in trc_sub.columns else len(frames) // 2
 
+    frame_times = (trc_sub['Time'].values if 'Time' in trc_sub.columns
+                   else trc_sub['time'].values if 'time' in trc_sub.columns else [])
     return {
         'markers': available,
         'frames':  frames,
         'contact_frame': contact_idx,
         'fps': round(1.0 / (step * dt), 1),
+        'frame_times': [round(float(x), 4) for x in frame_times],
     }
 
 
@@ -423,6 +427,7 @@ def _skeleton_from_mot(mot_df, body_height_m: float = 1.83, max_frames: int = 60
         'frames': frames,
         'contact_frame': contact_idx,
         'fps': round(1.0 / (step * dt), 1),
+        'frame_times': [round(float(mot_df['time'].values[k]), 4) for k in indices],
     }
 
 
@@ -492,6 +497,8 @@ async def analyze_upload(
             diagnosis['kinematic_sequence'] = _kinematic_sequence(kinematics, diagnosis.get('_rotation'))
         except Exception:
             pass
+        # Real OpenSim bones for the 3-D view, on the same frames as the skeleton.
+        attach_bones(diagnosis, kinematics, model_path, height_m)
         id_mags = _run_id(file_path, model_path or DEFAULT_MODEL, bat_mass_kg, bat_length_m,
                           diagnosis, foot_loads=diagnosis.get('_foot_loads'),
                           body_mass_kg=weight_kg, model_uploaded=bool(model_path))
@@ -595,6 +602,8 @@ async def analyze_batch(
                     )
                 except Exception:
                     pass
+                # Each swing's own bones, on its own skeleton frames.
+                attach_bones(extras, kin, model_path, height_m)
                 # A lone reference file with a lone swing pairs regardless of name.
                 ref_path = ref_by_stem.get(stem.lower())
                 if ref_path is None and len(ref_by_stem) == 1 and len(mots) == 1:
