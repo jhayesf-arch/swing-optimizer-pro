@@ -208,8 +208,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (refInput) refInput.addEventListener('change', updateDynLabel);
     if (modelInput) modelInput.addEventListener('change', updateDynLabel);
 
-    document.getElementById('load-demo').addEventListener('click', () => {
+    // The demo's motion is a real captured swing (joint positions only), so the
+    // 3-D replay has something true to play. Without it the demo still renders
+    // with the reference pose.
+    document.getElementById('load-demo').addEventListener('click', async () => {
         hideViewSelector();
+        if (!DEMO_DIAGNOSIS.skeleton_frames) {
+            try {
+                const r = await fetch('demo_skeleton.json');
+                if (r.ok) DEMO_DIAGNOSIS.skeleton_frames = await r.json();
+            } catch (e) { /* reference pose instead */ }
+        }
         renderDashboard(DEMO_DIAGNOSIS, 'demo_swing.mot');
     });
     
@@ -851,6 +860,7 @@ document.addEventListener('DOMContentLoaded', () => {
             setTimeout(() => init3DSkeleton(diagnosis.skeleton_frames), 100);
             attachSkeletonClickHandlers();
         }
+        setTimeout(observeReveals, 60);
 
         // ---- FINDINGS & RECOMMENDATIONS ----
         setMetricEvidence(diagnosis.metric_evidence);
@@ -1177,12 +1187,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         if (reduce) { drawKine(1); return; }
-        const start = performance.now(), dur = 900;
-        (function step(now) {
-            const p = Math.min((now - start) / dur, 1);
-            drawKine(1 - Math.pow(1 - p, 3));
-            if (p < 1 && lastKineSeq === seq) requestAnimationFrame(step);
-        })(start);
+        // Draw the curves when the chart scrolls into view, not off screen.
+        drawKine(0);
+        const play = () => {
+            const start = performance.now(), dur = 1400;
+            (function step(now) {
+                const p = Math.min((now - start) / dur, 1);
+                drawKine(1 - Math.pow(1 - p, 3));
+                if (p < 1 && lastKineSeq === seq) requestAnimationFrame(step);
+            })(start);
+        };
+        const chart = document.getElementById('kinematic-chart');
+        if (chart && 'IntersectionObserver' in window) {
+            const io = new IntersectionObserver(es => { if (es.some(e => e.isIntersecting)) { io.disconnect(); play(); } }, { threshold: 0.35 });
+            io.observe(chart);
+        } else play();
+    }
+
+    // Panels rise in as they scroll into view, and percentile bars fill when
+    // their card arrives. Content stays visible if script or the observer is
+    // missing: the hidden start state only applies under html.reveal-ready.
+    function observeReveals() {
+        const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (calm || !('IntersectionObserver' in window)) return;
+        document.documentElement.classList.add('reveal-ready');
+        const io = new IntersectionObserver(entries => entries.forEach(e => {
+            if (e.isIntersecting) { e.target.classList.add('in-view'); io.unobserve(e.target); }
+        }), { threshold: 0.12, rootMargin: '0px 0px -6% 0px' });
+        document.querySelectorAll('.reading > *, .phase-card, .metric-item, .priority-item').forEach(el => {
+            el.classList.remove('in-view'); io.observe(el);
+        });
     }
 
     // Compact proximal-to-distal peak-order timeline: each segment's peak on a
@@ -1306,7 +1340,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.matchMedia) {
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
             if (lastKineSeq) drawKine(1);
-            if (skeletonScene && skeletonScene.buildSkeleton) skeletonScene.buildSkeleton(skeletonScene.pose, null, null);
+            if (skeletonScene && skeletonScene.redraw) skeletonScene.redraw();
         });
     }
 
@@ -1735,6 +1769,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // ── 3D SKELETON ─────────────────────────────────────────────────────────
     let skeletonScene = null;
+    // One render loop and one replay at a time: a new analysis replaces them.
+    let skeletonRaf = 0;
+    let stopReplay = () => {};
 
     const BONE_CONNECTIONS = [
         ['Neck','RShoulder'],['Neck','LShoulder'],
@@ -1939,7 +1976,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         function buildSkeleton(pose, hlBones, hlColor) {
             refreshSkeletonColors();
-            while (figure.children.length) figure.remove(figure.children[0]);
+            // Free the GPU buffers of the previous figure: the replay rebuilds it
+            // every frame, and detached meshes would otherwise pile up.
+            while (figure.children.length) {
+                const child = figure.children[0];
+                figure.remove(child);
+                child.traverse(o => {
+                    if (o.geometry) o.geometry.dispose();
+                    if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.dispose());
+                });
+            }
 
             if (pose) {
                 const getV = (n) => toV3(pose, n);
@@ -1949,7 +1995,8 @@ document.addEventListener('DOMContentLoaded', () => {
             // Safety net: no pose, or captured data had no joints matching the
             // expected marker names → never leave the box blank, show the
             // reference right-handed swing instead.
-            if (!figure.children.length) drawStaticFallback(hlBones, hlColor);
+            usingFallback = !figure.children.length;
+            if (usingFallback) drawStaticFallback(hlBones, hlColor);
             frameCamera();
         }
 
@@ -1985,7 +2032,9 @@ document.addEventListener('DOMContentLoaded', () => {
             figure.position.set(0, 0, 0);
             pivot.updateMatrixWorld(true);
 
-            const box = new THREE.Box3().setFromObject(figure);
+            // During a replay the camera fits the whole swing once, so the figure
+            // moves through a still frame instead of the view re-zooming each frame.
+            const box = (replayBox && !usingFallback) ? replayBox.clone() : new THREE.Box3().setFromObject(figure);
             if (box.isEmpty()) { pivot.rotation.copy(savedRot); return; }
 
             const center = box.getCenter(new THREE.Vector3());
@@ -2021,6 +2070,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         const pose = getPose(contactFrame);
+        let usingFallback = false;
+        // The extent of the whole swing, for a camera that holds still during replay.
+        let replayBox = null;
+        if (frames && frames.length >= 5) {
+            const pts = [];
+            frames.forEach(f => JOINT_NAMES.concat(['BatTip']).forEach(n => { const v = toV3(f, n); if (v) pts.push(v); }));
+            if (pts.length > 20) replayBox = new THREE.Box3().setFromPoints(pts).expandByScalar(0.06);
+        }
         // Diagnostics so an empty/blank viewer can be traced from the console.
         console.info('[skeleton] frames:', frames ? frames.length : 0,
             '| markers in frame 0:', pose ? Object.keys(pose) : '(none)',
@@ -2054,10 +2111,90 @@ document.addEventListener('DOMContentLoaded', () => {
             ro.observe(container);
         }
 
-        function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
+        cancelAnimationFrame(skeletonRaf);
+        function animate() { skeletonRaf = requestAnimationFrame(animate); renderer.render(scene, camera); }
         animate();
 
-        skeletonScene = { buildSkeleton, pose, frames, contactFrame };
+        // ── Swing replay ────────────────────────────────────────────────────
+        // The report carries the swing from load to follow-through; play it back
+        // on the figure, keeping any highlighted body region lit.
+        let current = contactFrame, hl = null, hlColor = null;
+        const showFrame = i => {
+            current = Math.max(0, Math.min((frames ? frames.length : 1) - 1, Math.round(i)));
+            buildSkeleton(getPose(current), hl, hlColor);
+            updateReplayUi();
+        };
+        const fps = skeletonFrames?.fps || 60;
+        const ui = {
+            wrap: document.getElementById('replay'),
+            play: document.getElementById('replay-play'),
+            speed: document.getElementById('replay-speed'),
+            scrub: document.getElementById('replay-scrub'),
+            time: document.getElementById('replay-time'),
+        };
+        let playing = false, slowmo = true, playHead = contactFrame, lastT = 0, rafReplay = 0, holdUntil = 0;
+        function updateReplayUi() {
+            if (!ui.wrap || !frames) return;
+            ui.scrub.value = String(current);
+            const ms = Math.round((current - contactFrame) / fps * 1000);
+            ui.time.textContent = current === contactFrame ? 'Contact' : (ms < 0 ? `${ms} ms` : `+${ms} ms`);
+            ui.wrap.classList.toggle('at-contact', current === contactFrame);
+        }
+        function tick(t) {
+            if (!playing) return;
+            const dt = lastT ? (t - lastT) / 1000 : 0; lastT = t;
+            if (t < holdUntil) { rafReplay = requestAnimationFrame(tick); return; }
+            playHead += dt * fps * (slowmo ? 0.25 : 1);
+            if (playHead >= frames.length - 1) {
+                if (autoplayOnce) { autoplayOnce = false; setPlaying(false); showFrame(contactFrame); return; }
+                playHead = 0; holdUntil = t + 500;
+            }
+            if (Math.round(playHead) !== current) showFrame(playHead);
+            rafReplay = requestAnimationFrame(tick);
+        }
+        function setPlaying(on) {
+            playing = on && !!frames;
+            if (ui.play) { ui.play.textContent = playing ? 'Pause' : 'Play'; ui.play.setAttribute('aria-pressed', String(playing)); }
+            if (ui.wrap) ui.wrap.classList.toggle('is-playing', playing);
+            cancelAnimationFrame(rafReplay);
+            if (playing) { lastT = 0; playHead = current >= frames.length - 1 ? 0 : current; rafReplay = requestAnimationFrame(tick); }
+        }
+        let autoplayOnce = false;
+        stopReplay(); stopReplay = () => { autoplayOnce = false; setPlaying(false); };
+        if (ui.wrap) {
+            const usable = frames && frames.length >= 5 && !usingFallback;
+            ui.wrap.hidden = !usable;
+            if (usable) {
+                ui.scrub.max = String(frames.length - 1);
+                ui.scrub.style.setProperty('--contact', `${(contactFrame / (frames.length - 1)) * 100}%`);
+                ui.play.onclick = () => { autoplayOnce = false; setPlaying(!playing); };
+                ui.speed.onclick = () => {
+                    slowmo = !slowmo;
+                    ui.speed.textContent = slowmo ? 'Slow-mo' : 'Real time';
+                    ui.speed.setAttribute('aria-pressed', String(slowmo));
+                };
+                ui.scrub.oninput = () => { autoplayOnce = false; setPlaying(false); showFrame(+ui.scrub.value); };
+                updateReplayUi();
+                // Play the swing once, in slow motion, the first time it comes into
+                // view, then settle on contact. Never for reduced-motion users.
+                const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                if (!calm && 'IntersectionObserver' in window) {
+                    const io = new IntersectionObserver(entries => {
+                        if (entries.some(e => e.isIntersecting)) {
+                            io.disconnect(); autoplayOnce = true; showFrame(0); setPlaying(true);
+                        }
+                    }, { threshold: 0.5 });
+                    io.observe(container);
+                }
+            }
+        }
+
+        skeletonScene = {
+            buildSkeleton, frames, contactFrame,
+            get pose() { return getPose(current); },
+            highlight(bones, color) { hl = bones; hlColor = color; showFrame(current); },
+            redraw() { showFrame(current); },
+        };
     }
 
     function attachSkeletonClickHandlers() {
@@ -2070,7 +2207,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (skeletonScene) {
                     const hlBones = new Set();
                     for (const [a,b] of hit.bones) { hlBones.add(`${a}|${b}`); hlBones.add(`${b}|${a}`); }
-                    skeletonScene.buildSkeleton(skeletonScene.pose, hlBones, hit.color);
+                    skeletonScene.highlight(hlBones, hit.color);
                 }
                 document.getElementById('skeleton-label').textContent = tile.querySelector('.dim-name')?.textContent || key;
                 document.getElementById('skeleton-metric-desc').textContent = hit.desc;

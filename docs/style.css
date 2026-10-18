@@ -615,16 +615,8 @@ label.btn { cursor: pointer; }
 
 /* ── Motion: rise in, once, transform and opacity only ──────────────── */
 @keyframes rise-in { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }
-.reading > *, .stage > * { animation: rise-in 0.55s var(--ease) both; }
-.reading > *:nth-child(2) { animation-delay: 0.06s; }
-.reading > *:nth-child(3) { animation-delay: 0.12s; }
-.reading > *:nth-child(4) { animation-delay: 0.18s; }
-.reading > *:nth-child(n+5) { animation-delay: 0.24s; }
+.stage > * { animation: rise-in 0.55s var(--ease) both; }
 .stage > *:nth-child(2) { animation-delay: 0.08s; }
-.phase-card { animation: rise-in 0.55s var(--ease) both; }
-.phase-card:nth-child(2) { animation-delay: 0.06s; }
-.phase-card:nth-child(3) { animation-delay: 0.12s; }
-.phase-card:nth-child(4) { animation-delay: 0.18s; }
 .advanced-panels:not(.hidden) { animation: rise-in 0.4s var(--ease) both; }
 .anim-slide-up { animation: rise-in 0.55s var(--ease) both; }
 .upload-intro, .upload-zone, .upload-demo { animation: rise-in 0.6s var(--ease) both; }
@@ -748,4 +740,68 @@ label.btn { cursor: pointer; }
 
 @media (prefers-reduced-motion: reduce) {
     .swing-score-hero, .swing-score-hero::before, .swing-score-hero::after { animation: none !important; clip-path: none !important; }
+}
+
+/* ════════════════════════════════════════════════════════════════════
+   Motion layer: swing replay, scroll reveals, loading sweep, live dots.
+   Transform and opacity only; every part has a reduced-motion fallback.
+   ════════════════════════════════════════════════════════════════════ */
+
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Swing replay controls */
+.replay { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 0.75rem; }
+.replay[hidden] { display: none; }
+.replay-play { min-width: 5.5rem; }
+.replay-track { position: relative; display: block; }
+.replay-track::after {           /* contact mark on the timeline */
+    content: ''; position: absolute; top: 50%; left: var(--contact, 50%);
+    width: 3px; height: 18px; transform: translate(-50%, -50%); background: var(--ink); pointer-events: none;
+}
+.replay input[type="range"] { width: 100%; height: 28px; background: transparent; -webkit-appearance: none; appearance: none; cursor: pointer; }
+.replay input[type="range"]::-webkit-slider-runnable-track { height: 6px; background: var(--recess); }
+.replay input[type="range"]::-moz-range-track { height: 6px; background: var(--recess); }
+.replay input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; margin-top: -6px; background: var(--accent); border: 0; }
+.replay input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; background: var(--accent); border: 0; border-radius: 0; }
+.replay-time { font-family: var(--font-display); font-weight: 600; font-size: 1.15rem; min-width: 5.2rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.replay.at-contact .replay-time { color: var(--accent); }
+.replay.is-playing .replay-play { background: var(--ink); color: var(--bg); }
+#replay-speed[aria-pressed="true"] { box-shadow: inset 0 -3px 0 var(--accent); } /* taste-skill-ignore: active toggle bar */
+@media (max-width: 520px) { .replay { grid-template-columns: auto 1fr auto; } #replay-speed { grid-column: 1 / -1; justify-self: start; } }
+
+/* Scroll reveals (only once the script has armed them) */
+html.reveal-ready .reading > *:not(.in-view),
+html.reveal-ready .phase-card:not(.in-view) { opacity: 0; transform: translateY(26px); }
+html.reveal-ready .reading > *, html.reveal-ready .phase-card {
+    transition: opacity 0.6s var(--ease), transform 0.7s var(--ease);
+}
+html.reveal-ready .metric-item:not(.in-view), html.reveal-ready .priority-item:not(.in-view) { opacity: 0; transform: translateY(14px); }
+html.reveal-ready .metric-item, html.reveal-ready .priority-item { transition: opacity 0.5s var(--ease), transform 0.6s var(--ease); }
+html.reveal-ready .metric-item:nth-child(3n+2), html.reveal-ready .priority-item:nth-child(2) { transition-delay: 0.06s; }
+html.reveal-ready .metric-item:nth-child(3n), html.reveal-ready .priority-item:nth-child(3) { transition-delay: 0.12s; }
+html.reveal-ready .priority-item:nth-child(4) { transition-delay: 0.18s; }
+
+/* Percentile bars fill when their card arrives */
+.dim-pct-fill { transform-origin: left center; transition: transform 1s var(--ease) 0.15s; }
+html.reveal-ready .phase-card:not(.in-view) .dim-pct-fill { transform: scaleX(0); }
+
+/* Loading: an electric-blue sweep across the top while a swing is analysed */
+.loading-overlay::before {
+    content: ''; position: fixed; top: 0; left: 0; height: 4px; width: 35%;
+    background: var(--accent); animation: top-sweep 1.2s var(--ease) infinite;
+}
+@keyframes top-sweep { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+.loading-overlay h3 { font-family: var(--font-display); text-transform: uppercase; font-size: var(--step-head); }
+
+/* Live status dot */
+.topbar-status[data-state="checking"]::before, .topbar-status[data-state="waking"]::before { animation: dot-pulse 1.4s ease-in-out infinite; }
+@keyframes dot-pulse { 50% { opacity: 0.35; transform: scale(0.75); } }
+
+/* Hero numbers land with a small punch */
+.swing-score-hero .score-number { animation: punch 0.6s var(--ease) 0.5s both; }
+@keyframes punch { from { transform: scale(0.82); opacity: 0; } to { transform: none; opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+    .loading-overlay::before, .topbar-status::before, .swing-score-hero .score-number { animation: none !important; }
+    html.reveal-ready .reading > *, html.reveal-ready .phase-card, html.reveal-ready .metric-item, html.reveal-ready .priority-item { opacity: 1 !important; transform: none !important; }
 }
