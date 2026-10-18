@@ -215,8 +215,9 @@ document.addEventListener('DOMContentLoaded', () => {
         hideViewSelector();
         if (!DEMO_DIAGNOSIS.skeleton_frames) {
             try {
-                const r = await fetch('demo_skeleton.json');
-                if (r.ok) DEMO_DIAGNOSIS.skeleton_frames = await r.json();
+                const [sk, bm] = await Promise.all([fetch('demo_skeleton.json'), fetch('bones/demo_motion.json')]);
+                if (sk.ok) DEMO_DIAGNOSIS.skeleton_frames = await sk.json();
+                if (bm.ok) DEMO_DIAGNOSIS.bones = { motion: await bm.json(), geometry_url: 'bones/geometry.json' };
             } catch (e) { /* reference pose instead */ }
         }
         renderDashboard(DEMO_DIAGNOSIS, 'demo_swing.mot');
@@ -857,7 +858,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (diagnosis.phase_report) {
             renderPhaseReport(diagnosis.phase_report);
             renderCoachingFocus(diagnosis.phase_report);
-            setTimeout(() => init3DSkeleton(diagnosis.skeleton_frames), 100);
+            setTimeout(() => init3DSkeleton(diagnosis.skeleton_frames, diagnosis.bones), 100);
             attachSkeletonClickHandlers();
         }
         setTimeout(observeReveals, 60);
@@ -1828,7 +1829,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     const BAT_TIP = [0.64,1.42,0.30];
 
-    function init3DSkeleton(skeletonFrames) {
+    function init3DSkeleton(skeletonFrames, bones) {
         const container = document.getElementById('skeleton-3d');
         if (!container) return;
         if (typeof THREE === 'undefined') {
@@ -2117,83 +2118,209 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // ── Swing replay ────────────────────────────────────────────────────
         // The report carries the swing from load to follow-through; play it back
-        // on the figure, keeping any highlighted body region lit.
+        // on the figure, keeping any highlighted body region lit. The same
+        // controls drive the stick figure or, when a bone export is present, the
+        // athlete's OpenSim bones.
+        let mode = 'stick';
+        const stickTrack = (frames && frames.length >= 5 && !usingFallback)
+            ? { n: frames.length, contact: contactFrame, fps: skeletonFrames?.fps || 60 } : null;
+        let track = stickTrack;
         let current = contactFrame, hl = null, hlColor = null;
+        const stickBox = replayBox;
+
+        // OpenSim bones (biostrike.bones.v1 motion + mesh pack), placed per frame
+        // at each body's transform in ground, as OpenCap's viewer renders a trial.
+        let boneBodies = null;      // name → { group, materials }
+        const BONE_BODIES_FOR = {
+            'midHip|RHip': ['pelvis'], 'midHip|LHip': ['pelvis'],
+            'Neck|midHip': ['torso'], 'Neck|RShoulder': ['torso', 'humerus_r'], 'Neck|LShoulder': ['torso', 'humerus_l'],
+            'RHip|RKnee': ['femur_r'], 'LHip|LKnee': ['femur_l'],
+            'RKnee|RAnkle': ['tibia_r', 'talus_r', 'calcn_r', 'toes_r'], 'LKnee|LAnkle': ['tibia_l', 'talus_l', 'calcn_l', 'toes_l'],
+            'RShoulder|RElbow': ['humerus_r'], 'LShoulder|LElbow': ['humerus_l'],
+            'RElbow|RWrist': ['ulna_r', 'radius_r', 'hand_r'], 'LElbow|LWrist': ['ulna_l', 'radius_l', 'hand_l'],
+        };
+        function litBodies() {
+            const lit = new Set();
+            if (hl) hl.forEach(pair => (BONE_BODIES_FOR[pair] || []).forEach(b => lit.add(b)));
+            return lit;
+        }
+        function decode(b64, Type) {
+            const bin = atob(b64), bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            return new Type(bytes.buffer);
+        }
+        function clearFigure() {
+            while (figure.children.length) {
+                const child = figure.children[0];
+                figure.remove(child);
+                child.traverse(o => {
+                    if (o.geometry) o.geometry.dispose();
+                    if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.dispose());
+                });
+            }
+        }
+        function buildBones(pack) {
+            clearFigure();
+            boneBodies = {};
+            const boneColor = new THREE.Color(cssVar('--bone', '#d8dfeb'));
+            Object.entries(bones.motion.bodies).forEach(([name, body]) => {
+                const group = new THREE.Group(), materials = [];
+                body.geometries.forEach(g => {
+                    const m = pack.meshes[g];
+                    if (!m) return;
+                    const geo = new THREE.BufferGeometry();
+                    geo.setAttribute('position', new THREE.BufferAttribute(decode(m.positions, Float32Array), 3));
+                    geo.setIndex(new THREE.BufferAttribute(decode(m.indices, m.index_type === 'u32' ? Uint32Array : Uint16Array), 1));
+                    geo.computeVertexNormals();
+                    const mat = new THREE.MeshStandardMaterial({ color: boneColor, roughness: 0.55, metalness: 0.05 });
+                    const mesh = new THREE.Mesh(geo, mat);
+                    mesh.scale.set(body.scale[0], body.scale[1], body.scale[2]);
+                    group.add(mesh); materials.push(mat);
+                });
+                figure.add(group);
+                boneBodies[name] = { group, materials };
+            });
+        }
+        function applyBoneFrame(i) {
+            const lit = litBodies();
+            const boneColor = new THREE.Color(cssVar('--bone', '#d8dfeb'));
+            const litColor = hlColor ? new THREE.Color(hlColor) : boneColor;
+            Object.entries(bones.motion.bodies).forEach(([name, body]) => {
+                const b = boneBodies[name]; if (!b) return;
+                const t = body.translation[i], r = body.rotation[i];
+                b.group.position.set(t[0], t[1], t[2]);
+                b.group.quaternion.setFromEuler(new THREE.Euler(r[0], r[1], r[2]));
+                const on = lit.has(name);
+                b.materials.forEach(m => {
+                    m.color.copy(on ? litColor : boneColor);
+                    m.emissive.copy(on ? litColor : new THREE.Color(0x000000));
+                    m.emissiveIntensity = on ? 0.35 : 0;
+                });
+            });
+        }
+        function boneTrackBox() {
+            const box = new THREE.Box3(), n = bones.motion.time.length;
+            [0, Math.floor(n / 3), Math.floor(2 * n / 3), n - 1].forEach(i => {
+                applyBoneFrame(i); figure.position.set(0, 0, 0); pivot.updateMatrixWorld(true);
+                const saved = pivot.rotation.clone(); pivot.rotation.set(0, 0, 0); pivot.updateMatrixWorld(true);
+                box.union(new THREE.Box3().setFromObject(figure));
+                pivot.rotation.copy(saved); pivot.updateMatrixWorld(true);
+            });
+            return box.expandByScalar(0.04);
+        }
+
         const showFrame = i => {
-            current = Math.max(0, Math.min((frames ? frames.length : 1) - 1, Math.round(i)));
-            buildSkeleton(getPose(current), hl, hlColor);
+            if (!track) return;
+            current = Math.max(0, Math.min(track.n - 1, Math.round(i)));
+            if (mode === 'bones') { applyBoneFrame(current); render(); }
+            else buildSkeleton(getPose(current), hl, hlColor);
             updateReplayUi();
         };
-        const fps = skeletonFrames?.fps || 60;
         const ui = {
             wrap: document.getElementById('replay'),
             play: document.getElementById('replay-play'),
             speed: document.getElementById('replay-speed'),
             scrub: document.getElementById('replay-scrub'),
             time: document.getElementById('replay-time'),
+            mode: document.getElementById('replay-mode'),
         };
         let playing = false, slowmo = true, playHead = contactFrame, lastT = 0, rafReplay = 0, holdUntil = 0;
         function updateReplayUi() {
-            if (!ui.wrap || !frames) return;
+            if (!ui.wrap || !track) return;
+            ui.scrub.max = String(track.n - 1);
+            ui.scrub.style.setProperty('--contact', `${(track.contact / (track.n - 1)) * 100}%`);
             ui.scrub.value = String(current);
-            const ms = Math.round((current - contactFrame) / fps * 1000);
-            ui.time.textContent = current === contactFrame ? 'Contact' : (ms < 0 ? `${ms} ms` : `+${ms} ms`);
-            ui.wrap.classList.toggle('at-contact', current === contactFrame);
+            const ms = Math.round((current - track.contact) / track.fps * 1000);
+            ui.time.textContent = current === track.contact ? 'Contact' : (ms < 0 ? `${ms} ms` : `+${ms} ms`);
+            ui.wrap.classList.toggle('at-contact', current === track.contact);
         }
         function tick(t) {
             if (!playing) return;
             const dt = lastT ? (t - lastT) / 1000 : 0; lastT = t;
             if (t < holdUntil) { rafReplay = requestAnimationFrame(tick); return; }
-            playHead += dt * fps * (slowmo ? 0.25 : 1);
-            if (playHead >= frames.length - 1) {
-                if (autoplayOnce) { autoplayOnce = false; setPlaying(false); showFrame(contactFrame); return; }
+            playHead += dt * track.fps * (slowmo ? 0.25 : 1);
+            if (playHead >= track.n - 1) {
+                if (autoplayOnce) { autoplayOnce = false; setPlaying(false); showFrame(track.contact); return; }
                 playHead = 0; holdUntil = t + 500;
             }
             if (Math.round(playHead) !== current) showFrame(playHead);
             rafReplay = requestAnimationFrame(tick);
         }
         function setPlaying(on) {
-            playing = on && !!frames;
+            playing = on && !!track;
             if (ui.play) { ui.play.textContent = playing ? 'Pause' : 'Play'; ui.play.setAttribute('aria-pressed', String(playing)); }
             if (ui.wrap) ui.wrap.classList.toggle('is-playing', playing);
             cancelAnimationFrame(rafReplay);
-            if (playing) { lastT = 0; playHead = current >= frames.length - 1 ? 0 : current; rafReplay = requestAnimationFrame(tick); }
+            if (playing) { lastT = 0; playHead = current >= track.n - 1 ? 0 : current; rafReplay = requestAnimationFrame(tick); }
+        }
+        function setMode(next) {
+            if (next === 'bones' && !(bones && bones.pack)) return;
+            const wasPlaying = playing; setPlaying(false);
+            mode = next;
+            if (mode === 'bones') {
+                buildBones(bones.pack);
+                const m = bones.motion;
+                track = { n: m.time.length, contact: m.contact_frame ?? Math.floor(m.time.length / 2), fps: m.fps || 60 };
+                replayBox = boneTrackBox();
+            } else {
+                track = stickTrack; replayBox = stickBox;
+                clearFigure();
+            }
+            current = Math.min(current, track ? track.n - 1 : 0);
+            if (ui.mode) { ui.mode.textContent = mode === 'bones' ? 'Stick figure' : 'Bones'; ui.mode.setAttribute('aria-pressed', String(mode === 'bones')); }
+            try { localStorage.setItem('bs_view', mode); } catch (e) { /* preference only */ }
+            showFrame(track ? (current || track.contact) : 0);
+            frameCamera();
+            if (wasPlaying) setPlaying(true);
         }
         let autoplayOnce = false;
         stopReplay(); stopReplay = () => { autoplayOnce = false; setPlaying(false); };
         if (ui.wrap) {
-            const usable = frames && frames.length >= 5 && !usingFallback;
-            ui.wrap.hidden = !usable;
-            if (usable) {
-                ui.scrub.max = String(frames.length - 1);
-                ui.scrub.style.setProperty('--contact', `${(contactFrame / (frames.length - 1)) * 100}%`);
-                ui.play.onclick = () => { autoplayOnce = false; setPlaying(!playing); };
-                ui.speed.onclick = () => {
-                    slowmo = !slowmo;
-                    ui.speed.textContent = slowmo ? 'Slow-mo' : 'Real time';
-                    ui.speed.setAttribute('aria-pressed', String(slowmo));
-                };
-                ui.scrub.oninput = () => { autoplayOnce = false; setPlaying(false); showFrame(+ui.scrub.value); };
-                updateReplayUi();
-                // Play the swing once, in slow motion, the first time it comes into
-                // view, then settle on contact. Never for reduced-motion users.
-                const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-                if (!calm && 'IntersectionObserver' in window) {
-                    const io = new IntersectionObserver(entries => {
-                        if (entries.some(e => e.isIntersecting)) {
-                            io.disconnect(); autoplayOnce = true; showFrame(0); setPlaying(true);
-                        }
-                    }, { threshold: 0.5 });
-                    io.observe(container);
-                }
-            }
+            ui.wrap.hidden = !track;
+            ui.play.onclick = () => { autoplayOnce = false; setPlaying(!playing); };
+            ui.speed.onclick = () => {
+                slowmo = !slowmo;
+                ui.speed.textContent = slowmo ? 'Slow-mo' : 'Real time';
+                ui.speed.setAttribute('aria-pressed', String(slowmo));
+            };
+            ui.scrub.oninput = () => { autoplayOnce = false; setPlaying(false); showFrame(+ui.scrub.value); };
+            if (ui.mode) { ui.mode.hidden = true; ui.mode.onclick = () => setMode(mode === 'bones' ? 'stick' : 'bones'); }
+            updateReplayUi();
+        }
+        // Play the swing once, in slow motion, the first time it comes into view,
+        // then settle on contact. Never for reduced-motion users.
+        const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        function armAutoplay() {
+            if (calm || !track || !('IntersectionObserver' in window)) return;
+            const io = new IntersectionObserver(entries => {
+                if (entries.some(e => e.isIntersecting)) { io.disconnect(); autoplayOnce = true; showFrame(0); setPlaying(true); }
+            }, { threshold: 0.5 });
+            io.observe(container);
+        }
+
+        // Load the bone meshes when an export is present; switch to bones unless
+        // the viewer chose the stick figure before.
+        if (bones && bones.motion && (bones.pack || bones.geometry_url)) {
+            const ready = bones.pack ? Promise.resolve(bones.pack)
+                : fetch(bones.geometry_url).then(r => r.ok ? r.json() : Promise.reject(r.status));
+            ready.then(pack => {
+                bones.pack = pack;
+                if (ui.wrap) ui.wrap.hidden = false;
+                if (ui.mode) ui.mode.hidden = false;
+                let pref = 'bones';
+                try { pref = localStorage.getItem('bs_view') || 'bones'; } catch (e) { /* default */ }
+                if (pref === 'bones') setMode('bones');
+                armAutoplay();
+            }).catch(err => { console.warn('[skeleton] bone meshes unavailable, keeping the stick figure:', err); armAutoplay(); });
+        } else {
+            armAutoplay();
         }
 
         skeletonScene = {
             buildSkeleton, frames, contactFrame,
             get pose() { return getPose(current); },
-            highlight(bones, color) { hl = bones; hlColor = color; showFrame(current); },
-            redraw() { showFrame(current); },
+            highlight(bonesSet, color) { hl = bonesSet; hlColor = color; showFrame(current); if (!track) buildSkeleton(getPose(current), hl, hlColor); },
+            redraw() { if (mode === 'bones') showFrame(current); else buildSkeleton(getPose(current), hl, hlColor); },
         };
     }
 
