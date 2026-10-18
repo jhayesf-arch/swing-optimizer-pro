@@ -807,3 +807,23 @@ html.reveal-ready .phase-card.reveal:not(.in-view) .dim-pct-fill { transform: sc
 }
 
 #replay-mode[hidden] { display: none; }
+
+/* Mechanics score v2 breakdown */
+.mech-summary { display: flex; align-items: baseline; gap: 1.25rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+.mech-big { font-family: var(--font-display); font-weight: 700; font-size: var(--step-display); line-height: 0.9; color: var(--accent); }
+.mech-summary .small { max-width: 46ch; }
+.mech-parts { list-style: none; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 0.5rem; }
+.mech-part { background: var(--bg); padding: 1rem 1.1rem; }
+.mech-head { display: flex; align-items: baseline; gap: 0.6rem; }
+.mech-label { font-weight: 600; }
+.mech-weight { font-size: var(--step-small); color: var(--muted); }
+.mech-value { margin-left: auto; font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; line-height: 1; }
+.mech-part.is-skipped .mech-value { font-family: var(--font); font-weight: 500; font-size: var(--step-small); color: var(--muted); }
+.mech-track { height: 8px; background: var(--recess); margin: 0.6rem 0 0.55rem; overflow: hidden; }
+.mech-fill { display: block; height: 100%; background: var(--accent); transform-origin: left center; transition: transform 1s var(--ease) 0.15s; }
+.mech-fill.good { background: var(--good); } .mech-fill.ok { background: var(--warn); } .mech-fill.weak { background: var(--bad); }
+html.reveal-ready #mechanics-panel.reveal:not(.in-view) .mech-fill { transform: scaleX(0) !important; }
+.mech-detail { font-size: var(--step-small); line-height: 1.45; }
+.mech-part.is-skipped .mech-detail { color: var(--muted); }
+.mech-source { font-size: var(--step-small); color: var(--muted); margin-top: 0.3rem; }
+.mech-foot { margin-top: 1rem; max-width: 70ch; }

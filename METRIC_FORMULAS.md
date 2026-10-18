@@ -448,3 +448,28 @@ Same file, `metric_evidence.py`:
 - **Slow trial:** peak pelvis ω < 300°/s → sequence metrics unreliable
   (rehearsal-speed swing).
 - **No hand speed:** `max_hand_speed_mph` unreliable when `.trc` absent.
+
+## Mechanics score (v2) — `mechanics_score`
+
+Code: `backend/mechanics_score.py`. Shown beside the Swing Score; replaces the v1
+"physics efficiency" checklist on screen (v1 is still returned as `efficiency_score`).
+
+Score = Σ wᵢ·sᵢ / Σ wᵢ over the parts this capture supports, where each sᵢ is a
+0–100 piecewise-linear ramp between published reference values for the athlete's
+level. No cliff edges; one vote per mechanism; our own composite measures
+(energy-transfer proxy, stride efficiency, pelvis force proxy) do not count.
+
+| Part | Weight | Input | Reference (college shown) | Source |
+|---|---|---|---|---|
+| Sequencing | 0.25 | `sequence_timing_ms`, `proper_sequence` | pelvis peaks 22–82 ms before torso; out of order caps at 25 | Kwon et al. 2013; Putnam 1993; Driveline OBP |
+| Hip-shoulder separation | 0.20 | `max_separation_deg` | 25–50° | Cheetham et al. 2001, 2008; Myers et al. 2008 |
+| Pelvis drive | 0.25 | `peak_pelvis_omega_3d_deg_s` (70%), `time_to_peak_pelvis_from_plant_ms` (30%) | 550–700°/s; peak 50–100 ms after plant | Fortenbaugh 2011; Cheetham et al. 2008; Welch et al. 1995 |
+| Lead-leg block | 0.15 | lead-knee extension plant→contact | 18–36° | Driveline OpenBiomechanics |
+| Stride | 0.10 | `stride_ratio` | 0.55–0.85 × height | Escamilla et al. 2009; Fortenbaugh 2011 |
+| Stability | 0.05 | `lateral_sway_range_m` | under 8 cm | McNally et al. 2014 (12 cm mark ours) |
+
+A part is skipped (weights renormalise) when it is missing, flagged unreliable in
+`metric_evidence`, or outside a plausibility limit for one swing (e.g. sway over
+30 cm, which means the whole clip's movement was measured). Below 50% of the
+weight, no score is given. Youth pelvis-speed ranges are scaled from the
+high-school anchor (no published youth values).

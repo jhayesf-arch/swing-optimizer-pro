@@ -637,6 +637,7 @@ async def analyze_batch(
                     # more files rendered every tile without a badge — the caveat
                     # existed in the payload of a single-file upload only.
                     "metric_evidence": diag.get("metric_evidence", {}),
+                    "mechanics_score": diag.get("mechanics_score"),
                     "dynamics_comparison": diag.get("dynamics_comparison"),
                     "dynamics_reference_error": diag.get("dynamics_reference_error"),
                     "opensim_id_status": diag.get("opensim_id_status"),

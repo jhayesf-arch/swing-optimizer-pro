@@ -494,6 +494,8 @@ SKILL_LEVEL_BENCHMARKS = {
     },
 }
 
+from mechanics_score import compute_mechanics_score
+
 try:
     from metric_evidence import build_metric_evidence, detect_ik_branch_jumps, TIER_LABELS
     _HAS_EVIDENCE = True
@@ -2612,6 +2614,21 @@ class RefinedHittingOptimizer:
             has_markers=trc_data is not None, dt=_dt,
         )
 
+        # Evidence first: the mechanics score reads its reliability flags.
+        _evidence = _metric_evidence_block(
+            asdict(metrics),
+            {'separation_signal_saturated': rotation.get('separation_signal_saturated') if rotation else False,
+             'separation_source': rotation.get('separation_source', 'model_lumbar_rotation') if rotation else 'model_lumbar_rotation',
+             'separation_raw_peak_deg': rotation.get('separation_raw_peak_deg', 0.0) if rotation else 0.0,
+             'ik_branch_jumps': rotation.get('ik_branch_jumps', {}) if rotation else {},
+             'lead_arm_side': rotation.get('lead_arm_side', 'l') if rotation else 'l'})
+        try:
+            _mech = compute_mechanics_score(asdict(metrics), (phase_report or {}).get('dimensions', {}),
+                                            _evidence, self.skill_level, SKILL_LEVEL_BENCHMARKS,
+                                            DIMENSION_THRESHOLDS)
+        except Exception as _e:   # never let the summary score break an analysis
+            print(f'[mechanics] score failed: {type(_e).__name__}: {_e}')
+            _mech = None
         return {
             # Internal handle so the API can draw the kinematic-sequence chart from
             # the same segment velocities the metrics use. Contains numpy arrays —
@@ -2637,13 +2654,10 @@ class RefinedHittingOptimizer:
             # Per-metric evidence tier and whether THIS capture supports it. Kept
             # separate so a good citation can never mask data that cannot carry
             # the number — see backend/metric_evidence.py.
-            "metric_evidence": _metric_evidence_block(
-                asdict(metrics),
-                {'separation_signal_saturated': rotation.get('separation_signal_saturated') if rotation else False,
-                 'separation_source': rotation.get('separation_source', 'model_lumbar_rotation') if rotation else 'model_lumbar_rotation',
-                 'separation_raw_peak_deg': rotation.get('separation_raw_peak_deg', 0.0) if rotation else 0.0,
-                 'ik_branch_jumps': rotation.get('ik_branch_jumps', {}) if rotation else {},
-                 'lead_arm_side': rotation.get('lead_arm_side', 'l') if rotation else 'l'}),
+            "metric_evidence": _evidence,
+            # Mechanics score v2: research-referenced, shown beside the swing score
+            # (see backend/mechanics_score.py). efficiency_score stays as v1.
+            "mechanics_score": _mech,
             # Equipment / session context
             **({"instrument": self.instrument} if self.instrument else {}),
             **({"instrument_note": self.instrument_note} if self.instrument_note else {}),

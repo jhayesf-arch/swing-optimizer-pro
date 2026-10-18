@@ -1,6 +1,8 @@
 const DEMO_DIAGNOSIS = {
     swing_score: 74,
     efficiency_score: 82,
+    // Computed by backend/mechanics_score.py from this demo's own metrics.
+    mechanics_score: {"version":"mechanics_v2","score":90,"coverage":0.95,"parts_scored":5,"parts_total":6,"skill_level":"college","components":[{"key":"sequencing","label":"Sequencing","weight":0.25,"tier":"A","source":"Kwon et al. 2013; Putnam 1993; Driveline OBP","value":48.0,"unit":"ms","reference":"pelvis peaks 22-82 ms before torso","score":100.0,"status":"scored","reason":""},{"key":"separation","label":"Hip-shoulder separation","weight":0.2,"tier":"A","source":"Cheetham et al. 2001, 2008; Myers et al. 2008","value":44.1,"unit":"\u00b0","reference":"25-50\u00b0 at this level","score":97.4,"status":"scored","reason":""},{"key":"pelvis_drive","label":"Pelvis drive","weight":0.25,"tier":"A","source":"Fortenbaugh 2011; Cheetham et al. 2008; Welch et al. 1995","value":714.0,"unit":"\u00b0/s","reference":"550-700\u00b0/s peak; peak 50-100 ms after plant","score":100.0,"status":"scored","reason":""},{"key":"lead_leg_block","label":"Lead-leg block","weight":0.15,"tier":"B","source":"Driveline OpenBiomechanics (lead-knee extension vs bat speed)","value":19.4,"unit":"\u00b0","reference":"18-36\u00b0 of extension at this level","score":53.5,"status":"scored","reason":""},{"key":"stride","label":"Stride","weight":0.1,"tier":"A","source":"Escamilla et al. 2009; Fortenbaugh 2011","value":0.74,"unit":"\u00d7 height","reference":"0.55-0.85 \u00d7 height at this level","score":78.8,"status":"scored","reason":""},{"key":"stability","label":"Stability","weight":0.05,"tier":"B","source":"McNally et al. 2014","value":null,"unit":"m","reference":"under 8 cm of sway","score":null,"status":"skipped","reason":"sway not measured"}],"note":null},
     metrics: {
         estimated_hand_speed_mph: 24.2, max_hand_speed_mph: 24.2,
         max_separation_deg: 44.1, peak_hip_power_W: 3820, hip_power_per_kg: 14.2,
@@ -273,7 +275,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const num = (x, d) => (x || x === 0) ? Number(x).toFixed(d) : '—';
 
         const score = (diagnosis.swing_score != null) ? Math.round(diagnosis.swing_score) : '—';
-        const eff = (diagnosis.efficiency_score != null) ? diagnosis.efficiency_score : '—';
+        const eff = (diagnosis.mechanics_score && diagnosis.mechanics_score.score != null) ? diagnosis.mechanics_score.score : '—';
         const hand = num(m.estimated_hand_speed_mph, 1);
         const pelvis = m.peak_pelvis_omega_3d_deg_s ? Math.round(m.peak_pelvis_omega_3d_deg_s) : '—';
         const date = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
@@ -348,7 +350,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="pr-scores">
               <div class="pr-score-main"><div class="pr-score-num">${score}</div><div class="pr-score-lbl">Swing Score / 100</div></div>
               <div class="pr-stat"><div>${hand}</div><span>Hand Speed (mph)</span></div>
-              <div class="pr-stat"><div>${eff}</div><span>Efficiency Score</span></div>
+              <div class="pr-stat"><div>${eff}</div><span>Mechanics score</span></div>
               <div class="pr-stat"><div>${pelvis}</div><span>Pelvis Vel (°/s)</span></div>
             </div>
             <h3 class="pr-h3">12-Dimension Breakdown</h3>
@@ -663,6 +665,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 diagnosis: {
                     swing_score: avg.swing_score,
                     efficiency_score: Math.round(mean(swings.map(s => s.efficiency_score || 0))),
+                    mechanics_score: averageMechanics(swings.map(s => s.mechanics_score)),
                     metrics: data.average_metrics || {},
                     phase_report: { ...avg, percentile_library_dims: libDims(avg.dimensions) },
                     findings: [], recommendations: [],
@@ -686,6 +689,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 diagnosis: {
                     swing_score: s.swing_score,
                     efficiency_score: s.efficiency_score,
+                    mechanics_score: s.mechanics_score || null,
                     metrics: s.metrics || {},
                     phase_report: {
                         swing_score: s.swing_score,
@@ -780,6 +784,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('filename-display').textContent = filename;
         const swingScore = diagnosis.swing_score || 0;
         const effScore = diagnosis.efficiency_score || 0;
+        const mech = diagnosis.mechanics_score || null;
         const handSpeed = diagnosis.metrics.estimated_hand_speed_mph || 0;
 
         // Score ring animation
@@ -794,7 +799,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         animateCount(document.getElementById('swing-score-number'), swingScore, 0);
         animateCount(document.getElementById('exit-velo-number'), handSpeed, 1);
-        animateCount(document.getElementById('efficiency-number'), effScore, 0);
+        const mechEl = document.getElementById('efficiency-number');
+        if (mech && mech.score != null) animateCount(mechEl, mech.score, 0); else mechEl.textContent = '—';
+        renderMechanics(mech);
 
         // Overall cohort percentile + basis (your own library vs research benchmarks)
         const overallPct = diagnosis.phase_report?.overall_percentile;
@@ -2345,6 +2352,60 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('skeleton-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             });
         });
+    }
+
+    // ── Mechanics score v2 (backend/mechanics_score.py) ─────────────────
+    // Average several swings part by part: a part counts where it was scored.
+    function averageMechanics(list) {
+        const ms = (list || []).filter(Boolean);
+        if (!ms.length) return null;
+        const first = ms[0];
+        const components = first.components.map(c => {
+            const same = ms.map(m => m.components.find(x => x.key === c.key)).filter(x => x && x.status === 'scored');
+            const avg = k => same.length ? same.reduce((a, x) => a + (x[k] || 0), 0) / same.length : null;
+            return { ...c, score: same.length ? Math.round(avg('score') * 10) / 10 : null,
+                     value: same.length ? Math.round(avg('value') * 100) / 100 : c.value,
+                     status: same.length ? 'scored' : 'skipped',
+                     reason: same.length ? '' : (c.reason || 'not scored on any swing') };
+        });
+        const scored = components.filter(c => c.status === 'scored');
+        const totalW = components.reduce((a, c) => a + c.weight, 0);
+        const usedW = scored.reduce((a, c) => a + c.weight, 0);
+        const coverage = totalW ? usedW / totalW : 0;
+        return { ...first, components, coverage: Math.round(coverage * 100) / 100,
+                 parts_scored: scored.length,
+                 score: coverage >= 0.5 && usedW ? Math.round(scored.reduce((a, c) => a + c.score * c.weight, 0) / usedW) : null };
+    }
+
+    function renderMechanics(ms) {
+        const panel = document.getElementById('mechanics-panel');
+        if (!panel) return;
+        if (!ms) { panel.classList.add('hidden'); return; }
+        panel.classList.remove('hidden');
+        const esc = v => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        const fmt = (v, unit) => v == null ? '—'
+            : unit === 'm' ? `${(v * 100).toFixed(1)} cm` : unit === '× height' ? `${(+v).toFixed(2)} × height`
+            : `${Math.round(v * 10) / 10}${unit === '°' ? '°' : ' ' + unit}`;
+        document.getElementById('mech-score').textContent = ms.score == null ? '—' : ms.score;
+        document.getElementById('mech-basis').textContent = ms.score == null
+            ? (ms.note || 'Not enough reliable measurements to give a mechanics score.')
+            : `Based on ${ms.parts_scored} of ${ms.parts_total} parts (${Math.round(ms.coverage * 100)}% of the weight). Ranges for ${String(ms.skill_level || '').replace('_', ' ')}.`;
+        document.getElementById('mech-parts').innerHTML = ms.components.map(c => {
+            const scored = c.status === 'scored';
+            const tone = !scored ? '' : c.score >= 75 ? 'good' : c.score >= 45 ? 'ok' : 'weak';
+            return `<li class="mech-part ${scored ? '' : 'is-skipped'}">
+                <div class="mech-head">
+                    <span class="mech-label">${esc(c.label)}</span>
+                    <span class="mech-weight">${Math.round(c.weight * 100)}% of score</span>
+                    <span class="mech-value">${scored ? Math.round(c.score) : 'Skipped'}</span>
+                </div>
+                <div class="mech-track"><span class="mech-fill ${tone}" style="transform:scaleX(${scored ? c.score / 100 : 0})"></span></div>
+                <p class="mech-detail">${scored
+                    ? `This swing: <strong>${esc(fmt(c.value, c.unit))}</strong>. Reference: ${esc(c.reference)}.`
+                    : esc(c.reason)}</p>
+                <p class="mech-source">${esc(c.source)} <span class="ev-badge ev-${esc(c.tier)}">${esc(c.tier)}</span></p>
+            </li>`;
+        }).join('');
     }
 
     function getDemographics() {

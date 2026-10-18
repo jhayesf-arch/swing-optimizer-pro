@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=25">
+    <link rel="stylesheet" href="style.css?v=26">
 </head>
 <body>
     <a class="skip-link" href="#main">Skip to the report</a>
@@ -105,7 +105,7 @@
                             </div>
                             <div class="hero-stat">
                                 <span class="hero-stat-value" id="efficiency-number">--</span>
-                                <span class="hero-stat-label">Physics Efficiency Score</span>
+                                <span class="hero-stat-label">Mechanics score</span>
                             </div>
                             <div class="hero-stat">
                                 <span class="hero-stat-value" id="overall-pct-number">--</span>
@@ -142,6 +142,17 @@
                     </aside>
                     <div class="reading">
                 
+                <!-- MECHANICS SCORE v2 -->
+                <div class="glass-card panel hidden" id="mechanics-panel">
+                    <h3 class="panel-title">Mechanics score <span class="panel-hint">what research says drives bat speed, part by part</span></h3>
+                    <div class="mech-summary">
+                        <span class="mech-big" id="mech-score">—</span>
+                        <p class="small" id="mech-basis"></p>
+                    </div>
+                    <ol class="mech-parts" id="mech-parts"></ol>
+                    <p class="small mech-foot">Each part scores 0–100 on a smooth scale between published reference values for the athlete's level. Parts this capture can't support are skipped, not guessed. A = research-backed, B = research-based with our own definition.</p>
+                </div>
+
                 <!-- COACHING FOCUS: BODY HEATMAP + TOP PRIORITIES -->
                 <div class="glass-card panel mt-3 hidden" id="focus-panel">
                     <h3 class="panel-title">Coaching Focus <span class="panel-hint">weakest links &amp; where to work</span></h3>
@@ -398,6 +409,6 @@
     <div id="print-report" aria-hidden="true"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-    <script src="app.js?v=25"></script>
+    <script src="app.js?v=26"></script>
 </body>
 </html>
