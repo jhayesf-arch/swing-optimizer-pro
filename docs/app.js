@@ -49,21 +49,21 @@ const DEMO_DIAGNOSIS = {
         percentile_library_dims: 0,
         lead_leg_block: { lead_leg_block_deg: 19.4, lead_side: 'l', lead_knee_peak_flex_deg: 46.1, lead_knee_flex_at_contact_deg: 26.7 },
         phases: {
-            balance_load: { label: 'Balance & Load', icon: '⚖️', avg_stars: 3.7, badge: 'satisfactory', dimensions: [
+            balance_load: { label: 'Balance & Load', icon: '', avg_stars: 3.7, badge: 'satisfactory', dimensions: [
                 { key: 'negative_move', label: 'Negative Move', value: '0.06', unit: 'm', stars: 4, percentile: 74, badge: 'satisfactory', description: 'Good backward weight shift before stride.' },
                 { key: 'pelvis_load', label: 'Pelvis Load', value: '88', unit: 'J', stars: 4, percentile: 78, badge: 'satisfactory', description: 'Strong pelvis kinetic energy at load.' },
                 { key: 'upper_torso_load', label: 'Upper Torso Load', value: '52', unit: 'J', stars: 3, percentile: 58, badge: 'satisfactory', description: 'Adequate upper torso coil.' },
             ]},
-            stride: { label: 'Stride', icon: '👣', avg_stars: 4.0, badge: 'satisfactory', dimensions: [
+            stride: { label: 'Stride', icon: '', avg_stars: 4.0, badge: 'satisfactory', dimensions: [
                 { key: 'stride_length', label: 'Stride Length', value: '0.74', unit: 'x Ht', stars: 4, percentile: 76, badge: 'satisfactory', description: 'Good stride length relative to height.' },
                 { key: 'forward_move', label: 'Forward Move', value: '94', unit: '%', stars: 4, percentile: 73, badge: 'satisfactory', description: 'Efficient forward momentum.' },
             ]},
-            power_move: { label: 'Power Move', icon: '💥', avg_stars: 4.3, badge: 'excellent', dimensions: [
+            power_move: { label: 'Power Move', icon: '', avg_stars: 4.3, badge: 'excellent', dimensions: [
                 { key: 'max_hip_shoulder_separation', label: 'Max Hip-Shoulder Separation', value: '44.1', unit: '°', stars: 5, percentile: 88, badge: 'excellent', description: 'Elite X-Factor separation.' },
                 { key: 'pelvis_rotation_range', label: 'Pelvis Total Rotation Range', value: '68', unit: '°', stars: 4, percentile: 79, badge: 'satisfactory', description: 'Good pelvis rotation range.' },
                 { key: 'upper_torso_rotation_range', label: 'Upper Torso Rotation Range', value: '92', unit: '°', stars: 4, percentile: 75, badge: 'satisfactory', description: 'Good shoulder rotation range.' },
             ]},
-            contact: { label: 'Contact & Follow-Through', icon: '🎯', avg_stars: 3.5, badge: 'satisfactory', dimensions: [
+            contact: { label: 'Contact & Follow-Through', icon: '', avg_stars: 3.5, badge: 'satisfactory', dimensions: [
                 { key: 'pelvis_direction_at_contact', label: 'Pelvis Direction at Contact', value: '18', unit: '°', stars: 4, percentile: 72, badge: 'satisfactory', description: 'Hips well open at contact.' },
                 { key: 'upper_torso_direction_at_contact', label: 'Upper Torso Direction at Contact', value: '28', unit: '°', stars: 3, percentile: 55, badge: 'satisfactory', description: 'Shoulders moderately open.' },
                 { key: 'lead_leg_block', label: 'Lead-Leg Block', value: '19.4', unit: '° ext', stars: 3, percentile: 52, badge: 'satisfactory', description: 'Lead (front) knee straightening from foot plant to contact. A firm, extending front leg posts up and whips energy into the barrel (Driveline OBP).' },
@@ -124,6 +124,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const errorMessage = document.getElementById('error-message');
     const closeToast = document.getElementById('close-toast');
     
+    // Resolve a design token from style.css (canvas and WebGL cannot read var()).
+    const cssVar = (name, fallback) =>
+        (getComputedStyle(document.documentElement).getPropertyValue(name) || '').trim() || fallback;
+
     const API_BASE = window.location.hostname.includes('github.io')
         ? 'https://swing-optimizer-pro.onrender.com'
         : '';
@@ -190,15 +194,15 @@ document.addEventListener('DOMContentLoaded', () => {
     trcInput.addEventListener('change', (e) => {
         const n = e.target.files.length;
         if (n) {
-            trcLabel.textContent = n === 1 ? `✓ ${e.target.files[0].name}` : `✓ ${n} marker files`;
+            trcLabel.textContent = n === 1 ? `Added ${e.target.files[0].name}` : `Added ${n} marker files`;
         }
     });
 
     function updateDynLabel() {
         const parts = [];
         const nr = refInput && refInput.files ? refInput.files.length : 0;
-        if (nr) parts.push(nr === 1 ? `✓ ${refInput.files[0].name}` : `✓ ${nr} references`);
-        if (modelInput && modelInput.files && modelInput.files[0]) parts.push(`✓ ${modelInput.files[0].name}`);
+        if (nr) parts.push(nr === 1 ? `Added ${refInput.files[0].name}` : `Added ${nr} references`);
+        if (modelInput && modelInput.files && modelInput.files[0]) parts.push(`Added ${modelInput.files[0].name}`);
         if (dynLabel) dynLabel.textContent = parts.join('  ·  ');
     }
     if (refInput) refInput.addEventListener('change', updateDynLabel);
@@ -263,7 +267,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const hand = num(m.estimated_hand_speed_mph, 1);
         const pelvis = m.peak_pelvis_omega_3d_deg_s ? Math.round(m.peak_pelvis_omega_3d_deg_s) : '—';
         const date = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
-        const stars = n => '★'.repeat(n) + '☆'.repeat(Math.max(0, 5 - n));
+        const stars = n => '★'.repeat(n) + '☆'.repeat(Math.max(0, 5 - n)); // taste-skill-ignore: printed report rating
         const badgeColor = b => b === 'excellent' ? '#0a7d4d' : b === 'off-target' ? '#c02626' : '#b6791b';
         const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
@@ -359,15 +363,23 @@ document.addEventListener('DOMContentLoaded', () => {
     // -----------------------------------------
     // API Calls
     // -----------------------------------------
-    async function checkBackendHealth() {
+    // The server sleeps when idle and takes up to a minute to start. Report that
+    // quietly in the top bar instead of interrupting with an error before the
+    // visitor has done anything; upload errors still use the toast.
+    async function checkBackendHealth(attempt = 0) {
+        const status = document.getElementById('server-status');
+        const set = (state, text) => { if (status) { status.dataset.state = state; status.textContent = text; } };
         try {
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 15000);
             const res = await fetch(`${API_BASE}/api/health`, { signal: controller.signal });
             clearTimeout(timeout);
             if (!res.ok) throw new Error('not ok');
+            set('ready', 'Analysis server ready');
         } catch (err) {
-            showError("Backend is waking up — this may take up to 60 seconds on first load. Please try your upload again shortly.");
+            set('waking', 'Analysis server starting, up to a minute');
+            if (attempt < 6) setTimeout(() => checkBackendHealth(attempt + 1), 10000);
+            else set('waking', 'Analysis server not responding. The demo still works.');
         }
     }
 
@@ -992,7 +1004,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const minS = Math.min(...scores), maxS = Math.max(...scores);
         const range = maxS - minS || 1;
         const W = canvas.width, H = canvas.height, pad = 12;
-        ctx.strokeStyle = 'var(--accent, #00d4ff)';
+        const accent = cssVar('--accent', '#2456d6');
+        ctx.strokeStyle = accent;
         ctx.lineWidth = 2;
         ctx.beginPath();
         scores.forEach((s, i) => {
@@ -1007,7 +1020,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const y = H - pad - ((s - minS) / range) * (H - 2 * pad);
             ctx.beginPath();
             ctx.arc(x, y, 3, 0, Math.PI * 2);
-            ctx.fillStyle = 'var(--accent, #00d4ff)';
+            ctx.fillStyle = accent;
             ctx.fill();
         });
 
@@ -1024,7 +1037,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <th style="padding:4px 8px;">Hand Speed</th>
                 </tr></thead>
                 <tbody>${recent.map(h => `
-                    <tr style="border-top:1px solid rgba(255,255,255,0.07);">
+                    <tr>
                         <td style="padding:4px 8px;">${h.date}</td>
                         <td style="padding:4px 8px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${h.filename}</td>
                         <td style="padding:4px 8px;">${h.skill}</td>
@@ -1064,7 +1077,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // -----------------------------------------
     // Kinematic Sequence Chart (Canvas 2D)
     // -----------------------------------------
-    const KINE_COLORS = { 'Pelvis': '#38bdf8', 'Torso': '#34d399', 'Lead Arm': '#fbbf24', 'Hands/Bat': '#f472b6' };
+    // Segment colours live in style.css (--seg-*), validated for colour-vision
+    // deficiency on both light and dark panels. HTML marks use the variables so
+    // they follow the theme; the canvas resolves them when it draws.
+    const KINE_VARS = { 'Pelvis': '--seg-pelvis', 'Torso': '--seg-torso', 'Lead Arm': '--seg-arm', 'Hands/Bat': '--seg-hands' };
+    const KINE_COLORS = new Proxy({}, { get: (_, k) => `var(${KINE_VARS[k] || '--muted'})` });
+    const kineColor = k => cssVar(KINE_VARS[k] || '--muted', '#888');
     const KINE_ORDER = ['Pelvis', 'Torso', 'Lead Arm', 'Hands/Bat'];
     let lastKineSeq = null;
 
@@ -1150,10 +1168,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const proper = lag != null && lag > 0;
         const cap = document.getElementById('kinematic-caption');
         cap.innerHTML = proper
-            ? `<span class="val-good" style="font-weight:700;">✓ Proper sequence</span> <span class="text-muted">— hips peak ${Math.round(lag)}ms before the torso, building speed up the chain. Arm and hand timing is indicative only at this capture rate.</span>`
+            ? `<span class="val-good" style="font-weight:600;">Proper sequence</span> <span class="text-muted">— hips peak ${Math.round(lag)}ms before the torso, building speed up the chain. Arm and hand timing is indicative only at this capture rate.</span>`
             : (lag == null
                 ? '<span class="text-muted">Sequence timing could not be resolved for this capture.</span>'
-                : `<span class="val-warn" style="font-weight:700;">⚠ Sequence flag</span> <span class="text-muted">— the torso peaks ${Math.abs(Math.round(lag))}ms <em>before</em> the hips rather than after, so the chain isn't building from the ground up. Arm and hand timing is indicative only at this capture rate.</span>`);
+                : `<span class="val-warn" style="font-weight:500;">Sequence flag</span> <span class="text-muted">— the torso peaks ${Math.abs(Math.round(lag))}ms <em>before</em> the hips rather than after, so the chain isn't building from the ground up. Arm and hand timing is indicative only at this capture rate.</span>`);
 
         renderSequenceTimeline(seq, present);
 
@@ -1226,14 +1244,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const X = t => padL + (t / tMax) * plotW;
         const Y = v => padT + plotH - (v / vMax) * plotH;
         const css = getComputedStyle(document.documentElement);
-        const muted = (css.getPropertyValue('--text-muted') || '#94a3b8').trim();
+        const muted = (css.getPropertyValue('--muted') || '#5f5d55').trim();
+        const grid = (css.getPropertyValue('--chart-grid') || '#d4d3ce').trim();
+        const panel = (css.getPropertyValue('--panel') || '#ebeae6').trim();
+        const font = (css.getPropertyValue('--font') || 'sans-serif').trim();
 
         // Gridlines + Y labels (deg/s)
-        ctx.font = '10px Inter, sans-serif'; ctx.textBaseline = 'middle';
+        ctx.font = `12px ${font}`; ctx.textBaseline = 'middle';
         const ySteps = 4;
         for (let i = 0; i <= ySteps; i++) {
             const v = (vMax / ySteps) * i, y = Y(v);
-            ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
+            ctx.strokeStyle = grid; ctx.lineWidth = 1;
             ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(cssW - padR, y); ctx.stroke();
             ctx.fillStyle = muted; ctx.textAlign = 'right';
             ctx.fillText(Math.round(v), padL - 6, y);
@@ -1252,7 +1273,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Contact line
         if (seq.contact_ms != null) {
             const cx = X(seq.contact_ms);
-            ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+            ctx.strokeStyle = muted; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
             ctx.beginPath(); ctx.moveTo(cx, padT); ctx.lineTo(cx, padT + plotH); ctx.stroke();
             ctx.setLineDash([]);
             ctx.fillStyle = muted; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
@@ -1262,7 +1283,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const tReveal = tMax * progress;
         present.forEach(k => {
             const data = seq.series[k], times = seq.time_ms;
-            ctx.strokeStyle = KINE_COLORS[k]; ctx.lineWidth = 2.2;
+            ctx.strokeStyle = kineColor(k); ctx.lineWidth = 2;
             ctx.lineJoin = 'round'; ctx.beginPath();
             let started = false;
             for (let i = 0; i < times.length; i++) {
@@ -1274,10 +1295,18 @@ document.addEventListener('DOMContentLoaded', () => {
             // Peak marker (once revealed)
             const pk = seq.peaks && seq.peaks[k];
             if (pk && pk.t_ms <= tReveal) {
-                ctx.fillStyle = KINE_COLORS[k];
-                ctx.beginPath(); ctx.arc(X(pk.t_ms), Y(pk.value), 3.5, 0, Math.PI * 2); ctx.fill();
-                ctx.strokeStyle = 'rgba(8,11,18,0.9)'; ctx.lineWidth = 1.5; ctx.stroke();
+                ctx.fillStyle = kineColor(k);
+                ctx.beginPath(); ctx.arc(X(pk.t_ms), Y(pk.value), 4.5, 0, Math.PI * 2); ctx.fill();
+                ctx.strokeStyle = panel; ctx.lineWidth = 2; ctx.stroke();
             }
+        });
+    }
+
+    // Follow the system theme while the page is open.
+    if (window.matchMedia) {
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+            if (lastKineSeq) drawKine(1);
+            if (skeletonScene && skeletonScene.buildSkeleton) skeletonScene.buildSkeleton(skeletonScene.pose, null, null);
         });
     }
 
@@ -1358,9 +1387,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const vals = keys.map(k => pct[k]).filter(v => typeof v === 'number');
             if (!vals.length) return;
             const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-            const c = avg < 40 ? [239, 68, 68] : avg < 65 ? [245, 158, 11] : [16, 185, 129];
-            el.style.fill = `rgba(${c[0]},${c[1]},${c[2]},${0.18 + 0.45 * (1 - Math.min(avg, 100) / 130)})`;
-            el.style.stroke = `rgba(${c[0]},${c[1]},${c[2]},0.9)`;
+            const tone = avg < 40 ? '--bad' : avg < 65 ? '--warn' : '--good';
+            el.style.fill = `color-mix(in srgb, var(${tone}) 42%, transparent)`;
+            el.style.stroke = `var(${tone})`;
             el.dataset.pct = Math.round(avg);
             el.querySelector && (el.innerHTML += '');
             el.setAttribute('title', `${Math.round(avg)}th pct`);
@@ -1496,8 +1525,8 @@ document.addEventListener('DOMContentLoaded', () => {
         let html = '';
         for (let i = 1; i <= 5; i++) {
             html += i <= filled
-                ? '<span class="star-filled">★</span>'
-                : '<span class="star-empty">★</span>';
+                ? '<span class="star-filled">★</span>' // taste-skill-ignore: hidden on screen, kept for the print view
+                : '<span class="star-empty">★</span>'; // taste-skill-ignore
         }
         return html;
     }
@@ -1666,7 +1695,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const trcs = list.filter(f => f.name.endsWith('.trc'));
         if (trcs.length) {
             droppedTrcFiles = trcs;
-            trcLabel.textContent = trcs.length === 1 ? `✓ ${trcs[0].name}` : `✓ ${trcs.length} marker files`;
+            trcLabel.textContent = trcs.length === 1 ? `Added ${trcs[0].name}` : `Added ${trcs.length} marker files`;
         }
         pendingUploadFiles = mots;
         showDemoModal();
@@ -1683,21 +1712,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // Pelvis open to pitcher, lead arm extended forward, back arm bent, slight squat
     // Bones to highlight per metric key
     const METRIC_HIGHLIGHTS = {
-        'pelvis_load':                      { bones: [['midHip','RHip'],['midHip','LHip']], color: '#f59e0b', desc: 'Pelvis — hip rotational energy storage during load.' },
-        'negative_move':                    { bones: [['midHip','RHip'],['midHip','LHip'],['RHip','RKnee'],['LHip','LKnee']], color: '#a78bfa', desc: 'Pelvis & legs — backward weight shift before stride.' },
-        'upper_torso_load':                 { bones: [['Neck','RShoulder'],['Neck','LShoulder'],['Neck','midHip']], color: '#8b5cf6', desc: 'Torso & shoulders — upper body coil tension at load.' },
-        'stride_length':                    { bones: [['LHip','LKnee'],['LKnee','LAnkle']], color: '#fbbf24', desc: 'Lead leg — stride length from load to foot plant.' },
-        'forward_move':                     { bones: [['midHip','LHip'],['LHip','LKnee']], color: '#fbbf24', desc: 'Pelvis & lead leg — forward linear momentum into the ball.' },
-        'max_hip_shoulder_separation':      { bones: [['midHip','RHip'],['midHip','LHip'],['Neck','RShoulder'],['Neck','LShoulder']], color: '#10b981', desc: 'Pelvis vs shoulders — X-Factor separation angle.' },
-        'pelvis_rotation_range':            { bones: [['midHip','RHip'],['midHip','LHip']], color: '#f59e0b', desc: 'Pelvis — total axial rotation from load to contact.' },
-        'upper_torso_rotation_range':       { bones: [['Neck','RShoulder'],['Neck','LShoulder'],['Neck','midHip']], color: '#8b5cf6', desc: 'Torso & shoulders — total rotation from load to contact.' },
-        'pelvis_direction_at_contact':      { bones: [['midHip','RHip'],['midHip','LHip']], color: '#ef4444', desc: 'Pelvis — alignment at front foot plant. Should be square to pitcher.' },
-        'upper_torso_direction_at_contact': { bones: [['Neck','RShoulder'],['Neck','LShoulder']], color: '#ef4444', desc: 'Shoulders — alignment at contact.' },
-        'kinetic_chain_efficiency':         { bones: [['midHip','RHip'],['midHip','LHip'],['Neck','midHip'],['RShoulder','RElbow'],['RElbow','RWrist']], color: '#06b6d4', desc: 'Full kinetic chain — energy flow from pelvis through torso to hands.' },
-        'sequence_quality':                 { bones: [['midHip','RHip'],['midHip','LHip'],['Neck','midHip'],['RShoulder','RElbow']], color: '#06b6d4', desc: 'Proximal-to-distal sequence: pelvis → torso → arm.' },
-        'hand_speed':                       { bones: [['RShoulder','RElbow'],['RElbow','RWrist'],['LShoulder','LElbow'],['LElbow','LWrist']], color: '#10b981', desc: 'Hands & forearms — peak bat/hand speed at contact.' },
-        'follow_through_quality':           { bones: [['midHip','RHip'],['midHip','LHip'],['Neck','midHip']], color: '#f97316', desc: 'Pelvis & torso — deceleration arc after contact.' },
+        'pelvis_load':                      { bones: [['midHip','RHip'],['midHip','LHip']], seg: 'pelvis', desc: 'Pelvis — hip rotational energy storage during load.' },
+        'negative_move':                    { bones: [['midHip','RHip'],['midHip','LHip'],['RHip','RKnee'],['LHip','LKnee']], seg: 'pelvis', desc: 'Pelvis & legs — backward weight shift before stride.' },
+        'upper_torso_load':                 { bones: [['Neck','RShoulder'],['Neck','LShoulder'],['Neck','midHip']], seg: 'torso', desc: 'Torso & shoulders — upper body coil tension at load.' },
+        'stride_length':                    { bones: [['LHip','LKnee'],['LKnee','LAnkle']], seg: 'pelvis', desc: 'Lead leg — stride length from load to foot plant.' },
+        'forward_move':                     { bones: [['midHip','LHip'],['LHip','LKnee']], seg: 'pelvis', desc: 'Pelvis & lead leg — forward linear momentum into the ball.' },
+        'max_hip_shoulder_separation':      { bones: [['midHip','RHip'],['midHip','LHip'],['Neck','RShoulder'],['Neck','LShoulder']], seg: 'torso', desc: 'Pelvis vs shoulders — X-Factor separation angle.' },
+        'pelvis_rotation_range':            { bones: [['midHip','RHip'],['midHip','LHip']], seg: 'pelvis', desc: 'Pelvis — total axial rotation from load to contact.' },
+        'upper_torso_rotation_range':       { bones: [['Neck','RShoulder'],['Neck','LShoulder'],['Neck','midHip']], seg: 'torso', desc: 'Torso & shoulders — total rotation from load to contact.' },
+        'pelvis_direction_at_contact':      { bones: [['midHip','RHip'],['midHip','LHip']], seg: 'pelvis', desc: 'Pelvis — alignment at front foot plant. Should be square to pitcher.' },
+        'upper_torso_direction_at_contact': { bones: [['Neck','RShoulder'],['Neck','LShoulder']], seg: 'torso', desc: 'Shoulders — alignment at contact.' },
+        'kinetic_chain_efficiency':         { bones: [['midHip','RHip'],['midHip','LHip'],['Neck','midHip'],['RShoulder','RElbow'],['RElbow','RWrist']], seg: 'arm', desc: 'Full kinetic chain — energy flow from pelvis through torso to hands.' },
+        'sequence_quality':                 { bones: [['midHip','RHip'],['midHip','LHip'],['Neck','midHip'],['RShoulder','RElbow']], seg: 'arm', desc: 'Proximal-to-distal sequence: pelvis → torso → arm.' },
+        'hand_speed':                       { bones: [['RShoulder','RElbow'],['RElbow','RWrist'],['LShoulder','LElbow'],['LElbow','LWrist']], seg: 'hands', desc: 'Hands & forearms — peak bat/hand speed at contact.' },
+        'follow_through_quality':           { bones: [['midHip','RHip'],['midHip','LHip'],['Neck','midHip']], seg: 'torso', desc: 'Pelvis & torso — deceleration arc after contact.' },
     };
+    // A highlighted region takes its body segment's colour, the same one the
+    // kinematic-sequence chart uses, so the 3-D view and the chart read alike.
+    Object.values(METRIC_HIGHLIGHTS).forEach(h => Object.defineProperty(h, 'color', {
+        get: () => cssVar(`--seg-${h.seg}`, '#888888'), enumerable: true,
+    }));
 
     // ── 3D SKELETON ─────────────────────────────────────────────────────────
     let skeletonScene = null;
@@ -1713,10 +1747,16 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
 
     // Visual palette for the skeleton (kept brighter than the panel bg for contrast)
-    const SKEL_BONE = 0x8b97b8;     // limb / segment colour
-    const SKEL_JOINT = 0xe2e8f5;    // bright mocap-style joint markers
-    const SKEL_HEAD = 0x9aa6c8;
-    const SKEL_BAT = 0xc9a06a;      // wood bat
+    // Figure colours come from style.css (--skel-*), so the skeleton reads on the
+    // stone field in light mode and on the dark field in dark mode.
+    let SKEL_BONE = 0x8c8a80, SKEL_JOINT = 0xf4f3ef, SKEL_HEAD = 0x9c9a90;
+    const SKEL_BAT = 0xb08850;      // wood bat
+    function refreshSkeletonColors() {
+        const hex = (name, fallback) => new THREE.Color(cssVar(name, fallback)).getHex();
+        SKEL_BONE = hex('--skel-bone', '#8c8a80');
+        SKEL_JOINT = hex('--skel-joint', '#f4f3ef');
+        SKEL_HEAD = hex('--skel-head', '#9c9a90');
+    }
     const JOINT_NAMES = ['Neck','RShoulder','LShoulder','RElbow','LElbow','RWrist','LWrist','midHip','RHip','LHip','RKnee','LKnee','RAnkle','LAnkle'];
 
     // Anatomically-tapered limb radii (metres) keyed by "proximal|distal".
@@ -1898,6 +1938,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function buildSkeleton(pose, hlBones, hlColor) {
+            refreshSkeletonColors();
             while (figure.children.length) figure.remove(figure.children[0]);
 
             if (pose) {
@@ -1987,9 +2028,9 @@ document.addEventListener('DOMContentLoaded', () => {
             '| scale:', scale);
 
         // Lighting rig (fixed to the scene, so shading shifts as the figure rotates).
-        scene.add(new THREE.AmbientLight(0xb9c4dc, 0.75));
+        scene.add(new THREE.AmbientLight(0xffffff, 0.8));
         const keyLight = new THREE.DirectionalLight(0xffffff, 1.0); keyLight.position.set(2, 4, 3); scene.add(keyLight);
-        const rimLight = new THREE.DirectionalLight(0x5b8cff, 0.55); rimLight.position.set(-3, 1.5, -2.5); scene.add(rimLight);
+        const rimLight = new THREE.DirectionalLight(0xffffff, 0.35); rimLight.position.set(-3, 1.5, -2.5); scene.add(rimLight);
 
         try {
             buildSkeleton(pose, null, '#ffffff');
@@ -2031,7 +2072,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     for (const [a,b] of hit.bones) { hlBones.add(`${a}|${b}`); hlBones.add(`${b}|${a}`); }
                     skeletonScene.buildSkeleton(skeletonScene.pose, hlBones, hit.color);
                 }
-                document.getElementById('skeleton-label').textContent = tile.querySelector('.dim-label')?.textContent || key;
+                document.getElementById('skeleton-label').textContent = tile.querySelector('.dim-name')?.textContent || key;
                 document.getElementById('skeleton-metric-desc').textContent = hit.desc;
                 document.getElementById('skeleton-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             });

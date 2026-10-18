@@ -3,67 +3,70 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="theme-color" content="#060810">
+    <meta name="theme-color" content="#0b1220">
     <meta name="color-scheme" content="dark">
-    <title>Swing Optimizer Pro — Biomechanics Report</title>
-    <meta name="description" content="Research-grade baseball hitting biomechanics analysis. Powered by OpenCap motion capture data with 12-dimension scoring framework.">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Outfit:wght@700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=19">
+    <title>Biostrike Swing Optimizer</title>
+    <meta name="description" content="Baseball swing biomechanics from motion capture: kinematic sequence, joint loads and a coaching report for each swing.">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 fill=%22%230b1220%22/%3E%3Crect x=%2213%22 y=%225%22 width=%226%22 height=%2222%22 fill=%22%232f8cff%22/%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=20">
 </head>
 <body>
-    <div class="background-effects">
-        <div class="glow glow-1"></div>
-        <div class="glow glow-2"></div>
-        <div class="glow glow-3"></div>
-    </div>
+    <a class="skip-link" href="#main">Skip to the report</a>
+    <header class="topbar">
+        <a class="wordmark" href="./">Biostrike</a>
+        <span class="topbar-product">Swing Optimizer</span>
+        <span class="topbar-status" id="server-status" data-state="checking" role="status">Connecting to the analysis server</span>
+    </header>
     
     <div class="container">
-        <header>
-            <h1>Swing Optimizer <span class="accent">Pro</span></h1>
-            <p> Baseball Swing Biomechanics Performance Framework</p>
-        </header>
-        
-        <main>
+        <main id="main">
             <!-- ===================== UPLOAD SECTION ===================== -->
-            <section class="upload-section glass-card" id="upload-section">
-                <h2>Analyze Swing Data</h2>
-                
-                <!-- Drag and Drop Zone -->
+            <section class="upload-section" id="upload-section" aria-labelledby="upload-title">
+                <div class="upload-intro">
+                    <h1 id="upload-title">Read a swing</h1>
+                    <p>Drop the motion files from a capture session and get the kinematic sequence, joint loads and what to work on next.</p>
+                </div>
+
                 <div class="upload-zone" id="drop-zone">
-                    <div class="upload-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="52" height="52"><path d="M12 13v9"/><path d="m16 17-4-4-4 4"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg></div>
-                    <p>Drag &amp; drop <strong class="accent">.mot</strong> file(s) here</p>
-                    <p class="small">or</p>
-                    <label class="btn btn-primary">
-                        Browse .mot File(s)
-                        <input type="file" id="file-input" accept=".mot" multiple hidden>
-                    </label>
-                    <p class="small text-muted" style="margin-top:8px;">Select several swings from one athlete to get an <strong>averaged profile</strong> plus swing-to-swing consistency.</p>
-                    <div style="margin-top:10px;">
+                    <div class="upload-primary">
+                        <p>Drop <strong>.mot</strong> files here, or</p>
+                        <label class="btn btn-primary">
+                            Choose .mot files
+                            <input type="file" id="file-input" accept=".mot" multiple hidden>
+                        </label>
+                        <p class="small">Several swings from one athlete give an averaged profile and swing-to-swing consistency.</p>
+                    </div>
+                    <div class="upload-extras">
+                        <p class="small">Optional, for more of the report</p>
                         <label class="btn btn-secondary btn-sm">
-                            + Add .trc File(s) <span class="small text-muted">(optional)</span>
+                            Add marker files (.trc)
                             <input type="file" id="trc-input" accept=".trc" multiple hidden>
                         </label>
-                        <p class="small text-muted" id="trc-label" style="margin-top:4px;"></p>
-                        <label class="btn btn-secondary btn-sm" style="margin-top:6px;">
-                            + Add Dynamics Reference <span class="small text-muted">(.json / .sto, optional)</span>
+                        <p class="small" id="trc-label"></p>
+                        <label class="btn btn-secondary btn-sm">
+                            Add a dynamics reference (.json, .sto)
                             <input type="file" id="ref-input" accept=".json,.sto" multiple hidden>
                         </label>
-                        <label class="btn btn-secondary btn-sm" style="margin-top:6px;">
-                            + Add Scaled Model <span class="small text-muted">(.osim, optional)</span>
+                        <label class="btn btn-secondary btn-sm">
+                            Add the scaled model (.osim)
                             <input type="file" id="model-input" accept=".osim" hidden>
                         </label>
-                        <p class="small text-muted" id="dyn-label" style="margin-top:4px;"></p>
+                        <p class="small" id="dyn-label"></p>
                     </div>
                 </div>
-                <div style="text-align:center;margin-top:1.25rem;">
-                    <button class="btn btn-secondary btn-sm" id="load-demo"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg> Load Demo Swing</button>
-                    <p class="small text-muted" style="margin-top:0.5rem;">New here? Load a sample analysis to explore the report.</p>
+
+                <div class="upload-demo">
+                    <button class="btn btn-secondary btn-sm" id="load-demo">Open the demo swing</button>
+                    <p class="small">A sample report, so you can see every panel before uploading your own.</p>
                 </div>
             </section>
             
             <!-- ===================== RESULTS SECTION ===================== -->
             <section class="results-section hidden" id="results-section">
-                <div class="results-actions mb-4">
+                <div class="results-actions">
                     <button class="btn btn-secondary btn-sm" id="btn-back"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg> New Analysis</button>
                     <div class="view-selector hidden" id="view-selector">
                         <label for="swing-view">Viewing</label>
@@ -72,9 +75,10 @@
                     </div>
                     <button class="btn btn-primary btn-sm" id="btn-report"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg> Download Report</button>
                 </div>
-                
+                <div class="results-layout">
+                    <aside class="stage" aria-label="Swing score and skeleton">
                 <!-- SWING SCORE HERO -->
-                <div class="swing-score-hero glass-card glow-border anim-slide-up" id="swing-score-hero">
+                <div class="swing-score-hero" id="swing-score-hero">
                     <div class="hero-left">
                         <div class="swing-score-ring" id="swing-score-ring">
                             <svg viewBox="0 0 120 120" class="score-ring-svg">
@@ -111,11 +115,24 @@
                         <p id="avg-basis-note" class="small text-muted hidden" style="margin-top:8px;"></p>
                         <p id="pct-basis-note" class="small text-muted" style="margin-top:8px;"></p>
                         <p id="data-warning" class="hidden text-muted small" style="margin-top: 12px; max-width: 400px; line-height: 1.4;">
-                            <span class="val-warn" style="font-weight:bold;"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span> Exit velocity is theoretically improbable for this athlete's demographics — likely a data artifact in the motion capture file.
+                            <span class="val-warn" style="font-weight:bold;"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span> Exit velocity is theoretically improbable for this athlete's demographics, likely a data artifact in the motion capture file.
                         </p>
                     </div>
                 </div>
-
+                <!-- SWING SKELETON PANEL -->
+                <div class="skeleton-panel" id="skeleton-panel">
+                    <h3 class="panel-title">The swing in 3-D <span class="panel-hint">Drag to turn it. Choose a metric to light its body region.</span></h3>
+                    <div class="skeleton-stage">
+                        <div id="skeleton-3d" class="skeleton-viewport"></div>
+                        <div class="skeleton-caption">
+                            <p class="small" id="skeleton-label">No metric selected</p>
+                            <p id="skeleton-metric-desc"></p>
+                        </div>
+                    </div>
+                </div>
+                    </aside>
+                    <div class="reading">
+                
                 <!-- COACHING FOCUS: BODY HEATMAP + TOP PRIORITIES -->
                 <div class="glass-card panel mt-3 hidden" id="focus-panel">
                     <h3 class="panel-title">Coaching Focus <span class="panel-hint">weakest links &amp; where to work</span></h3>
@@ -151,20 +168,8 @@
                     </div>
                     <p class="small hidden" id="coach-cta-disabled" style="margin-top:0.9rem;">
                         <span class="val-warn">●</span> The coach needs an <code>ANTHROPIC_API_KEY</code> set on the server.
-                        Set it and restart the backend — the key stays server-side and is never sent to the browser.
+                        Set it and restart the backend, the key stays server-side and is never sent to the browser.
                     </p>
-                </div>
-
-                <!-- SWING SKELETON PANEL -->
-                <div class="glass-card panel mt-3" id="skeleton-panel">
-                    <h3 class="panel-title">3D Skeleton <span class="panel-hint">⟲ drag to rotate</span></h3>
-                    <div class="skeleton-stage">
-                        <div id="skeleton-3d" class="skeleton-viewport"></div>
-                        <div class="skeleton-caption">
-                            <p class="small text-muted" id="skeleton-label" style="font-style:italic;">Select a metric tile to highlight the active body region</p>
-                            <p id="skeleton-metric-desc"></p>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- PELVIS ANGULAR VELOCITY -->
@@ -184,7 +189,7 @@
                 <!-- KINEMATIC SEQUENCE -->
                 <div class="glass-card panel mt-3" id="kinematic-panel" style="display:none;">
                     <h3 class="panel-title"><span class="icon"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 14l3-4 3 3 4-6"/></svg></span> Kinematic Sequence</h3>
-                    <p class="small text-muted" style="margin-top:-0.4rem;margin-bottom:0.9rem;max-width:680px;">Peak rotational speed of each body segment through the swing. Elite hitters fire <strong>proximal&nbsp;→&nbsp;distal</strong> — pelvis first, then torso, lead arm, and finally the hands — each peaking later and faster than the last.</p>
+                    <p class="small text-muted" style="margin-top:-0.4rem;margin-bottom:0.9rem;max-width:680px;">Peak rotational speed of each body segment through the swing. Elite hitters fire <strong>proximal&nbsp;→&nbsp;distal</strong>, pelvis first, then torso, lead arm, and finally the hands, each peaking later and faster than the last.</p>
                     <div class="kine-wrap">
                         <canvas id="kinematic-chart"></canvas>
                     </div>
@@ -193,7 +198,7 @@
                     <div id="kinematic-caption" class="small" style="margin-top:0.6rem;"></div>
 
                     <h4 class="panel-title" style="font-size:1rem;margin-top:1.4rem;margin-bottom:0.2rem;">Pelvis &amp; Lower Half</h4>
-                    <p class="small text-muted" style="margin-top:0;margin-bottom:0.8rem;max-width:680px;">The engine driving the sequence above. These read most reliably of any group here — the lower half moves slowest, so the markerless capture is cleanest.</p>
+                    <p class="small text-muted" style="margin-top:0;margin-bottom:0.8rem;max-width:680px;">The engine driving the sequence above. These read most reliably of any group here, the lower half moves slowest, so the markerless capture is cleanest.</p>
                     <div class="metrics-grid" id="pelvis-metrics"></div>
 
                     <h4 class="panel-title" style="font-size:1rem;margin-top:1.4rem;margin-bottom:0.2rem;" id="id-heading">Joint Loads &mdash; Lower Body</h4>
@@ -211,7 +216,7 @@
                         <span class="ev-badge ev-A">A</span> research-backed &nbsp;
                         <span class="ev-badge ev-B">B</span> literature-based, our definition &nbsp;
                         <span class="ev-badge ev-C">C</span> our own measure &nbsp;
-                        <span class="ev-warn">!</span> this capture can't support it — hover for why
+                        <span class="ev-warn">!</span> this capture can't support it, hover for why
                     </div>
                 </div>
 
@@ -258,6 +263,8 @@
                         </div>
                     </div>
                 </div>
+                    </div>
+                </div>
             </section>
         </main>
     </div>
@@ -281,7 +288,7 @@
 
             <div class="coach-log" id="coach-log">
                 <div class="coach-empty" id="coach-empty">
-                    <p>Ask about anything in your report — it only answers from your measured numbers.</p>
+                    <p>Ask about anything in your report, it only answers from your measured numbers.</p>
                     <div class="coach-suggests">
                         <button class="coach-chip" data-q="What is the single most important thing to work on, and why?">Biggest priority</button>
                         <button class="coach-chip" data-q="Explain my swing score in plain language. What is driving it?">Explain my score</button>
@@ -297,7 +304,7 @@
                     <svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
                 </button>
             </form>
-            <p class="coach-foot">Explains your computed report — it never calculates the numbers itself.</p>
+            <p class="coach-foot">Explains your computed report, it never calculates the numbers itself.</p>
         </section>
     </div>
 
@@ -337,7 +344,7 @@
                     <select id="athlete-handedness" class="input-dark">
                         <option value="right" selected>Right-handed</option>
                         <option value="left">Left-handed</option>
-                        <option value="">Not sure — infer it</option>
+                        <option value="">Not sure, infer it</option>
                     </select>
                 </div>
             </div>
@@ -382,6 +389,6 @@
     <div id="print-report" aria-hidden="true"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-    <script src="app.js?v=19"></script>
+    <script src="app.js?v=20"></script>
 </body>
 </html>
