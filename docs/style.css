@@ -16,6 +16,9 @@
     --accent: #2f8cff;
     --accent-ink: #04101f;
     --accent-tint: #15294a;
+    --accent-bright: #4a9dff;
+    --on-accent: #04101f;
+    --on-accent-muted: #082247;
 
     /* status: fills plus text steps that read on navy */
     --good: #22b14c;      --good-ink: #4fd277;
@@ -30,7 +33,7 @@
 
     --chart-grid: #1f2b44;
     --skel-field: #0e1626;
-    --skel-bone: #8496b8;
+    --skel-bone: #6f8fc8;
     --skel-joint: #eef3fb;
     --skel-head: #95a6c6;
 
@@ -675,3 +678,74 @@ label.btn { cursor: pointer; }
 .pr-cols li { margin-bottom: 5px; }
 /* taste-skill-ignore: printed report */
 .pr-foot { margin-top: 18px; padding-top: 10px; border-top: 1px solid #e6e5e1; font-size: 9.5px; color: #8a887f; text-align: center; } /* taste-skill-ignore */
+
+/* ════════════════════════════════════════════════════════════════════
+   Flash layer: more electric blue, still flat and clean.
+   The score sits on a solid blue field with a diagonal jersey stripe, panels
+   carry a blue top stripe and a slanted tab before their titles, and every
+   control answers with a blue halo.
+   ════════════════════════════════════════════════════════════════════ */
+
+/* Brand */
+.wordmark { background: var(--accent); color: var(--on-accent); padding: 0.05em 0.45em 0; line-height: 1.15; }
+.upload-intro h1 { color: var(--accent); }
+
+/* Score on a blue field */
+.swing-score-hero {
+    position: relative; overflow: hidden; isolation: isolate;
+    background: var(--accent); color: var(--on-accent);
+    animation: field-wipe 0.75s var(--ease) both;
+}
+.swing-score-hero::after {
+    content: ''; position: absolute; z-index: -1; top: -20%; bottom: -20%; right: -6%; width: 34%;
+    background: var(--accent-bright); transform: skewX(-18deg);
+    animation: stripe-in 0.9s var(--ease) 0.25s both;
+}
+.swing-score-hero::before {
+    content: ''; position: absolute; z-index: -1; top: -20%; bottom: -20%; right: 24%; width: 5%;
+    background: var(--accent-bright); transform: skewX(-18deg);
+    animation: stripe-in 0.9s var(--ease) 0.35s both;
+}
+@keyframes field-wipe { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes stripe-in { from { transform: translateX(60%) skewX(-18deg); opacity: 0; } to { transform: skewX(-18deg); opacity: 1; } }
+.swing-score-hero .score-number, .swing-score-hero .hero-stat-value { color: #ffffff; }
+.swing-score-hero .score-denom, .swing-score-hero .score-label-text,
+.swing-score-hero .hero-stat-label, .swing-score-hero .hero-right h2,
+.swing-score-hero p, .swing-score-hero .small, .swing-score-hero .text-muted { color: var(--on-accent-muted) !important; }
+.swing-score-hero strong { color: var(--on-accent); }
+.swing-score-hero .skill-badge { color: var(--on-accent); }
+.swing-score-hero code { background: rgba(4, 16, 31, 0.18); color: var(--on-accent); }
+.swing-score-hero .ring-bg { stroke: rgba(4, 16, 31, 0.22); }
+.swing-score-hero .ring-fill, .swing-score-hero .ring-fill.clr-green,
+.swing-score-hero .ring-fill.clr-yellow, .swing-score-hero .ring-fill.clr-red { stroke: #ffffff; }
+.swing-score-hero .val-warn { color: var(--on-accent) !important; }
+
+/* Panels: blue top stripe and a slanted tab before the title */
+.glass-card, .panel, .phase-card { border-top: 4px solid var(--accent); }
+.swing-score-hero { border-top: 0; }
+.panel-title::before, .phase-label::before {
+    content: ''; display: inline-block; width: 0.42em; height: 0.82em; margin-right: 0.5em;
+    background: var(--accent); transform: skewX(-18deg); vertical-align: -0.04em;
+}
+.panel-title { align-items: center; }
+#pelvis-omega-value { color: var(--accent) !important; }
+.priority-rank { background: var(--accent); color: var(--on-accent); }
+
+/* Controls answer in blue */
+.btn, .coach-chip, .skill-pill, .dim-explain, .coach-fab { transition: background-color 0.18s ease, color 0.18s ease, transform 0.15s var(--ease), box-shadow 0.2s ease; }
+.btn-primary:hover { background: var(--accent-bright); transform: translateY(-1px); box-shadow: 0 0 0 4px rgba(47, 140, 255, 0.28); } /* taste-skill-ignore: hover halo */
+.btn-secondary:hover { box-shadow: inset 0 -3px 0 var(--accent); } /* taste-skill-ignore: hover underline bar */
+.coach-chip:hover, .skill-pill:hover { background: var(--accent); color: var(--on-accent); }
+.skill-pill.active { background: var(--accent); color: var(--on-accent); }
+.dim-tile { transition: background-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s var(--ease); }
+.dim-tile:hover { box-shadow: inset 4px 0 0 var(--accent); transform: translateX(2px); } /* taste-skill-ignore: hover edge */
+.coach-fab { background: var(--accent); color: var(--on-accent); }
+.coach-fab:hover { background: var(--accent-bright); box-shadow: 0 0 0 4px rgba(47, 140, 255, 0.28), 0 10px 30px -12px rgba(2, 6, 14, 0.5); } /* taste-skill-ignore: floating button */
+.upload-zone { border-left: 6px solid var(--accent); }
+.upload-zone.dragover { background: var(--accent); }
+.upload-zone.dragover, .upload-zone.dragover p, .upload-zone.dragover .small { color: var(--on-accent) !important; }
+.topbar-status[data-state="ready"]::before { background: var(--accent); box-shadow: 0 0 0 4px rgba(47, 140, 255, 0.22); } /* taste-skill-ignore: live dot */
+
+@media (prefers-reduced-motion: reduce) {
+    .swing-score-hero, .swing-score-hero::before, .swing-score-hero::after { animation: none !important; clip-path: none !important; }
+}
