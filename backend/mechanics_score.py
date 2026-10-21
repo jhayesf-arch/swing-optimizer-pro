@@ -29,19 +29,27 @@ MIN_COVERAGE = 0.5
 
 LEVELS = ('youth', 'high_school', 'college', 'professional')
 
-# Peak pelvis angular velocity (deg/s): Escamilla et al. 2009 report 632 +/- 117
-# for skilled youth (12-17 y) and 678 +/- 87 for college/pro adults; Welch et
-# al. 1995 report 714. Perrett 2024 finds it associated with bat speed. The
-# professional ramp above ~720 is ours.
+# Peak pelvis angular velocity (deg/s), marker-based, published:
+#   youth 12-17 y   632 ± 117  Escamilla et al. 2009 (n=12)
+#   college         608 ± 51   Nakata et al. 2014 (ex-college, n=8)
+#                   643 ± 50   Punchihewa et al. 2020 (university, n=8)
+#   college + pro   678 ± 87   Escamilla et al. 2009 (n=12)
+#   minor league    714        Welch et al. 1995
+# Full marks at the level's published mean, 60 at one SD below, 0 at about
+# 2.5 SD below. High school has no published value: between youth and adult.
+# Pelvis speed barely separates levels in the literature, and Perrett 2024
+# finds only a small association with bat speed (R = .18).
 PELVIS_SPEED = {
-    'youth':        [(250, 0), (400, 60), (550, 100)],
-    'high_school':  [(350, 0), (500, 60), (650, 100)],
-    'college':      [(400, 0), (550, 60), (700, 100)],
-    'professional': [(500, 0), (700, 70), (850, 100)],
+    'youth':        [(400, 0), (515, 60), (632, 100)],
+    'high_school':  [(420, 0), (540, 60), (655, 100)],
+    'college':      [(460, 0), (590, 60), (678, 100)],
+    'professional': [(500, 0), (627, 60), (714, 100)],
 }
-# Pelvis peak after front-foot plant (ms): Welch et al. 1995, elite ~50-100 ms.
+# Pelvis peak after front-foot plant (ms): 136 ms in D1 batters (Taguchi et al.
+# 2023, healthy group); ~100 ms in skilled adults from Escamilla et al. 2009's
+# mean timings (stride 0.40 s of a 0.61 s swing, pelvis peak at 82%).
 # Negative means the pelvis peaked before the foot landed (spinning open early).
-PELVIS_TIMING = [(-60, 0), (0, 50), (50, 100), (100, 100), (180, 55), (260, 20)]
+PELVIS_TIMING = [(-60, 0), (0, 40), (70, 100), (140, 100), (220, 55), (300, 20)]
 
 # Values beyond these are not one swing measured well: a whole clip's movement,
 # a tracking jump, or an event detected in the wrong place. Such a part is
@@ -113,17 +121,17 @@ def compute_mechanics_score(metrics: Dict, dims: Dict, evidence: Dict, skill_lev
     lo, hi = bench.get('sequence_timing_ms', (20, 55))
     ok, why = _reliable(evidence, 'sequence_timing_ms', 'proper_sequence')
     if lag is None or (lag == 0 and not metrics.get('proper_sequence')):
-        part('sequencing', 'Sequencing', 0.25, 'A', 'Welch et al. 1995; Escamilla et al. 2009; Taguchi et al. 2023',
+        part('sequencing', 'Sequencing', 0.25, 'A', 'Nakata et al. 2014; Taguchi et al. 2023; Escamilla et al. 2009; Welch et al. 1995',
              lag, 'ms', 0, f'pelvis peaks {lo}-{hi} ms before torso', 'sequence timing not measured')
     elif not ok or _implausible('sequence_timing_ms', lag):
         why = why or _implausible('sequence_timing_ms', lag)
-        part('sequencing', 'Sequencing', 0.25, 'A', 'Welch et al. 1995; Escamilla et al. 2009; Taguchi et al. 2023',
+        part('sequencing', 'Sequencing', 0.25, 'A', 'Nakata et al. 2014; Taguchi et al. 2023; Escamilla et al. 2009; Welch et al. 1995',
              lag, 'ms', 0, f'pelvis peaks {lo}-{hi} ms before torso', why)
     else:
         s = _ramp(lag, [(-40, 0), (0, 30), (lo, 100), (hi, 100), (hi + 60, 55), (hi + 140, 25)])
         if metrics.get('proper_sequence') is False:
             s = min(s, 25.0)          # out of order: the chain is not building from the ground
-        part('sequencing', 'Sequencing', 0.25, 'A', 'Welch et al. 1995; Escamilla et al. 2009; Taguchi et al. 2023',
+        part('sequencing', 'Sequencing', 0.25, 'A', 'Nakata et al. 2014; Taguchi et al. 2023; Escamilla et al. 2009; Welch et al. 1995',
              lag, 'ms', s, f'pelvis peaks {lo}-{hi} ms before torso')
 
     # 2. Hip-shoulder separation (X-factor).
@@ -147,7 +155,7 @@ def compute_mechanics_score(metrics: Dict, dims: Dict, evidence: Dict, skill_lev
     t = _num(metrics, 'time_to_peak_pelvis_from_plant_ms')
     ok_w, why_w = _reliable(evidence, 'peak_pelvis_omega_3d_deg_s')
     pts = PELVIS_SPEED[level]
-    ref = f'{pts[1][0]}-{pts[-1][0]}°/s peak; peak 50-100 ms after plant'
+    ref = f'{pts[1][0]}-{pts[-1][0]}°/s peak; peak 70-140 ms after plant'
     sub = []
     if w and ok_w and _implausible('peak_pelvis_omega_3d_deg_s', w):
         ok_w, why_w = False, _implausible('peak_pelvis_omega_3d_deg_s', w)
@@ -157,7 +165,7 @@ def compute_mechanics_score(metrics: Dict, dims: Dict, evidence: Dict, skill_lev
         ok_t, _ = _reliable(evidence, 'time_to_peak_pelvis_from_plant_ms')
         if ok_t:
             sub.append((0.3, _ramp(t, PELVIS_TIMING)))
-    src = 'Welch et al. 1995; Escamilla et al. 2009; Perrett 2024'
+    src = 'Escamilla et al. 2009; Welch et al. 1995; Nakata et al. 2014; Punchihewa et al. 2020'
     if sub:
         s = sum(a * b for a, b in sub) / sum(a for a, _ in sub)
         part('pelvis_drive', 'Pelvis drive', 0.25, 'A', src, w, '°/s', s, ref)

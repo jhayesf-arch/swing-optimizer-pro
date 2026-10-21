@@ -30,8 +30,8 @@ METRIC_EVIDENCE = {
         'Associated with bat speed (Perrett 2024, R = .18). '
         'Reference: 632 +/- 117 deg/s skilled youth, 678 +/- 87 adults (Escamilla 2009); 714 (Welch 1995).'),
     'time_to_peak_pelvis_from_plant_ms': (
-        A, 'Welch et al. 1995',
-        'Elite hitters peak ~50-100 ms after front-foot plant. Negative means the '
+        A, 'Taguchi et al. 2023; Escamilla et al. 2009',
+        'Skilled hitters peak ~100-136 ms after front-foot plant. Negative means the '
         'pelvis peaked before the foot landed — spinning open early.'),
     'time_to_peak_pelvis_ms': (
         B, 'Welch et al. 1995 (adapted)',
@@ -67,11 +67,11 @@ METRIC_EVIDENCE = {
         'Separation gained after transition predicts speed better than static '
         'X-Factor. Same signal dependency as above.'),
     'sequence_timing_ms': (
-        A, 'Kwon et al. 2013; Putnam 1993',
-        'Pelvis-to-torso peak lag. Elite gaps ~30-70 ms.'),
+        A, 'Nakata et al. 2014; Taguchi et al. 2023; Escamilla et al. 2009',
+        'Pelvis-to-torso peak lag. Skilled adult batters ~19-52 ms.'),
     'torso_arm_sequence_gap_ms': (A, 'Kwon et al. 2013', 'Second link of the chain.'),
     'proper_sequence': (A, 'Putnam 1993; Kwon et al. 2013', 'Proximal-to-distal ordering.'),
-    'torso_to_pelvis_rot_ratio': (A, 'Kwon et al. 2013', 'Elite ~1.4-1.8.'),
+    'torso_to_pelvis_rot_ratio': (A, 'Escamilla et al. 2009; Welch et al. 1995; Nakata et al. 2014', 'Batters ~1.1-1.6 (857/678, 937/714, 984/608).'),
 
     # ── Stride ──────────────────────────────────────────────────────────────
     'stride_length_m': (A, 'Welch et al. 1995; Fortenbaugh 2011', ''),

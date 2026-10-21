@@ -59,7 +59,7 @@ guidance. The requirement is that they are labeled honestly.
 |---|---|---|---|
 | `max_separation_deg` (X-Factor) | deg | **A** | Fleisig et al. (2013): 46 ± 9° in professional batters, reached after contact. Hoechstetter et al. (2026): ~+0.05 m/s bat speed per degree in D1 batters. Golf method: Kwon et al. (2013). Measured pre-peak-pelvis, which is our window choice. |
 | `x_factor_stretch_deg` | deg | B | Cheetham et al. (2001), golf: separation *gained after transition*. No batting study yet. Computed as `max_separation − |separation at swing start|`. |
-| `sequence_timing_ms` | ms | **A** | Pelvis→torso peak lag. Kwon et al. (2013); Putnam (1993) for the underlying proximal-to-distal principle. Elite gaps ~30–70 ms. |
+| `sequence_timing_ms` | ms | **A** | Pelvis→torso peak lag. Skilled adult batters: 19 ms (Nakata et al. 2014), 52 ± 30 ms (Taguchi et al. 2023), ~37 ms from Escamilla et al. (2009) mean timings. Putnam (1993) for the proximal-to-distal principle. |
 | `torso_arm_sequence_gap_ms` | ms | **A** | Torso→lead-arm lag, the second chain link. Kwon et al. (2013). Same sub-frame peaks as above, so the two gaps sum to pelvis→arm. |
 | `proper_sequence` | bool | **A** | Proximal-to-distal ordering. Putnam (1993); Kwon et al. (2013). ±1 frame tolerance. |
 | `pelvis_decel_rate_deg_s2` | deg/s² | B | Putnam (1993): proximal deceleration is the mechanism of distal acceleration. The principle is established; the 200 ms post-peak window and steepest-slope definition are ours. |
@@ -69,7 +69,7 @@ guidance. The requirement is that they are labeled honestly.
 | Metric | Units | Rating | Basis |
 |---|---|---|---|
 | `peak_pelvis_omega_3d_deg_s` | deg/s | **A** | Escamilla et al. (2009): 632 ± 117°/s skilled youth, 678 ± 87°/s adults. Welch et al. (1995): 714°/s. Perrett (2024): associated with bat speed (R = .18). |
-| `time_to_peak_pelvis_from_plant_ms` | ms | **A** | Welch et al. (1995): elite hitters peak ~50–100 ms after front-foot plant. Negative values mean the pelvis peaked before plant — spinning open early — and the sign is preserved because that pattern is diagnostic. |
+| `time_to_peak_pelvis_from_plant_ms` | ms | **A** | Taguchi et al. (2023): 136 ms after front-foot contact in D1 batters; ~100 ms from Escamilla et al. (2009) mean timings. Negative values mean the pelvis peaked before plant — spinning open early — and the sign is preserved because that pattern is diagnostic. |
 | `time_to_peak_pelvis_ms` | ms | B | Same quantity measured from swing start instead of plant. Available when plant detection fails; less comparable to literature. |
 | `pelvis_rotation_at_contact_deg` | deg | **A** | Welch et al. (1995); Fortenbaugh et al. (2011): ~40–75° open in professionals. Single-frame read, so it carries no differentiation noise — the most robust metric in this group on markerless data. Contact is proxied by peak pelvis angular velocity. |
 | `pelvis_tilt_range_deg` | deg | B | Anterior/posterior tilt range. Fortenbaugh (2011) reports tilt; the range-over-swing form is ours. |
@@ -168,9 +168,11 @@ guidance. The requirement is that they are labeled honestly.
 - MacKenzie, S. J. (2012). Club position relative to the golfer's swing plane meaningfully affects swing dynamics. *Sports Biomechanics*, 11(2), 149–164. https://doi.org/10.1080/14763141.2011.638388
 - Myers, J., et al. (2008). The role of upper torso and pelvis rotation in driving performance during the golf swing. *Journal of Sports Sciences*, 26(2).
 - Nesbit, S. M., & Serrano, M. (2005). Work and power analysis of the golf swing. *Journal of Sports Science and Medicine*, 4(4).
+- Punchihewa, N. G., Miyazaki, S., Chosa, E., Yamako, G., et al. (2020). Efficacy of inertial measurement units in the evaluation of trunk and hand kinematics in baseball hitting. *Sensors*, 20(24), 7331. https://doi.org/10.3390/s20247331
 - Putnam, C. A. (1993). Sequential motions of body segments in striking and throwing skills. *Journal of Biomechanics*, 26(Suppl 1).
 - Robertson, D. G. E., & Winter, D. A. (1980). Mechanical energy generation, absorption and transfer amongst segments during walking. *Journal of Biomechanics*, 13(10).
 - Robertson, D. G. E., Caldwell, G. E., Hamill, J., Kamen, G., & Whittlesey, S. N. *Research Methods in Biomechanics* (2nd ed.).
+- Nakata, H., Miura, A., Yoshie, M., Higuchi, T., & Kudo, K. (2014). Differences in trunk rotation during baseball batting between skilled players and unskilled novices. *Journal of Physical Fitness and Sports Medicine*, 3(4), 457–466. https://doi.org/10.7600/jpfsm.3.457
 - Perrett, C. S. (2024). The contribution of lower-body kinematics to pitching and hitting performance in baseball: Utilizing the OpenBiomechanics Project. *Journal of Applied Biomechanics*, 40(2), 98–104. https://doi.org/10.1123/jab.2023-0045
 - Plummer, H. A., et al. (2023). Hip abductor strength asymmetry: Relationship to upper extremity injury in professional baseball players. *Sports Health*, 15(2), 295–302. https://doi.org/10.1177/19417381221078830
 - Taguchi, N., Izumi, S., & Miyakawa, S. (2023). Analysis of trunk rotation during baseball batting with lumbar disc degeneration. *Fukushima Journal of Medical Science*, 69(1), 1–10. https://doi.org/10.5387/fms.2022-14

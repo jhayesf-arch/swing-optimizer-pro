@@ -462,14 +462,14 @@ neither does lateral sway, which no published batting study measures.
 
 | Part | Weight | Input | Reference (college shown) | Source |
 |---|---|---|---|---|
-| Sequencing | 0.25 | `sequence_timing_ms`, `proper_sequence` | pelvis peaks 22–82 ms before torso; out of order caps at 25 | Welch et al. 1995; Escamilla et al. 2009 (order); ms window ours, informed by Taguchi et al. 2023 |
+| Sequencing | 0.25 | `sequence_timing_ms`, `proper_sequence` | pelvis peaks 15–55 ms before torso; out of order caps at 25 | Nakata et al. 2014 (19 ms); Taguchi et al. 2023 (52 ± 30 ms); Escamilla et al. 2009 (~37 ms); Welch et al. 1995 (order) |
 | Hip-shoulder separation | 0.20 | `max_separation_deg` | 25–50° | Fleisig et al. 2013 (46 ± 9° pro); Hoechstetter et al. 2026 |
-| Pelvis drive | 0.25 | `peak_pelvis_omega_3d_deg_s` (70%), `time_to_peak_pelvis_from_plant_ms` (30%) | 550–700°/s; peak 50–100 ms after plant | Escamilla et al. 2009 (678 ± 87°/s adults); Welch et al. 1995 (714°/s); Perrett 2024 |
+| Pelvis drive | 0.25 | `peak_pelvis_omega_3d_deg_s` (70%), `time_to_peak_pelvis_from_plant_ms` (30%) | 590–678°/s; peak 70–140 ms after plant | Escamilla et al. 2009 (678 ± 87°/s adults); Welch et al. 1995 (714°/s); Nakata et al. 2014; Punchihewa et al. 2020; Taguchi et al. 2023 (timing) |
 | Lead-leg block | 0.15 | lead-knee extension plant→contact | 30–59° (skilled adult mean 59°) | Escamilla et al. 2009; Perrett 2024 |
 | Stride | 0.10 | `stride_ratio` | 0.38–0.48 × height (skilled mean 0.48) | Escamilla et al. 2009 |
 
 A part is skipped (weights renormalise) when it is missing, flagged unreliable in
 `metric_evidence`, or outside a plausibility limit for one swing (e.g. a stride over
 1.3 × height, which means the whole clip's movement was measured). Below 50% of the
-weight, no score is given. Youth pelvis-speed ranges are scaled from the
-high-school anchor (no published youth values).
+weight, no score is given. Youth pelvis speed is from Escamilla et al. 2009;
+high school has no published value and is interpolated between youth and adult.

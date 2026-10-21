@@ -192,6 +192,7 @@ DIMENSION_THRESHOLDS = {
         # Computed from proper_sequence bool + sequence_timing_ms.
         # SOURCE: Taguchi et al. 2023 (university Div I, healthy group):
         #   Shoulder − pelvis peak omega lag = 52 ± 30ms.
+        # Nakata et al. 2014: 19 ms in skilled ex-college batters.
         # Welch et al. 1995: hip peaks before shoulder confirmed (714 → 937 deg/s).
         # No level-stratified sequence timing data published.
         'youth':        [],
@@ -433,6 +434,12 @@ def get_cohort_model():
     return _COHORT_MODEL
 
 
+# sequence_timing_ms: pelvis peak to torso peak, full-credit window. Skilled
+# adult batters, published: 19 ms (Nakata et al. 2014, ex-college, n=8),
+# 28 ms (Morishita et al., ISBS, n=2), 52 ± 30 ms (Taguchi et al. 2023, D1,
+# n=11), ~37 ms from the mean peak times in Escamilla et al. 2009 (adults).
+# Youth and high school have no direct published value; their windows are
+# extrapolated slightly shorter, as Escamilla's youth peaks were closer together.
 SKILL_LEVEL_BENCHMARKS = {
     'youth': {
         # Power: Blast Motion database (blastconnect.com): Youth 900-2,500 W
@@ -442,7 +449,7 @@ SKILL_LEVEL_BENCHMARKS = {
         'chain_efficiency_elite': 25.0,
         'torso_pelvis_ratio_optimal': (0.8, 1.1),
         'x_factor_optimal': (12, 32),
-        'sequence_timing_ms': (15, 45),
+        'sequence_timing_ms': (10, 45),
         # Hand speed: Blast Motion database: Youth 17-23 mph (Peak Hand Speed)
         'max_hand_speed_mph': (17, 23),
         # Time to Contact: Blast Motion database: Youth 0.17-0.23 s
@@ -458,7 +465,7 @@ SKILL_LEVEL_BENCHMARKS = {
         'chain_efficiency_elite': 35.0,
         'torso_pelvis_ratio_optimal': (1.0, 1.2),
         'x_factor_optimal': (20, 42),
-        'sequence_timing_ms': (20, 55),
+        'sequence_timing_ms': (12, 50),
         # Hand speed: Blast Motion database: HS Varsity 20-26 mph
         'max_hand_speed_mph': (20, 26),
         # Time to Contact: Blast Motion database: HS Varsity 0.14-0.18 s
@@ -473,7 +480,7 @@ SKILL_LEVEL_BENCHMARKS = {
         'chain_efficiency_elite': 40.0,
         'torso_pelvis_ratio_optimal': (1.1, 1.3),
         'x_factor_optimal': (25, 50),
-        'sequence_timing_ms': (22, 82),
+        'sequence_timing_ms': (15, 55),
         # Hand speed: Blast Motion database: College 21-27 mph
         'max_hand_speed_mph': (21, 27),
         # Time to Contact: Blast Motion database: College 0.14-0.18 s
@@ -488,7 +495,7 @@ SKILL_LEVEL_BENCHMARKS = {
         'chain_efficiency_elite': 45.0,
         'torso_pelvis_ratio_optimal': (1.2, 1.5),
         'x_factor_optimal': (37, 55),
-        'sequence_timing_ms': (30, 60),
+        'sequence_timing_ms': (15, 55),
         # Hand speed: Blast Motion database: Professional MLB 23-29 mph
         'max_hand_speed_mph': (23, 29),
         # Time to Contact: Blast Motion database: Professional 0.13-0.17 s
