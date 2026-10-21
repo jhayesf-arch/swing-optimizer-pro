@@ -189,9 +189,10 @@ def compute_mechanics_score(metrics: Dict, dims: Dict, evidence: Dict, skill_lev
     sr = _num(metrics, 'stride_ratio')
     table = (thresholds.get('stride_length') or {}).get(level)
     src = 'Escamilla et al. 2009'
-    if not sr or not table or _implausible('stride_ratio', sr):
+    sd = (dims or {}).get('stride_length') or {}
+    if not sr or not table or sd.get('available') is False or _implausible('stride_ratio', sr):
         part('stride', 'Stride', 0.10, 'A', src, sr, '× height', 0, 'stride length / height',
-             _implausible('stride_ratio', sr) or 'stride not measured')
+             _implausible('stride_ratio', sr) or sd.get('unavailable_reason') or 'stride not measured')
     else:
         part('stride', 'Stride', 0.10, 'A', src, sr, '× height',
              _ramp(sr, _stars_to_points(table)), f'{table[2][0]}-{table[4][0]} × height at this level')

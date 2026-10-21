@@ -1829,6 +1829,43 @@ class RefinedHittingOptimizer:
         except Exception:
             return None
 
+    def _lead_foot_touchdown(self, trc_data: Optional[pd.DataFrame], peak_frame: int,
+                             fs: float) -> Optional[int]:
+        """Frame the lead foot lands: the first frame after the lead ankle's highest
+        point in the second before peak pelvis speed at which the ankle is back
+        within 2 cm of its standing height. None when there are no ankle markers or
+        the foot never lifts at least 4 cm (no-stride or toe-tap swings), where the
+        rotation-based onset is the better estimate.
+        """
+        try:
+            cols = trc_data.columns if trc_data is not None else ()
+            if 'Neck_X' not in cols or 'LAnkle_X' not in cols or 'RAnkle_X' not in cols:
+                return None
+            vert = max('XYZ', key=lambda a: float(np.mean(trc_data['Neck_' + a].values)
+                                                  - np.mean(trc_data['LAnkle_' + a].values)))
+            n = min(len(trc_data), peak_frame + 1)
+            start = max(0, n - int(round(1.0 * fs)))
+            if n - start < 5:
+                return None
+            height = {s: trc_data[f'{s}Ankle_{vert}'].values.astype(float) for s in 'LR'}
+            if self.handedness == 'right':
+                lead = 'L'
+            elif self.handedness == 'left':
+                lead = 'R'
+            else:
+                lead = max('LR', key=lambda s: np.ptp(height[s][start:n]))
+            h = height[lead]
+            floor = float(np.percentile(h, 10))
+            apex = start + int(np.argmax(h[start:n]))
+            if h[apex] - floor < 0.04:
+                return None
+            for i in range(apex, n):
+                if h[i] - floor <= 0.02:
+                    return i
+            return None
+        except Exception:
+            return None
+
     def calculate_stride_refined(self, data: pd.DataFrame, rotation: Dict = None,
                                  trc_data: pd.DataFrame = None) -> Dict:
         if 'pelvis_tx' not in data.columns or 'pelvis_ty' not in data.columns:
@@ -1868,10 +1905,16 @@ class RefinedHittingOptimizer:
                         plant_frame = i
                         break
             plant_method = "sign_reversal_onset"
+            # The onset above is when the pelvis starts turning, which on a
+            # leg-kick swing comes while the lead foot is still in the air. When
+            # the ankle markers can see the foot come down, use that instead.
+            touchdown = self._lead_foot_touchdown(trc_data, peak_frame, fs)
+            if touchdown is not None:
+                plant_frame, plant_method = touchdown, "lead_ankle_touchdown"
         else:
             plant_frame = len(data) // 2
             plant_method = "fallback_midframe"
-        
+
         # ── Stride length ──────────────────────────────────────────────────
         # Stride length is the LEAD FOOT's travel to plant, so foot markers are
         # the only correct source. Without them we can still report how far the

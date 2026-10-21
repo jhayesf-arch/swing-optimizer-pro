@@ -57,6 +57,12 @@ def test_ramp_is_flat_beyond_the_ends():
     pts = [(0, 0), (10, 100)]
     assert _ramp(-5, pts) == 0 and _ramp(5, pts) == 50 and _ramp(50, pts) == 100
 
+def test_stride_the_report_could_not_measure_is_skipped():
+    dims = {**DIMS, 'stride_length': {'available': False, 'unavailable_reason': 'no foot markers'}}
+    r = score({**GOOD, 'stride_ratio': 0.01}, dims=dims)
+    stride = next(p for p in r['components'] if p['key'] == 'stride')
+    assert stride['status'] == 'skipped' and 'foot markers' in stride['reason']
+
 
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
