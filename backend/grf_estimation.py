@@ -13,7 +13,7 @@ Method:
 
 Validation context:
   OpenCap's full dynamic simulation achieves GRF MAE = 6.2% BW
-  (Uhlrich et al. 2023, Nature Communications).
+  (Uhlrich et al. 2023, PLOS Computational Biology).
   This simplified CoM method typically achieves ~10-15% BW MAE for
   vertical GRF and ~20-25% for horizontal — sufficient for pelvis
   residual reduction in inverse dynamics.

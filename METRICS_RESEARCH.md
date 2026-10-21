@@ -45,7 +45,7 @@ guidance. The requirement is that they are labeled honestly.
 |---|---|---|---|
 | `peak_hip_torque_Nm` | N·m | B | Rigid-body τ = I·α. Nesbit & Serrano (2005) for golf-swing magnitudes. Limitation 1 applies. |
 | `peak_shoulder_torque_Nm` | N·m | B | As above; trunk + arms + bat inertia about the shoulder axis. |
-| `peak_hip_power_W` | W | B | P = τ·ω. MacWilliams et al. (1998); Anderson et al. (2006). |
+| `peak_hip_power_W` | W | B | P = τ·ω. Ae et al. (2017); Talmage et al. (2024): the hips generate most of the swing's energy. |
 | `peak_shoulder_power_W` | W | B | As above. |
 | `hip_inertia_kg_m2` | kg·m² | **A** | de Leva (1996) adjusted segment inertia parameters — the standard source. |
 | `shoulder_inertia_kg_m2` | kg·m² | **A** | de Leva (1996), summed over trunk, both arms, and bat. |
@@ -57,8 +57,8 @@ guidance. The requirement is that they are labeled honestly.
 
 | Metric | Units | Rating | Basis |
 |---|---|---|---|
-| `max_separation_deg` (X-Factor) | deg | **A** | Cheetham et al. (2001); Myers et al. (2008) linked separation to ball velocity. Measured pre-peak-pelvis, which is our window choice. |
-| `x_factor_stretch_deg` | deg | **A** | Cheetham et al. (2008): separation *gained after transition* predicts speed better than static X-Factor. Computed as `max_separation − |separation at swing start|`. |
+| `max_separation_deg` (X-Factor) | deg | **A** | Fleisig et al. (2013): 46 ± 9° in professional batters, reached after contact. Hoechstetter et al. (2026): ~+0.05 m/s bat speed per degree in D1 batters. Golf method: Kwon et al. (2013). Measured pre-peak-pelvis, which is our window choice. |
+| `x_factor_stretch_deg` | deg | B | Cheetham et al. (2001), golf: separation *gained after transition*. No batting study yet. Computed as `max_separation − |separation at swing start|`. |
 | `sequence_timing_ms` | ms | **A** | Pelvis→torso peak lag. Kwon et al. (2013); Putnam (1993) for the underlying proximal-to-distal principle. Elite gaps ~30–70 ms. |
 | `torso_arm_sequence_gap_ms` | ms | **A** | Torso→lead-arm lag, the second chain link. Kwon et al. (2013). Same sub-frame peaks as above, so the two gaps sum to pelvis→arm. |
 | `proper_sequence` | bool | **A** | Proximal-to-distal ordering. Putnam (1993); Kwon et al. (2013). ±1 frame tolerance. |
@@ -68,12 +68,12 @@ guidance. The requirement is that they are labeled honestly.
 
 | Metric | Units | Rating | Basis |
 |---|---|---|---|
-| `peak_pelvis_omega_3d_deg_s` | deg/s | **A** | The most-cited single power correlate in rotational sport. Fortenbaugh (2011); Cheetham et al. (2008). |
+| `peak_pelvis_omega_3d_deg_s` | deg/s | **A** | Escamilla et al. (2009): 632 ± 117°/s skilled youth, 678 ± 87°/s adults. Welch et al. (1995): 714°/s. Perrett (2024): associated with bat speed (R = .18). |
 | `time_to_peak_pelvis_from_plant_ms` | ms | **A** | Welch et al. (1995): elite hitters peak ~50–100 ms after front-foot plant. Negative values mean the pelvis peaked before plant — spinning open early — and the sign is preserved because that pattern is diagnostic. |
 | `time_to_peak_pelvis_ms` | ms | B | Same quantity measured from swing start instead of plant. Available when plant detection fails; less comparable to literature. |
 | `pelvis_rotation_at_contact_deg` | deg | **A** | Welch et al. (1995); Fortenbaugh et al. (2011): ~40–75° open in professionals. Single-frame read, so it carries no differentiation noise — the most robust metric in this group on markerless data. Contact is proxied by peak pelvis angular velocity. |
 | `pelvis_tilt_range_deg` | deg | B | Anterior/posterior tilt range. Fortenbaugh (2011) reports tilt; the range-over-swing form is ours. |
-| `pelvis_list_range_deg` | deg | B | Pelvic obliquity. McNally et al. (2014) relate obliquity to weight shift. |
+| `pelvis_list_range_deg` | deg | C | Pelvic obliquity as a weight-shift proxy. No batting reference. |
 | `pelvis_tz_range_m` | m | B | Lateral pelvis translation. Welch et al. (1995). |
 | `pelvis_torso_contribution_pct` | % | **C** | Pelvis share of pelvis + arm angular velocity at peak. Conceptually parallel to Blast Motion's "Body Rotation", but **their formula is proprietary and unpublished — this is our approximation and the two should not be expected to agree.** Renamed away from their term deliberately. |
 
@@ -81,10 +81,10 @@ guidance. The requirement is that they are labeled honestly.
 
 | Metric | Units | Rating | Basis |
 |---|---|---|---|
-| `stride_length_m` | m | **A** | Welch et al. (1995); Fortenbaugh (2011). Ankle-to-ankle horizontal distance at contact. |
+| `stride_length_m` | m | **A** | Escamilla et al. (2009): 47–48% of height ankle to ankle in skilled youth and adults. Ankle-to-ankle horizontal distance at contact. |
 | `stride_ratio` | — | **A** | Height-normalized stride, standard in the same sources. |
 | `stride_efficiency_pct` | % | **C** | Fraction of stride converted to forward CoM motion. Not a named metric in the literature; our own definition. |
-| `plant_frame` / `plant_method` | frame / label | B | Event detection methodology per Bruening & Ridge (2012). |
+| `plant_frame` / `plant_method` | frame / label | B | Event detection methodology per Bruening & Ridge (2014). |
 
 ## Lower-body kinematics and kinetics
 
@@ -93,12 +93,12 @@ guidance. The requirement is that they are labeled honestly.
 | `peak_hip_flexion_r/l_deg` | deg | **A** | Standard joint-angle reporting. Fortenbaugh (2011); Welch et al. (1995). |
 | `peak_knee_flexion_r/l_deg` | deg | **A** | As above. Lead-knee extension through contact is a documented bat-speed correlate. |
 | `peak_ankle_dorsiflexion_r/l_deg` | deg | **A** | As above. |
-| `hip_flexion_asymmetry_deg` | deg | B | Krysak et al. (2017) associate >15% asymmetry with injury risk; our peak-difference form is a simplification. |
+| `hip_flexion_asymmetry_deg` | deg | C | Our own measure. No published batting asymmetry study; Plummer et al. (2023) found no asymmetry-injury link in position players. |
 | `knee_flexion_asymmetry_deg` | deg | B | As above. |
-| `peak_knee_torque_r/l_Nm` | N·m | B | τ = I·α with de Leva thigh inertia. Chu et al. (2010); MacWilliams et al. (1998). Limitation 1 applies strongly. |
+| `peak_knee_torque_r/l_Nm` | N·m | B | τ = I·α with de Leva thigh inertia. Ae et al. (2017); Chu et al. (2010, golf). Limitation 1 applies strongly. |
 | `peak_ankle_torque_r/l_Nm` | N·m | B | As above with shank inertia. Most GRF-sensitive metric in the system — interpret with caution. |
 | `peak_knee_power_r/l_W` | W | B | P = τ·ω. Fortenbaugh (2011). |
-| `peak_lead_hip_ir_torque_Nm` | N·m | B | MacWilliams et al. (1998) identify lead-hip internal rotation as the drive behind pelvis rotation. Returns 0 when handedness is unknown rather than guessing the leg, since the trail hip is a different action. |
+| `peak_lead_hip_ir_torque_Nm` | N·m | B | Ae et al. (2017): hip torques do most of the lower-body work in batting. Returns 0 when handedness is unknown rather than guessing the leg, since the trail hip is a different action. |
 
 ## Energy transfer
 
@@ -124,9 +124,9 @@ guidance. The requirement is that they are labeled honestly.
 
 | Metric | Units | Rating | Basis |
 |---|---|---|---|
-| `lateral_sway_range_m` | m | B | McNally et al. (2014). |
+| `lateral_sway_range_m` | m | C | Our own measure; no batting study measures sway. Not in the mechanics score. |
 | `lateral_sway_at_plant_m` | m | B | As above. |
-| `weight_shift_timing_pct` | % of swing | B | MacWilliams et al. (1998) establish weight-transfer timing; the literature reports it in ms from plant, we report % of swing. |
+| `weight_shift_timing_pct` | % of swing | B | Fortenbaugh et al. (2011): front-foot force timing differs between successful and unsuccessful swings; the literature reports ms, we report % of swing. |
 
 ## Arms
 
@@ -134,7 +134,7 @@ guidance. The requirement is that they are labeled honestly.
 |---|---|---|---|
 | `peak_arm_flex_l_deg` | deg | **A** | Escamilla et al. (2009), baseball hitting joint angles. |
 | `peak_elbow_flex_l_deg` | deg | **A** | As above. |
-| `arm_flex_asymmetry_deg` | deg | B | Krysak et al. (2017) asymmetry concept. |
+| `arm_flex_asymmetry_deg` | deg | C | Our own measure; no batting asymmetry study. |
 | `peak_prosup_r/l_deg` | deg | **A** | Welch et al. (1995). |
 
 ## Bat / output
@@ -152,26 +152,31 @@ guidance. The requirement is that they are labeled honestly.
 ## References
 
 - Anderson, B. C., Wright, I. C., & Stefanyshyn, D. J. (2006). Segmental sequencing of kinetic energy in the golf swing. *The Engineering of Sport 6*.
-- Bruening, D. A., & Ridge, S. T. (2012). Automated event detection algorithms in pathological gait. *Gait & Posture*, 35(3).
+- Ae, K., Koike, S., Fujii, N., Ae, M., & Kawamura, T. (2017). Kinetic analysis of the lower limbs in baseball tee batting. *Sports Biomechanics*, 16(3), 283–296. https://doi.org/10.1080/14763141.2017.1284257
+- Bruening, D. A., & Ridge, S. T. (2014). Automated event detection algorithms in pathological gait. *Gait & Posture*, 39(1), 472–477. https://doi.org/10.1016/j.gaitpost.2013.08.023
 - Cheetham, P. J., Martin, P. E., Mottram, R. E., & St. Laurent, B. F. (2001). The importance of stretching the "X-Factor" in the downswing of golf. *Optimising Performance in Golf*.
-- Cheetham, P. J., et al. (2008). The energy flow of the golf swing. *Science and Golf V*.
-- Chu, Y., Sell, T. C., & Lephart, S. M. (2010). The relationship between biomechanical variables and driving performance during the golf swing. *Journal of Sports Sciences*, 28(11).
+- Cheetham, P. J., Rose, G. A., Hinrichs, R. N., et al. (2008). Comparison of kinematic sequence parameters between amateur and professional golfers. In *Science and Golf V*, 30–36.
+- Chu, Y., Sell, T. C., & Lephart, S. M. (2010). The relationship between biomechanical variables and driving performance during the golf swing. *Journal of Sports Sciences*, 28(11), 1251–1259. https://doi.org/10.1080/02640414.2010.507249
 - de Leva, P. (1996). Adjustments to Zatsiorsky-Seluyanov's segment inertia parameters. *Journal of Biomechanics*, 29(9), 1223–1230.
-- Escamilla, R. F., et al. (2009). A comparison of age level on baseball hitting kinematics. *Journal of Applied Biomechanics*, 25(3).
+- Escamilla, R. F., Fleisig, G. S., DeRenne, C., Taylor, M. K., Moorman, C. T., Imamura, R., Barakatt, E., & Andrews, J. R. (2009). A comparison of age level on baseball hitting kinematics. *Journal of Applied Biomechanics*, 25(3), 210–218. https://doi.org/10.1123/jab.25.3.210
+- Fleisig, G. S., Hsu, W. K., Fortenbaugh, D., Cordover, A., & Press, J. M. (2013). Trunk axial rotation in baseball pitching and batting. *Sports Biomechanics*, 12(4), 324–333. https://doi.org/10.1080/14763141.2013.838693
+- Fluit, R., et al. (2014). Prediction of ground reaction forces and moments during various activities of daily living. *Journal of Biomechanics*, 47(10).
 - Fortenbaugh, D. (2011). *The Biomechanics of the Baseball Swing*. Doctoral dissertation, University of Miami.
-- Krysak, S., et al. (2017). Kinetic asymmetry and injury risk in rotational athletes. *Sports Biomechanics*.
-- Kwon, Y.-H., Han, K. H., Como, C., Lee, S., & Singhal, K. (2013). Validity of the X-Factor computation methods and relationship between the X-Factor parameters and clubhead velocity. *Sports Biomechanics*, 12(3).
-- MacKenzie, S. J. (2012). Club position relative to the golfer's swing plane meaningfully affects swing dynamics. *Sports Biomechanics*, 11(2).
-- MacWilliams, B. A., Choi, T., Perezous, M. K., Chao, E. Y., & McFarland, E. G. (1998). Characteristic ground-reaction forces in baseball pitching. *American Journal of Sports Medicine*, 26(1).
-- McNally, M. P., Borstad, J. D., Oñate, J. A., & Chaudhari, A. M. (2014). Stride leg ground reaction forces in baseball pitching. *Journal of Applied Biomechanics*, 31(4).
+- Fortenbaugh, D., Fleisig, G., Onar-Thomas, A., & Asfour, S. (2011). The effect of pitch type on ground reaction forces in the baseball swing. *Sports Biomechanics*, 10(4), 270–279. https://doi.org/10.1080/14763141.2011.629205
+- Hoechstetter, A., Jump, I. P., Zappa, R. M., & Oliver, G. D. (2026). The relationship between hip-shoulder separation angle and bat speed in division I batters. *Journal of Biomechanics*, 207, 113550. https://doi.org/10.1016/j.jbiomech.2026.113550
+- Kwon, Y.-H., Han, K. H., Como, C., Lee, S., & Singhal, K. (2013). Validity of the X-Factor computation methods and relationship between the X-Factor parameters and clubhead velocity in skilled golfers. *Sports Biomechanics*, 12(3), 231–246. https://doi.org/10.1080/14763141.2013.771896
+- MacKenzie, S. J. (2012). Club position relative to the golfer's swing plane meaningfully affects swing dynamics. *Sports Biomechanics*, 11(2), 149–164. https://doi.org/10.1080/14763141.2011.638388
 - Myers, J., et al. (2008). The role of upper torso and pelvis rotation in driving performance during the golf swing. *Journal of Sports Sciences*, 26(2).
 - Nesbit, S. M., & Serrano, M. (2005). Work and power analysis of the golf swing. *Journal of Sports Science and Medicine*, 4(4).
 - Putnam, C. A. (1993). Sequential motions of body segments in striking and throwing skills. *Journal of Biomechanics*, 26(Suppl 1).
 - Robertson, D. G. E., & Winter, D. A. (1980). Mechanical energy generation, absorption and transfer amongst segments during walking. *Journal of Biomechanics*, 13(10).
 - Robertson, D. G. E., Caldwell, G. E., Hamill, J., Kamen, G., & Whittlesey, S. N. *Research Methods in Biomechanics* (2nd ed.).
-- Taguchi, Y., et al. (2023). Kinematic sequence in Division I collegiate batters. *Fukushima Journal of Medical Science*.
+- Perrett, C. S. (2024). The contribution of lower-body kinematics to pitching and hitting performance in baseball: Utilizing the OpenBiomechanics Project. *Journal of Applied Biomechanics*, 40(2), 98–104. https://doi.org/10.1123/jab.2023-0045
+- Plummer, H. A., et al. (2023). Hip abductor strength asymmetry: Relationship to upper extremity injury in professional baseball players. *Sports Health*, 15(2), 295–302. https://doi.org/10.1177/19417381221078830
+- Taguchi, N., Izumi, S., & Miyakawa, S. (2023). Analysis of trunk rotation during baseball batting with lumbar disc degeneration. *Fukushima Journal of Medical Science*, 69(1), 1–10. https://doi.org/10.5387/fms.2022-14
+- Talmage, J. D., Bordelon, N., Wasserberger, K., & Oliver, G. D. (2024). Energy flow during baseball machine hitting. *International Journal of Sports Medicine*, 45(12), 937–944. https://doi.org/10.1055/a-2350-8567
 - Uhlrich, S. D., et al. (2023). OpenCap: Human movement dynamics from smartphone videos. *PLOS Computational Biology*, 19(10).
-- Welch, C. M., Banks, S. A., Cook, F. F., & Draovitch, P. (1995). Hitting a baseball: A biomechanical description. *JOSPT*, 22(5).
+- Welch, C. M., Banks, S. A., Cook, F. F., & Draovitch, P. (1995). Hitting a baseball: A biomechanical description. *JOSPT*, 22(5), 193–201. https://doi.org/10.2519/jospt.1995.22.5.193
 - Winter, D. A. *Biomechanics and Motor Control of Human Movement* (4th ed.).
 
 ---

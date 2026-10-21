@@ -26,9 +26,9 @@ A, B, C = 'A', 'B', 'C'
 METRIC_EVIDENCE = {
     # ── Pelvis / lower half ─────────────────────────────────────────────────
     'peak_pelvis_omega_3d_deg_s': (
-        A, 'Fortenbaugh 2011; Cheetham et al. 2008',
-        'Most-cited single power correlate in rotational sport. '
-        'Reference: 500-700 deg/s competitive HS/college, 700-900 professional.'),
+        A, 'Welch et al. 1995; Escamilla et al. 2009; Perrett 2024',
+        'Associated with bat speed (Perrett 2024, R = .18). '
+        'Reference: 632 +/- 117 deg/s skilled youth, 678 +/- 87 adults (Escamilla 2009); 714 (Welch 1995).'),
     'time_to_peak_pelvis_from_plant_ms': (
         A, 'Welch et al. 1995',
         'Elite hitters peak ~50-100 ms after front-foot plant. Negative means the '
@@ -50,20 +50,20 @@ METRIC_EVIDENCE = {
         'Proximal deceleration is the established mechanism of distal '
         'acceleration; the 200 ms window and steepest-slope definition are ours.'),
     'peak_lead_hip_ir_torque_Nm': (
-        B, 'MacWilliams et al. 1998',
-        'Lead-hip internal rotation drives pelvis rotation. Returns 0 when '
+        B, 'Ae et al. 2017; Talmage et al. 2024',
+        'Hip torques do most of the lower-body work in batting. Returns 0 when '
         'handedness is unknown rather than guessing the leg.'),
     'pelvis_tilt_range_deg': (B, 'Fortenbaugh 2011', 'Range-over-swing form is ours.'),
-    'pelvis_list_range_deg': (B, 'McNally et al. 2014', 'Obliquity as a weight-shift proxy.'),
+    'pelvis_list_range_deg': (C, 'Ours; no batting reference', 'Obliquity as a weight-shift proxy.'),
     'pelvis_tz_range_m': (B, 'Welch et al. 1995', ''),
 
     # ── Separation and sequence ─────────────────────────────────────────────
     'max_separation_deg': (
-        A, 'Cheetham et al. 2001; Myers et al. 2008',
-        'X-Factor. Strongly linked to ball velocity. Requires a trustworthy '
+        A, 'Fleisig et al. 2013; Hoechstetter et al. 2026; Kwon et al. 2013 (golf, method)',
+        'X-Factor. ~+0.05 m/s bat speed per degree in D1 batters (Hoechstetter 2026). Requires a trustworthy '
         'thorax-vs-pelvis signal — see the capture caveats.'),
     'x_factor_stretch_deg': (
-        A, 'Cheetham et al. 2008',
+        B, 'Cheetham et al. 2001 (golf)',
         'Separation gained after transition predicts speed better than static '
         'X-Factor. Same signal dependency as above.'),
     'sequence_timing_ms': (
@@ -88,10 +88,10 @@ METRIC_EVIDENCE = {
     'peak_knee_flexion_l_deg': (A, 'Fortenbaugh 2011; Chu et al. 2010', ''),
     'peak_ankle_dorsiflexion_r_deg': (A, 'Fortenbaugh 2011', ''),
     'peak_ankle_dorsiflexion_l_deg': (A, 'Fortenbaugh 2011', ''),
-    'hip_flexion_asymmetry_deg': (B, 'Krysak et al. 2017', 'Peak-difference form is ours.'),
-    'knee_flexion_asymmetry_deg': (B, 'Krysak et al. 2017', 'Peak-difference form is ours.'),
-    'peak_knee_torque_r_Nm': (B, 'Chu et al. 2010; MacWilliams et al. 1998', 'No measured GRF.'),
-    'peak_knee_torque_l_Nm': (B, 'Chu et al. 2010; MacWilliams et al. 1998', 'No measured GRF.'),
+    'hip_flexion_asymmetry_deg': (C, 'Ours; no batting asymmetry study', 'Peak-difference form is ours.'),
+    'knee_flexion_asymmetry_deg': (C, 'Ours; no batting asymmetry study', 'Peak-difference form is ours.'),
+    'peak_knee_torque_r_Nm': (B, 'Ae et al. 2017; Chu et al. 2010 (golf)', 'No measured GRF.'),
+    'peak_knee_torque_l_Nm': (B, 'Ae et al. 2017; Chu et al. 2010 (golf)', 'No measured GRF.'),
     'peak_ankle_torque_r_Nm': (B, 'Winter, Biomechanics', 'Most GRF-sensitive metric here.'),
     'peak_ankle_torque_l_Nm': (B, 'Winter, Biomechanics', 'Most GRF-sensitive metric here.'),
     'peak_knee_power_r_W': (B, 'Fortenbaugh 2011', ''),
@@ -100,8 +100,8 @@ METRIC_EVIDENCE = {
     # ── Rotational kinetics ─────────────────────────────────────────────────
     'peak_hip_torque_Nm': (B, 'Nesbit & Serrano 2005', 'No measured GRF.'),
     'peak_shoulder_torque_Nm': (B, 'Nesbit & Serrano 2005', 'No measured GRF.'),
-    'peak_hip_power_W': (B, 'MacWilliams et al. 1998; Anderson et al. 2006', ''),
-    'peak_shoulder_power_W': (B, 'MacWilliams et al. 1998; Anderson et al. 2006', ''),
+    'peak_hip_power_W': (B, 'Ae et al. 2017; Talmage et al. 2024', ''),
+    'peak_shoulder_power_W': (B, 'Talmage et al. 2024; Anderson et al. 2006 (golf)', ''),
     'hip_inertia_kg_m2': (A, 'de Leva 1996', 'Standard segment inertia parameters.'),
     'shoulder_inertia_kg_m2': (A, 'de Leva 1996', 'Standard segment inertia parameters.'),
     'hip_power_per_kg': (A, 'Winter, Biomechanics', 'Body-mass normalization.'),
@@ -135,16 +135,16 @@ METRIC_EVIDENCE = {
     'peak_pelvis_force_resultant_N': (C, 'as above', 'Kinematics-derived proxy.'),
 
     # ── Weight shift ────────────────────────────────────────────────────────
-    'lateral_sway_range_m': (B, 'McNally et al. 2014', ''),
-    'lateral_sway_at_plant_m': (B, 'McNally et al. 2014', ''),
+    'lateral_sway_range_m': (C, 'Ours; no batting reference', ''),
+    'lateral_sway_at_plant_m': (C, 'Ours; no batting reference', ''),
     'weight_shift_timing_pct': (
-        B, 'MacWilliams et al. 1998',
-        'Literature reports ms from plant; we report % of swing.'),
+        B, 'Fortenbaugh et al. 2011 (front-foot force timing)',
+        'Literature reports ms; we report % of swing.'),
 
     # ── Arms / output ───────────────────────────────────────────────────────
     'peak_arm_flex_l_deg': (A, 'Escamilla et al. 2009', ''),
     'peak_elbow_flex_l_deg': (A, 'Escamilla et al. 2009', ''),
-    'arm_flex_asymmetry_deg': (B, 'Krysak et al. 2017', ''),
+    'arm_flex_asymmetry_deg': (C, 'Ours; no batting asymmetry study', ''),
     'peak_prosup_r_deg': (A, 'Welch et al. 1995', ''),
     'peak_prosup_l_deg': (A, 'Welch et al. 1995', ''),
     'max_hand_speed_mph': (

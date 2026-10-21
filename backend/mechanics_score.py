@@ -5,9 +5,10 @@ It replaces the v1 "physics efficiency" checklist (start at 100, subtract fixed
 penalties) with these rules:
 
 1. Only mechanisms with published evidence drive the score, one vote each:
-   sequencing, hip-shoulder separation, pelvis drive, lead-leg block, stride
-   and stability. Our own composite measures (energy-transfer proxy, stride
-   efficiency, pelvis force proxy) do not count.
+   sequencing, hip-shoulder separation, pelvis drive, lead-leg block and
+   stride. Our own composite measures (energy-transfer proxy, stride
+   efficiency, pelvis force proxy) do not count, and neither does lateral
+   sway: no published batting study measures it.
 2. Every part is scored on a smooth ramp between research reference values for
    the athlete's level; there are no cliff edges where one degree costs 20 points.
 3. Weights follow the strength of the evidence and of the published link to
@@ -28,9 +29,10 @@ MIN_COVERAGE = 0.5
 
 LEVELS = ('youth', 'high_school', 'college', 'professional')
 
-# Peak pelvis angular velocity (deg/s): Fortenbaugh 2011; Cheetham et al. 2008.
-# Competitive HS/college hitters ~500-700, professionals ~700-900. Youth has no
-# published range; scaled from the HS anchor and marked approximate.
+# Peak pelvis angular velocity (deg/s): Escamilla et al. 2009 report 632 +/- 117
+# for skilled youth (12-17 y) and 678 +/- 87 for college/pro adults; Welch et
+# al. 1995 report 714. Perrett 2024 finds it associated with bat speed. The
+# professional ramp above ~720 is ours.
 PELVIS_SPEED = {
     'youth':        [(250, 0), (400, 60), (550, 100)],
     'high_school':  [(350, 0), (500, 60), (650, 100)],
@@ -40,9 +42,6 @@ PELVIS_SPEED = {
 # Pelvis peak after front-foot plant (ms): Welch et al. 1995, elite ~50-100 ms.
 # Negative means the pelvis peaked before the foot landed (spinning open early).
 PELVIS_TIMING = [(-60, 0), (0, 50), (50, 100), (100, 100), (180, 55), (260, 20)]
-# Lateral sway range (m): McNally et al. 2014 relate sway to rotational
-# stability; the 12 cm "excessive" mark is ours.
-SWAY = [(0.04, 100), (0.08, 80), (0.12, 50), (0.20, 0)]
 
 # Values beyond these are not one swing measured well: a whole clip's movement,
 # a tracking jump, or an event detected in the wrong place. Such a part is
@@ -52,7 +51,6 @@ PLAUSIBLE = {
     'peak_pelvis_omega_3d_deg_s': 1500,
     'lead_leg_block': 100,              # deg of knee extension into contact (skilled adults ~59)
     'stride_ratio': 1.3,
-    'lateral_sway_range_m': 0.30,
 }
 
 
@@ -115,17 +113,17 @@ def compute_mechanics_score(metrics: Dict, dims: Dict, evidence: Dict, skill_lev
     lo, hi = bench.get('sequence_timing_ms', (20, 55))
     ok, why = _reliable(evidence, 'sequence_timing_ms', 'proper_sequence')
     if lag is None or (lag == 0 and not metrics.get('proper_sequence')):
-        part('sequencing', 'Sequencing', 0.25, 'A', 'Kwon et al. 2013; Putnam 1993; Driveline OBP',
+        part('sequencing', 'Sequencing', 0.25, 'A', 'Welch et al. 1995; Escamilla et al. 2009; Taguchi et al. 2023',
              lag, 'ms', 0, f'pelvis peaks {lo}-{hi} ms before torso', 'sequence timing not measured')
     elif not ok or _implausible('sequence_timing_ms', lag):
         why = why or _implausible('sequence_timing_ms', lag)
-        part('sequencing', 'Sequencing', 0.25, 'A', 'Kwon et al. 2013; Putnam 1993; Driveline OBP',
+        part('sequencing', 'Sequencing', 0.25, 'A', 'Welch et al. 1995; Escamilla et al. 2009; Taguchi et al. 2023',
              lag, 'ms', 0, f'pelvis peaks {lo}-{hi} ms before torso', why)
     else:
         s = _ramp(lag, [(-40, 0), (0, 30), (lo, 100), (hi, 100), (hi + 60, 55), (hi + 140, 25)])
         if metrics.get('proper_sequence') is False:
             s = min(s, 25.0)          # out of order: the chain is not building from the ground
-        part('sequencing', 'Sequencing', 0.25, 'A', 'Kwon et al. 2013; Putnam 1993; Driveline OBP',
+        part('sequencing', 'Sequencing', 0.25, 'A', 'Welch et al. 1995; Escamilla et al. 2009; Taguchi et al. 2023',
              lag, 'ms', s, f'pelvis peaks {lo}-{hi} ms before torso')
 
     # 2. Hip-shoulder separation (X-factor).
@@ -134,14 +132,14 @@ def compute_mechanics_score(metrics: Dict, dims: Dict, evidence: Dict, skill_lev
     ok, why = _reliable(evidence, 'max_separation_deg')
     ref = f'{xlo}-{xhi}° at this level'
     if not sep:
-        part('separation', 'Hip-shoulder separation', 0.20, 'A', 'Cheetham et al. 2001, 2008; Myers et al. 2008',
+        part('separation', 'Hip-shoulder separation', 0.20, 'A', 'Fleisig et al. 2013; Hoechstetter et al. 2026',
              sep, '°', 0, ref, 'separation not measured')
     elif not ok:
-        part('separation', 'Hip-shoulder separation', 0.20, 'A', 'Cheetham et al. 2001, 2008; Myers et al. 2008',
+        part('separation', 'Hip-shoulder separation', 0.20, 'A', 'Fleisig et al. 2013; Hoechstetter et al. 2026',
              sep, '°', 0, ref, why)
     else:
         s = _ramp(sep, [(xlo * 0.4, 0), (xlo, 85), ((xlo + xhi) / 2, 100), (xhi, 95), (xhi + 20, 50)])
-        part('separation', 'Hip-shoulder separation', 0.20, 'A', 'Cheetham et al. 2001, 2008; Myers et al. 2008',
+        part('separation', 'Hip-shoulder separation', 0.20, 'A', 'Fleisig et al. 2013; Hoechstetter et al. 2026',
              sep, '°', s, ref)
 
     # 3. Pelvis drive: how fast, and when relative to foot plant.
@@ -159,7 +157,7 @@ def compute_mechanics_score(metrics: Dict, dims: Dict, evidence: Dict, skill_lev
         ok_t, _ = _reliable(evidence, 'time_to_peak_pelvis_from_plant_ms')
         if ok_t:
             sub.append((0.3, _ramp(t, PELVIS_TIMING)))
-    src = 'Fortenbaugh 2011; Cheetham et al. 2008; Welch et al. 1995'
+    src = 'Welch et al. 1995; Escamilla et al. 2009; Perrett 2024'
     if sub:
         s = sum(a * b for a, b in sub) / sum(a for a, _ in sub)
         part('pelvis_drive', 'Pelvis drive', 0.25, 'A', src, w, '°/s', s, ref)
@@ -189,15 +187,6 @@ def compute_mechanics_score(metrics: Dict, dims: Dict, evidence: Dict, skill_lev
     else:
         part('stride', 'Stride', 0.10, 'A', src, sr, '× height',
              _ramp(sr, _stars_to_points(table)), f'{table[2][0]}-{table[4][0]} × height at this level')
-
-    # 6. Stability: lateral sway of the pelvis through the swing.
-    sway = _num(metrics, 'lateral_sway_range_m')
-    src = 'McNally et al. 2014'
-    if not sway or _implausible('lateral_sway_range_m', sway):
-        part('stability', 'Stability', 0.05, 'B', src, sway, 'm', 0, 'under 8 cm of sway',
-             _implausible('lateral_sway_range_m', sway) or 'sway not measured')
-    else:
-        part('stability', 'Stability', 0.05, 'B', src, sway, 'm', _ramp(sway, SWAY), 'under 8 cm of sway')
 
     scored = [p for p in parts if p['status'] == 'scored']
     total_w = sum(p['weight'] for p in parts)

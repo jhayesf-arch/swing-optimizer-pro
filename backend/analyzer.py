@@ -605,7 +605,7 @@ class RefinedSwingMetrics:
     # inherits the accuracy of this event.
     contact_detection_method: str = "none"
     # Peak lead-hip internal-rotation torque — the drive behind pelvis rotation.
-    # MacWilliams et al. (1998).
+    # Ae et al. (2017); Talmage et al. (2024).
     peak_lead_hip_ir_torque_Nm: float = 0.0
     # Rate the pelvis sheds angular velocity after its peak. Putnam (1993): rapid
     # proximal deceleration is what transfers momentum distally. A pelvis that stays
@@ -687,7 +687,7 @@ def _build_data_quality(trc_metrics: dict, has_grf: bool = False) -> dict:
 
     return {
         "opencap_validation": {
-            "source": "Uhlrich et al. 2023, Nature Communications",
+            "source": "Uhlrich et al. 2023, PLOS Computational Biology",
             "finding": "OpenCap kinematics validated against force plates: GRF MAE = 6.2% BW",
             "implication": (
                 "The .mot kinematics driving this analysis are from the same validated pipeline. "
@@ -2008,7 +2008,7 @@ class RefinedHittingOptimizer:
                 result[f'peak_{seg}_torque_{side}_Nm'] = float(np.max(np.abs(torque)))
                 result[f'peak_{seg}_power_{side}_W']   = float(np.max(np.abs(power)))
 
-        # ── Lead-hip internal-rotation torque (MacWilliams et al. 1998) ─────────
+        # ── Lead-hip internal-rotation torque (Ae et al. 2017) ─────────
         # The lead hip is what actually drives pelvis rotation, so its IR torque is
         # the kinetic counterpart to peak pelvis angular velocity: same event, one
         # measured as cause and one as effect. A hitter can show respectable pelvis

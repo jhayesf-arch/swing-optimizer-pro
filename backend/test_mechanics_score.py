@@ -15,7 +15,7 @@ def score(metrics, dims=DIMS, evidence=None, level='college'):
 
 def test_a_sound_college_swing_scores_high_and_uses_every_part():
     r = score(GOOD)
-    assert r['score'] >= 85 and r['coverage'] == 1.0 and r['parts_scored'] == 6, r
+    assert r['score'] >= 85 and r['coverage'] == 1.0 and r['parts_scored'] == 5, r
 
 
 def test_no_cliff_edges():
@@ -33,11 +33,11 @@ def test_out_of_order_sequence_caps_sequencing():
 
 def test_unreliable_and_implausible_parts_are_skipped_not_scored():
     ev = {'max_separation_deg': {'reliable': False, 'caveat': 'clipped at the joint limit'}}
-    r = score({**GOOD, 'lateral_sway_range_m': 0.52}, evidence=ev)
+    r = score({**GOOD, 'stride_ratio': 2.1}, evidence=ev)
     by = {p['key']: p for p in r['components']}
     assert by['separation']['status'] == 'skipped' and 'clipped' in by['separation']['reason']
-    assert by['stability']['status'] == 'skipped' and 'plausible' in by['stability']['reason']
-    assert r['parts_scored'] == 4 and r['score'] is not None
+    assert by['stride']['status'] == 'skipped' and 'plausible' in by['stride']['reason']
+    assert r['parts_scored'] == 3 and r['score'] is not None
 
 
 def test_too_little_data_gives_no_score():
