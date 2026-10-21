@@ -35,7 +35,7 @@ A plain-English explanation of every number in your swing report. No biomechanic
 - **Pelvis Direction at Contact\*** — How "open" your hips are when you hit the ball. Good hitters have their hips already cleared/open at contact.
 - **Upper Torso Direction at Contact\*** — How open your shoulders are at contact (they should still lag the hips a touch).
 - **Energy Transfer** — How much of your total energy actually ends up in the arms and bat (the payoff of good sequencing). This is our own measure, not a standard one — best for tracking your own progress rather than ranking against others.
-- **Lead‑Leg Block\*** — How much your front knee *straightens* (extends) from foot plant to contact. A firm, extending front leg "posts up" and redirects your momentum into rotation. This is one of the strongest bat‑speed correlates in the Driveline OpenBiomechanics dataset — a soft, collapsing front leg leaks energy that should whip into the barrel.
+- **Lead‑Leg Block\*** — How much your front knee *straightens* (extends) from foot plant to contact. A firm, extending front leg "posts up" and redirects your momentum into rotation. Skilled adult hitters straighten it about 59° into contact, youth about 32° (Escamilla 2009), and more extension goes with more bat speed (Perrett 2024) — a soft, collapsing front leg leaks energy that should whip into the barrel.
 - **Sequence Quality\*** — Whether your body fires in the right *order* with the right timing (hips → torso → arms → hands), and how cleanly.
 - **Hand / Bat Speed\*** — Same as the headline number: peak hand speed through the zone (mph).
 - **Follow‑Through Quality** — How smoothly you decelerate after contact — abrupt stops usually mean energy leaked instead of going into the ball.

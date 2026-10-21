@@ -92,17 +92,18 @@ DIMENSION_THRESHOLDS = {
     },
     # PHASE 2 — STRIDE
     'stride_length': {
-        # stride_ratio (stride / height).
-        # SOURCE: Escamilla et al. 2009 (J Appl Biomech, n=20 NCAA Div I):
-        #   Mean stride length = 0.72 ± 0.11 × height for collegiate hitters.
-        # Welch et al. 1995 (JOSPT): stride described qualitatively, no ratio given.
-        # Fortenbaugh et al. 2011 (Sports Biomech): stride 0.60-0.85 × height in MLB.
-        # Professional anchor: Fortenbaugh 2011 mean ~0.75, elite ~0.85.
-        # Youth/HS scaled down proportionally (no published data).
-        'youth':        [(0.0,1),(0.25,2),(0.45,3),(0.60,4),(0.75,5)],
-        'high_school':  [(0.0,1),(0.30,2),(0.50,3),(0.65,4),(0.80,5)],
-        'college':      [(0.0,1),(0.35,2),(0.55,3),(0.72,4),(0.85,5)],
-        'professional': [(0.0,1),(0.40,2),(0.60,3),(0.75,4),(0.88,5)],
+        # stride_ratio = ankle-to-ankle distance at contact / height.
+        # SOURCE: Escamilla et al. 2009 (J Appl Biomech 25(3), Table 6), the same
+        #   ankle-to-ankle definition: skilled youth (12-17 y) 47 ± 3% of height,
+        #   skilled adults (college + pro, statistically equivalent) 48 ± 5%.
+        #   Stride did not differ between youth and adults.
+        # Five stars = the skilled-hitter mean; each star below is one adult SD
+        # (0.05). Longer is not shown to be better, so it is not rewarded beyond
+        # the mean; an over-long stride is not penalised either (no data).
+        'youth':        [(0.0,1),(0.32,2),(0.37,3),(0.42,4),(0.47,5)],
+        'high_school':  [(0.0,1),(0.32,2),(0.37,3),(0.42,4),(0.47,5)],
+        'college':      [(0.0,1),(0.33,2),(0.38,3),(0.43,4),(0.48,5)],
+        'professional': [(0.0,1),(0.33,2),(0.38,3),(0.43,4),(0.48,5)],
     },
     'forward_move': {
         # stride_efficiency_pct. No direct hitting literature by level.
@@ -223,19 +224,21 @@ DIMENSION_THRESHOLDS = {
         'professional': [(0,1),(20,2),(35,3),(50,4),(65,5)],
     },
     'lead_leg_block': {
-        # Lead-knee extension from front-foot plant to contact (degrees straightened).
-        # A firm, extending ("blocking") front leg posts up and redirects linear
-        # momentum into rotation — one of the strongest bat-speed / exit-velocity
-        # correlates in the Driveline OpenBiomechanics Project (OBP) hitting dataset.
-        # SOURCE: OpenBiomechanics Project (baseball hitting); Driveline Baseball,
-        #   "Hitting Biomechanics" (2022) — lead-knee extension velocity & ROM
-        #   correlate to bat speed. No fully level-stratified public table exists;
-        #   youth/HS/college scaled proportionally from the pro anchor. Treat as an
-        #   approximate benchmark (relative-to-cohort), not a hard percentile.
-        'youth':        [(0,1),(5,2),(12,3),(20,4),(28,5)],
-        'high_school':  [(0,1),(8,2),(16,3),(24,4),(32,5)],
-        'college':      [(0,1),(10,2),(18,3),(28,4),(36,5)],
-        'professional': [(0,1),(12,2),(22,3),(32,4),(42,5)],
+        # Lead-knee extension from its deepest flexion after plant to contact
+        # (degrees straightened). A firm, extending front leg posts up and
+        # redirects linear momentum into rotation.
+        # SOURCE: Escamilla et al. 2009 (J Appl Biomech 25(3), Table 3): the lead
+        #   knee goes from 70 ± 15° flexion when the hands start forward to
+        #   11 ± 4° at contact in skilled adults (~59° of extension) and from
+        #   47 ± 19° to 15 ± 11° in skilled youth (~32°). Perrett 2024 (J Appl
+        #   Biomech 40(2)) finds lead-knee extension associated with bat speed
+        #   (Spearman R = .09-.16; small).
+        # Five stars = the skilled mean for the level, stars below in equal steps.
+        # High school has no published value: interpolated between youth and adult.
+        'youth':        [(0,1),(8,2),(16,3),(24,4),(32,5)],
+        'high_school':  [(0,1),(11,2),(23,3),(34,4),(45,5)],
+        'college':      [(0,1),(15,2),(30,3),(44,4),(59,5)],
+        'professional': [(0,1),(15,2),(30,3),(44,4),(59,5)],
     },
 }
 
@@ -259,7 +262,7 @@ DIMENSION_WEIGHTS = {
     'sequence_quality': 0.10,
     'hand_speed': 0.13,  # Most reliable discriminator — directly measured from TRC
     'follow_through_quality': 0.04,
-    'lead_leg_block': 0.07,  # OBP: lead-knee extension is a top bat-speed correlate
+    'lead_leg_block': 0.07,  # lead-knee extension correlates with bat speed (Perrett 2024)
 }
 # NOTE: weights need not sum to 1.0 — build_phase_report normalises by total weight.
 
@@ -327,7 +330,7 @@ DRILL_LIBRARY = {
     },
     'stride_length': {
         'cue': 'Stride to a firm, athletic base',
-        'drill': 'Line/tee stride-length drill: mark a target ~70-85% of height and repeat the stride to plant.',
+        'drill': 'Line/tee stride-length drill: mark a target ~45-50% of height, ankle to ankle, and repeat the stride to plant.',
         'why': 'Stride length sets how much forward momentum you can convert into ground force and rotation.',
     },
     'forward_move': {
@@ -363,7 +366,7 @@ DRILL_LIBRARY = {
     'lead_leg_block': {
         'cue': 'Post up on a firm, straightening front leg',
         'drill': 'Rear-foot-elevated split squats for front-leg strength + "step-back / walkaway" swings to feel the lead knee brace and extend into contact.',
-        'why': 'Lead-knee extension into contact is one of the strongest bat-speed correlates in the OpenBiomechanics dataset — a soft front leg leaks energy that should whip into the barrel.',
+        'why': 'Faster hitters extend the lead knee more into contact (Escamilla 2009; Perrett 2024) — a soft front leg leaks energy that should whip into the barrel.',
     },
     'kinetic_chain_efficiency': {
         'cue': 'Slow the hips so the hands can fly',
@@ -373,7 +376,7 @@ DRILL_LIBRARY = {
     'sequence_quality': {
         'cue': 'Fire from the ground up: hips, then torso, then hands',
         'drill': 'Step-behind and pause-load drills that exaggerate pelvis-first sequencing with a clean 30-60ms lag.',
-        'why': 'Out-of-order or simultaneous firing collapses the kinetic chain — the #1 predictor of velocity in Driveline OBP work.',
+        'why': 'Out-of-order or simultaneous firing collapses the kinetic chain — pelvis then torso is the order skilled hitters show (Welch 1995; Escamilla 2009).',
     },
     'hand_speed': {
         'cue': 'Whip the barrel, don’t push it',
@@ -1895,7 +1898,7 @@ class RefinedHittingOptimizer:
                 'no marker data — stride length needs foot markers (.trc)')
 
         # Only meaningful when a real stride was measured.
-        optimal_stride_ratio = 0.75
+        optimal_stride_ratio = 0.48     # skilled-hitter mean, Escamilla et al. 2009
         stride_efficiency_pct = (stride_ratio / optimal_stride_ratio) * 100.0 if stride_detected else 0.0
 
         return {
@@ -2273,7 +2276,7 @@ class RefinedHittingOptimizer:
             # === KINEMATIC SEQUENCING (Proximal-To-Distal) ===
             if not rotation['proper_sequence']:
                 findings.append("Kinematic Sequence Reversal: Distal segments firing prior to proximal.")
-                recommendations.append("URGENT: Initiate swing from the ground up. The gold standard sequence requires Pelvis → Torso → Arms to maximize energy transfer (Driveline OBP: energy transfer features are the #1 predictor of velocity).")
+                recommendations.append("URGENT: Initiate swing from the ground up. The gold standard sequence requires Pelvis → Torso → Arms to maximize energy transfer (Welch 1995; Escamilla 2009).")
                 efficiency_score -= 25
             elif rotation['sequence_timing_ms'] < 20:
                 findings.append("Poor Synchronization: Pelvis and Torso accelerating simultaneously.")
@@ -2696,7 +2699,7 @@ class RefinedHittingOptimizer:
     def calculate_lead_leg_block(self, lower_body: Dict, rotation: Dict, stride: Dict) -> Dict:
         """Lead-leg block: how much the front knee EXTENDS (straightens) from front-foot
         plant to contact. A firm, extending lead leg posts up and redirects momentum into
-        rotation — a top bat-speed correlate in the Driveline OpenBiomechanics dataset.
+        rotation; associated with bat speed (Escamilla 2009; Perrett 2024).
 
         The lead leg is taken from the athlete's stated handedness when known — a
         right-handed hitter strides onto the left leg, and vice versa. Only when
@@ -3032,7 +3035,7 @@ class RefinedHittingOptimizer:
             'value': round(llb_val, 1),
             'unit': '° ext',
             'description': 'Lead (front) knee straightening from foot plant to contact. A firm, '
-                           'extending front leg posts up and whips energy into the barrel (Driveline OBP).',
+                           'extending front leg posts up and whips energy into the barrel (Escamilla 2009; Perrett 2024).',
         }
 
         # Kinetic Chain Efficiency

@@ -464,8 +464,8 @@ level. No cliff edges; one vote per mechanism; our own composite measures
 | Sequencing | 0.25 | `sequence_timing_ms`, `proper_sequence` | pelvis peaks 22–82 ms before torso; out of order caps at 25 | Kwon et al. 2013; Putnam 1993; Driveline OBP |
 | Hip-shoulder separation | 0.20 | `max_separation_deg` | 25–50° | Cheetham et al. 2001, 2008; Myers et al. 2008 |
 | Pelvis drive | 0.25 | `peak_pelvis_omega_3d_deg_s` (70%), `time_to_peak_pelvis_from_plant_ms` (30%) | 550–700°/s; peak 50–100 ms after plant | Fortenbaugh 2011; Cheetham et al. 2008; Welch et al. 1995 |
-| Lead-leg block | 0.15 | lead-knee extension plant→contact | 18–36° | Driveline OpenBiomechanics |
-| Stride | 0.10 | `stride_ratio` | 0.55–0.85 × height | Escamilla et al. 2009; Fortenbaugh 2011 |
+| Lead-leg block | 0.15 | lead-knee extension plant→contact | 30–59° (skilled adult mean 59°) | Escamilla et al. 2009; Perrett 2024 |
+| Stride | 0.10 | `stride_ratio` | 0.38–0.48 × height (skilled mean 0.48) | Escamilla et al. 2009 |
 | Stability | 0.05 | `lateral_sway_range_m` | under 8 cm | McNally et al. 2014 (12 cm mark ours) |
 
 A part is skipped (weights renormalise) when it is missing, flagged unreliable in

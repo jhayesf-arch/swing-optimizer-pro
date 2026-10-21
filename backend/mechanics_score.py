@@ -50,7 +50,7 @@ SWAY = [(0.04, 100), (0.08, 80), (0.12, 50), (0.20, 0)]
 PLAUSIBLE = {
     'sequence_timing_ms': 250,          # |pelvis-to-torso gap|
     'peak_pelvis_omega_3d_deg_s': 1500,
-    'lead_leg_block': 60,               # deg of knee extension into contact
+    'lead_leg_block': 100,              # deg of knee extension into contact (skilled adults ~59)
     'stride_ratio': 1.3,
     'lateral_sway_range_m': 0.30,
 }
@@ -171,7 +171,7 @@ def compute_mechanics_score(metrics: Dict, dims: Dict, evidence: Dict, skill_lev
     d = (dims or {}).get('lead_leg_block') or {}
     llb = _num(d, 'value')
     table = (thresholds.get('lead_leg_block') or {}).get(level)
-    src = 'Driveline OpenBiomechanics (lead-knee extension vs bat speed)'
+    src = 'Escamilla et al. 2009; Perrett 2024'
     if llb is None or d.get('available') is False or not table or _implausible('lead_leg_block', llb):
         part('lead_leg_block', 'Lead-leg block', 0.15, 'B', src, llb, '°', 0,
              'knee extension into contact', _implausible('lead_leg_block', llb) or 'lead-leg block not measured')
@@ -182,7 +182,7 @@ def compute_mechanics_score(metrics: Dict, dims: Dict, evidence: Dict, skill_lev
     # 5. Stride, height-normalised.
     sr = _num(metrics, 'stride_ratio')
     table = (thresholds.get('stride_length') or {}).get(level)
-    src = 'Escamilla et al. 2009; Fortenbaugh 2011'
+    src = 'Escamilla et al. 2009'
     if not sr or not table or _implausible('stride_ratio', sr):
         part('stride', 'Stride', 0.10, 'A', src, sr, '× height', 0, 'stride length / height',
              _implausible('stride_ratio', sr) or 'stride not measured')
