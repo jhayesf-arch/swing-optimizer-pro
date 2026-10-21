@@ -86,6 +86,22 @@ def test_radian_mot_is_loaded_in_degrees():
     assert list(detect_ik_branch_jumps(k)) == ['elbow_flex_l']
 
 
+def test_trunk_flip_is_flagged_and_voids_pelvis_and_sequence():
+    q = np.zeros_like(T)
+    q[60:] = 85.0
+    q[57:60] = -90.0                       # pinned at the limit, then a one-frame flip
+    assert 'lumbar_rotation' in detect_ik_branch_jumps(_kin(lumbar_rotation=q))
+    ev = _evidence({'lumbar_rotation': [1.0]})
+    for m in ('peak_pelvis_omega_3d_deg_s', 'max_separation_deg', 'sequence_timing_ms'):
+        assert not ev[m]['reliable'] and 'trunk angle flips' in ev[m]['caveat'], m
+    assert ev['stride_length_m']['reliable']
+
+
+def test_fast_but_human_trunk_turn_is_not_flagged():
+    q = np.cumsum(np.full_like(T, 900.0 / FS))   # 900 deg/s, a fast real turn
+    assert detect_ik_branch_jumps(_kin(lumbar_rotation=q)) == {}
+
+
 if __name__ == '__main__':
     tests = [v for k, v in dict(globals()).items() if k.startswith('test_')]
     for fn in tests:

@@ -249,10 +249,23 @@ IK_JUMP_LIMITS_DEG_S = {
     'arm_rot': 7500.0,
 }
 
+# The trunk can flip the same way. In a fast turn the shoulder keypoints swap
+# or blur, and IK re-splits the rotation between pelvis and lumbar: on a 60 Hz
+# full-speed swing (Jett, swing_full_speed_3) lumbar_rotation went -90 -> +85
+# deg in one frame (~10,000 deg/s) while the pelvis took an 18 deg step. Trunk
+# axial rotation in batting peaks under ~1,000 deg/s even relative to the
+# ground (Escamilla et al. 2009: 857 deg/s), so 2,500 deg/s relative to the
+# pelvis in one frame can only be an artifact.
+TRUNK_JUMP_LIMITS_DEG_S = {
+    'lumbar_rotation': 2500.0,
+    'lumbar_bending': 2500.0,
+    'lumbar_extension': 2500.0,
+}
+
 
 def detect_ik_branch_jumps(kinematics, start_frame: int = 0) -> dict:
-    """Return {coordinate: [times in s]} for arm coordinates that change faster
-    in one frame than any human joint can.
+    """Return {coordinate: [times in s]} for arm and trunk coordinates that
+    change faster in one frame than any human joint can.
 
     Runs on the raw (unfiltered) coordinates. The filter used for metrics would
     smear a one-frame jump into a smooth but still impossible spike that no
@@ -266,17 +279,18 @@ def detect_ik_branch_jumps(kinematics, start_frame: int = 0) -> dict:
         return {}
     dt = np.diff(t)
     dt[dt <= 0] = np.nan
+    limits = {f'{base}_{side}': limit for base, limit in IK_JUMP_LIMITS_DEG_S.items()
+              for side in ('l', 'r')}
+    limits.update(TRUNK_JUMP_LIMITS_DEG_S)
     jumps = {}
-    for base, limit in IK_JUMP_LIMITS_DEG_S.items():
-        for side in ('l', 'r'):
-            col = f'{base}_{side}'
-            if col not in kinematics.columns:
-                continue
-            q = kinematics[col].to_numpy(dtype=float)[start_frame:]
-            rate = np.abs(np.diff(q)) / dt
-            hits = np.where(rate > limit)[0]
-            if hits.size:
-                jumps[col] = [round(float(t[i + 1]), 3) for i in hits]
+    for col, limit in limits.items():
+        if col not in kinematics.columns:
+            continue
+        q = kinematics[col].to_numpy(dtype=float)[start_frame:]
+        rate = np.abs(np.diff(q)) / dt
+        hits = np.where(rate > limit)[0]
+        if hits.size:
+            jumps[col] = [round(float(t[i + 1]), 3) for i in hits]
     return jumps
 
 
@@ -286,6 +300,11 @@ _ARM_METRICS_BY_SIDE = {
     'l': ('peak_elbow_flex_l_deg', 'peak_arm_flex_l_deg', 'peak_prosup_l_deg'),
     'r': ('peak_prosup_r_deg',),
 }
+_TRUNK_METRICS = (
+    'peak_pelvis_omega_3d_deg_s', 'time_to_peak_pelvis_from_plant_ms', 'max_separation_deg',
+    'x_factor_stretch_deg', 'sequence_timing_ms', 'proper_sequence', 'torso_to_pelvis_rot_ratio',
+    'torso_arm_sequence_gap_ms',
+)
 _LEAD_ARM_METRICS = (
     'arm_ke_J', 'forearm_ke_J', 'total_energy_transfer_J', 'torso_to_arm_transfer_ratio',
     'energy_transfer_proxy_pct', 'torso_arm_sequence_gap_ms', 'estimated_hand_speed_mph',
@@ -344,6 +363,18 @@ def build_metric_evidence(diagnosis: dict) -> dict:
             names += _LEAD_ARM_METRICS
         for n in names:
             jump_caveats.setdefault(n, text)
+
+    trunk_jumps = {c: ts for c, ts in f['ik_branch_jumps'].items() if c in TRUNK_JUMP_LIMITS_DEG_S}
+    if trunk_jumps:
+        times = sorted({t for ts in trunk_jumps.values() for t in ts})
+        text = (f'The trunk angle flips faster than a spine can turn '
+                f'({", ".join(sorted(trunk_jumps))} at t={times[0]:.2f}'
+                f'{"" if len(times) == 1 else f"-{times[-1]:.2f}"} s). The solver is '
+                're-splitting the rotation between pelvis and trunk, so pelvis speed, '
+                'separation and sequence timing in this swing cannot be trusted. It '
+                'comes from fast rotation filmed at 60 fps; 120-240 fps capture helps.')
+        for n in _TRUNK_METRICS:
+            jump_caveats[n] = text
 
     for name, (tier, citation, note) in METRIC_EVIDENCE.items():
         reliable, caveat = True, ''
