@@ -8,7 +8,7 @@ A plain-English explanation of every number in your swing report. No biomechanic
 
 ## The headline numbers (top of the report)
 
-- **Swing Score** — Your overall grade out of 100, blended from the 12 dimensions below (the biggest hitters of the score are hand speed, hip‑shoulder separation, and sequencing).
+- **Swing Score** — Your overall grade out of 100. Only dimensions with published batting research count, weighted by how strongly that research links them to bat speed or playing level: hand speed and sequencing (15% each), torso speed and hip‑shoulder separation (12% each), lead‑leg block (10%), then pelvis speed, torso coil, stride and positions at contact. Each is scored smoothly against published values for your level, and anything this capture couldn't measure reliably is left out rather than guessed. If less than half could be measured, no score is given.
 - **Hand / Bat Speed\*** — How fast your hands are moving the bat through the zone, in mph. This is the single most reliable predictor of power and is the number pro tools (e.g. Blast) report.
 - **Physics Efficiency Score** — How well the speed you generate actually transfers up the chain into the bat (vs. leaking out). Higher = less wasted effort.
 - **Peak Pelvis Angular Velocity** — How fast your hips are turning at their quickest point (degrees per second). Your hips are the engine; this is the engine's RPM.
@@ -19,8 +19,9 @@ A plain-English explanation of every number in your swing report. No biomechanic
 
 ### Phase 1 — Balance & Load (getting loaded up)
 - **Negative Move** — A small, controlled shift of weight *back* before you stride forward, like a hitter "gathering." Too little = no load; too much = drift.
-- **Pelvis Load** — How much energy your hips store during the load, like winding up a spring.
-- **Upper Torso Load** — How much your upper body coils/stores energy during the load.
+- **Torso Coil at Plant\*** — How far your shoulders stay closed relative to your hips as the front foot lands: the real "load". Skilled hitters land with about 13–14° of coil (Escamilla 2009).
+- **Peak Pelvis Speed\*** — The fastest your hips turn. Skilled hitters reach about 630–715°/s; beyond that it barely separates levels, so treat it as a base to reach.
+- **Peak Torso Speed\*** — The fastest your chest turns. This one does separate levels: about 717°/s in skilled youth vs 857°/s in adults (Escamilla 2009).
 
 ### Phase 2 — Stride (moving toward the pitch)
 - **Stride Length\*** — How wide your base is at contact: the horizontal distance between your two ankles at ball contact, relative to your height (so it's fair across body sizes). It needs **foot markers** (a `.trc` file) — without them the report says *Not measured* rather than guessing.
@@ -176,7 +177,7 @@ A graph showing how fast each body part is turning, in order, through the swing.
 Two honesty caveats worth knowing:
 - **Only Hand / Bat Speed is fully stratified across all four levels** (youth → high school → college → pro), via Blast Motion's published benchmarks. It's the most trustworthy comparison.
 - The other `*` metrics come mostly from **college- and pro-level studies**; the youth and high‑school corridors are reasonable estimates scaled down from those (no published youth/HS data exists yet).
-- Everything **without** a `*` (Negative Move, Pelvis Load, Upper Torso Load, Forward Move, Energy Transfer, Follow‑Through Quality, and the raw energy/power/GRF readouts) is a **relative benchmark** — great for tracking your own swing‑to‑swing progress, not for ranking against other players.
+- Everything **without** a `*` (Negative Move, Forward Move, Energy Transfer, Follow‑Through Quality, and the raw energy/power/GRF readouts) is a **relative benchmark** — great for tracking your own swing‑to‑swing progress, not for ranking against other players.
 
 ---
 

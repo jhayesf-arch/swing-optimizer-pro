@@ -12,7 +12,7 @@ Swing Optimizer Pro processes OpenSim `.mot` kinematics files from [OpenCap](htt
 
 - **12-Dimension Report** — Balance & Load, Stride, Power Move, Contact & Follow-Through phases with 1–5 star ratings and color-coded badges (Excellent / Good / Off Target)
 - **Skill-Level Calibrated Thresholds** — Youth, High School, College, Professional corridors for every metric
-- **Swing Score (0–100)** — Weighted aggregate of all 12 dimension ratings
+- **Swing Score (0–100)** — Research-weighted score over the dimensions with published batting values (see `backend/swing_score.py`)
 - **Advanced Physics Engine** — Energy transfer ratios, kinetic chain efficiency, proximal-to-distal sequencing (Driveline-inspired), Butterworth + Savitzky-Golay signal filtering
 - **Exit Velocity Prediction** — Physics-based model accounting for body mass, segmental KE transfer, and X-Factor separation
 - **Local File Scan** — Automatically detects `.mot` files in `~/Downloads`
@@ -54,9 +54,9 @@ This tool's analysis structure mirrors the 4-phase / 12-dimension evaluation fra
 
 | Phase | Dimensions |
 |---|---|
-| ⚖️ Balance & Load | Negative Move, Pelvis Load, Upper Torso Load |
-| 👣 Stride | Stride Length, Forward Move |
-| 💥 Power Move | Max Hip-Shoulder Separation, Pelvis Rotation Range, Upper Torso Rotation Range |
+| ⚖️ Balance & Load | Torso Coil at Plant |
+| 👣 Stride | Negative Move, Stride Length, Forward Move |
+| 💥 Power Move | Max Hip-Shoulder Separation, Peak Pelvis Speed, Peak Torso Speed, Pelvis Rotation Range, Upper Torso Rotation Range |
 | 🎯 Contact & Follow-Through | Pelvis Direction at Contact, Upper Torso Direction at Contact, Kinetic Chain Efficiency, Sequence Quality |
 
 Our physics computations map directly to each framework dimension using literature-backed thresholds stratified by skill level.

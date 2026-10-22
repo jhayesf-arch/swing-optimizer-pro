@@ -1,5 +1,5 @@
 const DEMO_DIAGNOSIS = {
-    swing_score: 74,
+    swing_score: 87.3,
     efficiency_score: 82,
     // Computed by backend/mechanics_score.py from this demo's own metrics.
     mechanics_score: {"version":"mechanics_v2","score":89,"coverage":1.0,"parts_scored":5,"parts_total":5,"skill_level":"college","components":[{"key":"sequencing","label":"Sequencing","weight":0.25,"tier":"A","source":"Nakata et al. 2014; Taguchi et al. 2023; Escamilla et al. 2009; Welch et al. 1995","value":48.0,"unit":"ms","reference":"pelvis peaks 15-55 ms before torso","score":100.0,"status":"scored","reason":""},{"key":"separation","label":"Hip-shoulder separation","weight":0.2,"tier":"A","source":"Fleisig et al. 2013; Hoechstetter et al. 2026","value":44.1,"unit":"\u00b0","reference":"25-50\u00b0 at this level","score":97.4,"status":"scored","reason":""},{"key":"pelvis_drive","label":"Pelvis drive","weight":0.25,"tier":"A","source":"Escamilla et al. 2009; Welch et al. 1995; Nakata et al. 2014; Punchihewa et al. 2020","value":714.0,"unit":"\u00b0/s","reference":"590-678\u00b0/s peak; peak 70-140 ms after plant","score":100.0,"status":"scored","reason":""},{"key":"lead_leg_block","label":"Lead-leg block","weight":0.15,"tier":"B","source":"Escamilla et al. 2009; Perrett 2024","value":19.4,"unit":"\u00b0","reference":"30-59\u00b0 of extension at this level","score":32.3,"status":"scored","reason":""},{"key":"stride","label":"Stride","weight":0.1,"tier":"A","source":"Escamilla et al. 2009","value":0.74,"unit":"\u00d7 height","reference":"0.38-0.48 \u00d7 height at this level","score":100.0,"status":"scored","reason":""}],"note":null},
@@ -45,7 +45,8 @@ const DEMO_DIAGNOSIS = {
     ],
     phase_report: {
         skill_level: 'college',
-        swing_score: 74,
+        swing_score: 87.3,
+        swing_score_detail: {"version":"swing_v2","score":87.3,"coverage":1.0,"parts_scored":12,"parts_total":12,"skill_level":"college","components":[{"key":"hand_speed","label":"Hand / Bat Speed","weight":0.15,"value":24.2,"unit":null,"score":93.3,"status":"scored","reason":""},{"key":"sequence_quality","label":"Sequence Quality","weight":0.15,"value":48,"unit":null,"score":100.0,"status":"scored","reason":""},{"key":"torso_speed","label":"Peak Torso Speed","weight":0.12,"value":880,"unit":null,"score":100.0,"status":"scored","reason":""},{"key":"max_hip_shoulder_separation","label":"Max Hip-Shoulder Separation","weight":0.12,"value":44.1,"unit":null,"score":87.7,"status":"scored","reason":""},{"key":"lead_leg_block","label":"Lead-Leg Block","weight":0.1,"value":19.4,"unit":null,"score":32.3,"status":"scored","reason":""},{"key":"pelvis_speed","label":"Peak Pelvis Speed","weight":0.08,"value":714,"unit":null,"score":100.0,"status":"scored","reason":""},{"key":"torso_coil_at_plant","label":"Torso Coil at Plant","weight":0.06,"value":12.0,"unit":null,"score":87.5,"status":"scored","reason":""},{"key":"stride_length","label":"Stride Length","weight":0.06,"value":0.74,"unit":null,"score":100.0,"status":"scored","reason":""},{"key":"pelvis_direction_at_contact","label":"Pelvis Direction at Contact","weight":0.06,"value":18,"unit":null,"score":85.0,"status":"scored","reason":""},{"key":"upper_torso_direction_at_contact","label":"Upper Torso Direction at Contact","weight":0.05,"value":28,"unit":null,"score":71.4,"status":"scored","reason":""},{"key":"pelvis_rotation_range","label":"Pelvis Total Rotation Range","weight":0.025,"value":68,"unit":null,"score":92.9,"status":"scored","reason":""},{"key":"upper_torso_rotation_range","label":"Upper Torso Total Rotation Range","weight":0.025,"value":92,"unit":null,"score":92.5,"status":"scored","reason":""}],"informational":["negative_move","forward_move","kinetic_chain_efficiency","follow_through_quality"],"note":null},
         overall_percentile: 71,
         percentile_basis: 'benchmark',
         percentile_library_dims: 0,
@@ -53,8 +54,7 @@ const DEMO_DIAGNOSIS = {
         phases: {
             balance_load: { label: 'Balance & Load', icon: '', avg_stars: 3.7, badge: 'satisfactory', dimensions: [
                 { key: 'negative_move', label: 'Negative Move', value: '0.06', unit: 'm', stars: 4, percentile: 74, badge: 'satisfactory', description: 'Good backward weight shift before stride.' },
-                { key: 'pelvis_load', label: 'Pelvis Load', value: '88', unit: 'J', stars: 4, percentile: 78, badge: 'satisfactory', description: 'Strong pelvis kinetic energy at load.' },
-                { key: 'upper_torso_load', label: 'Upper Torso Load', value: '52', unit: 'J', stars: 3, percentile: 58, badge: 'satisfactory', description: 'Adequate upper torso coil.' },
+                { key: 'torso_coil_at_plant', label: 'Torso Coil at Plant', value: '12.0', unit: '°', stars: 4, percentile: 72, badge: 'satisfactory', description: 'Shoulders stay closed to the hips as the front foot lands. Skilled hitters: about 13-14° (Escamilla 2009).' },
             ]},
             stride: { label: 'Stride', icon: '', avg_stars: 4.0, badge: 'satisfactory', dimensions: [
                 { key: 'stride_length', label: 'Stride Length', value: '0.74', unit: 'x Ht', stars: 5, percentile: 92, badge: 'excellent', description: 'Good stride length relative to height.' },
@@ -62,12 +62,14 @@ const DEMO_DIAGNOSIS = {
             ]},
             power_move: { label: 'Power Move', icon: '', avg_stars: 4.3, badge: 'excellent', dimensions: [
                 { key: 'max_hip_shoulder_separation', label: 'Max Hip-Shoulder Separation', value: '44.1', unit: '°', stars: 5, percentile: 88, badge: 'excellent', description: 'Elite X-Factor separation.' },
+                { key: 'pelvis_speed', label: 'Peak Pelvis Speed', value: '714', unit: '°/s', stars: 5, percentile: 92, badge: 'excellent', description: 'Fastest the hips turn. Skilled hitters reach about 630-715°/s.' },
+                { key: 'torso_speed', label: 'Peak Torso Speed', value: '880', unit: '°/s', stars: 5, percentile: 92, badge: 'excellent', description: 'Fastest the chest turns. Separates adult from youth hitters: 857 vs 717°/s (Escamilla 2009).' },
                 { key: 'pelvis_rotation_range', label: 'Pelvis Total Rotation Range', value: '68', unit: '°', stars: 4, percentile: 79, badge: 'satisfactory', description: 'Good pelvis rotation range.' },
                 { key: 'upper_torso_rotation_range', label: 'Upper Torso Rotation Range', value: '92', unit: '°', stars: 4, percentile: 75, badge: 'satisfactory', description: 'Good shoulder rotation range.' },
             ]},
             contact: { label: 'Contact & Follow-Through', icon: '', avg_stars: 3.5, badge: 'satisfactory', dimensions: [
                 { key: 'pelvis_direction_at_contact', label: 'Pelvis Direction at Contact', value: '18', unit: '°', stars: 4, percentile: 72, badge: 'satisfactory', description: 'Hips well open at contact.' },
-                { key: 'upper_torso_direction_at_contact', label: 'Upper Torso Direction at Contact', value: '28', unit: '°', stars: 3, percentile: 55, badge: 'satisfactory', description: 'Shoulders moderately open.' },
+                { key: 'upper_torso_direction_at_contact', label: 'Upper Torso Direction at Contact', value: '28', unit: '°', stars: 3, percentile: 50, badge: 'satisfactory', description: 'Shoulders moderately open.' },
                 { key: 'lead_leg_block', label: 'Lead-Leg Block', value: '19.4', unit: '° ext', stars: 2, percentile: 32, badge: 'off_target', description: 'Lead (front) knee straightening from foot plant to contact. A firm, extending front leg posts up and whips energy into the barrel (Escamilla 2009; Perrett 2024).' },
                 { key: 'kinetic_chain_efficiency', label: 'Energy Transfer (proxy)', value: '52.3', unit: '%', stars: 5, percentile: 86, badge: 'excellent', description: 'Elite distal energy transfer.' },
                 { key: 'sequence_quality', label: 'Sequence Quality', value: '48', unit: 'ms', stars: 4, percentile: 74, badge: 'satisfactory', description: 'Good proximal-to-distal sequence timing.' },
@@ -76,10 +78,8 @@ const DEMO_DIAGNOSIS = {
             ]},
         },
         prescriptions: [
-            { priority: 1, key: 'upper_torso_direction_at_contact', label: 'Upper Torso Direction at Contact', stars: 3, percentile: 55, impact: 0.14, cue: 'Let the chest arrive slightly behind the hips', drill: 'Connection-ball tee work to keep the torso stacked and sequenced behind the pelvis into contact.', why: 'Shoulders that fly open early spend separation too soon; too closed and the barrel drags.' },
-            { priority: 2, key: 'lead_leg_block', label: 'Lead-Leg Block', stars: 2, percentile: 32, impact: 0.14, cue: 'Post up on a firm, straightening front leg', drill: 'Rear-foot-elevated split squats for front-leg strength + "step-back / walkaway" swings to feel the lead knee brace and extend into contact.', why: 'Lead-knee extension into contact is Faster hitters extend the lead knee more into contact (Escamilla 2009; Perrett 2024) — a soft front leg leaks energy that should whip into the barrel.' },
-            { priority: 3, key: 'upper_torso_load', label: 'Upper Torso Load', stars: 3, percentile: 58, impact: 0.08, cue: 'Keep the barrel back as the hips start', drill: 'Counter-rotation "show-the-number" drills against a light band to deepen trunk coil.', why: 'Insufficient trunk coil shrinks the stretch across the core and caps how much the torso can whip.' },
-            { priority: 4, key: 'follow_through_quality', label: 'Follow-Through Quality', stars: 3, percentile: 61, impact: 0.08, cue: 'Let the finish be long and loose', drill: 'Full-extension finish swings; exhale and decelerate smoothly rather than stopping the barrel abruptly.', why: 'An abrupt stop after contact means energy was braked by the body instead of delivered to the ball.' },
+            {"priority": 1, "key": "lead_leg_block", "label": "Lead-Leg Block", "stars": 2, "percentile": 30, "impact": 0.3, "cue": "Post up on a firm, straightening front leg", "drill": "Rear-foot-elevated split squats for front-leg strength + \"step-back / walkaway\" swings to feel the lead knee brace and extend into contact.", "why": "Faster hitters extend the lead knee more into contact (Escamilla 2009; Perrett 2024) — a soft front leg leaks energy that should whip into the barrel."},
+            {"priority": 2, "key": "upper_torso_direction_at_contact", "label": "Upper Torso Direction at Contact", "stars": 3, "percentile": 50, "impact": 0.1, "cue": "Let the chest arrive slightly behind the hips", "drill": "Connection-ball tee work to keep the torso stacked and sequenced behind the pelvis into contact.", "why": "Shoulders that fly open early spend separation too soon; too closed and the barrel drags."},
         ],
     },
     grf_estimation: {},
@@ -685,7 +685,7 @@ document.addEventListener('DOMContentLoaded', () => {
             views.push({
                 id: `swing_${s.index}`,
                 label: `Swing ${s.index} — ${s.name}`,
-                hint: `Score ${Math.round(s.swing_score)}`,
+                hint: s.swing_score != null ? `Score ${Math.round(s.swing_score)}` : 'No score',
                 diagnosis: {
                     swing_score: s.swing_score,
                     efficiency_score: s.efficiency_score,
@@ -693,6 +693,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     metrics: s.metrics || {},
                     phase_report: {
                         swing_score: s.swing_score,
+                        swing_score_detail: s.swing_score_detail || null,
                         overall_percentile: s.overall_percentile,
                         percentile_basis: s.percentile_basis,
                         percentile_library_dims: libDims(s.dimensions),
@@ -783,6 +784,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // ---- SWING SCORE HERO ----
         document.getElementById('filename-display').textContent = filename;
         const swingScore = diagnosis.swing_score || 0;
+        const swingDetail = diagnosis.phase_report?.swing_score_detail || null;
         const effScore = diagnosis.efficiency_score || 0;
         const mech = diagnosis.mechanics_score || null;
         const handSpeed = diagnosis.metrics.estimated_hand_speed_mph || 0;
@@ -797,7 +799,15 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (swingScore >= 45) ringFill.classList.add('clr-yellow');
         else ringFill.classList.add('clr-red');
 
-        animateCount(document.getElementById('swing-score-number'), swingScore, 0);
+        const swingEl = document.getElementById('swing-score-number');
+        if (diagnosis.swing_score == null) {
+            // Too little of this capture was reliable to score it honestly.
+            swingEl.textContent = '—';
+            swingEl.title = (swingDetail && swingDetail.note) || 'Not enough reliable measurements to score this swing.';
+        } else {
+            swingEl.title = swingDetail ? `Scored on ${swingDetail.parts_scored} of ${swingDetail.parts_total} research-backed parts` : '';
+            animateCount(swingEl, swingScore, 0);
+        }
         animateCount(document.getElementById('exit-velo-number'), handSpeed, 1);
         const mechEl = document.getElementById('efficiency-number');
         if (mech && mech.score != null) animateCount(mechEl, mech.score, 0); else mechEl.textContent = '—';
@@ -1079,8 +1089,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // -----------------------------------------
     const DIM_CUES = {
         'negative_move':                    ['Hip hinge load drill', 'Toe tap rhythm'],
-        'pelvis_load':                      ['Hip load & coil', 'Resistance band hip load'],
-        'upper_torso_load':                 ['Shoulder coil drill', 'Bat behind back rotation'],
+        'torso_coil_at_plant':              ['Shoulder coil drill', 'Show-the-number at plant'],
+        'pelvis_speed':                     ['Rear-hip med-ball scoop toss', 'Step-behind rotational throw'],
+        'torso_speed':                      ['Hip-hold med-ball throw', 'Overload/underload swings'],
         'stride_length':                    ['Stride length marker drill', 'Soft front foot landing'],
         'forward_move':                     ['Linear momentum drill', 'Step-and-hit tee work'],
         'max_hip_shoulder_separation':      ['X-Factor stretch drill', 'Hip-shoulder separation tee'],
@@ -1383,8 +1394,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Map each body region (in body.svg) to the dimensions that load it.
     const REGION_DIMS = {
-        'region-pelvis':   ['pelvis_load', 'pelvis_rotation_range', 'pelvis_direction_at_contact', 'negative_move'],
-        'region-torso':    ['upper_torso_load', 'upper_torso_rotation_range', 'upper_torso_direction_at_contact', 'max_hip_shoulder_separation'],
+        'region-pelvis':   ['pelvis_speed', 'pelvis_rotation_range', 'pelvis_direction_at_contact', 'negative_move'],
+        'region-torso':    ['torso_speed', 'torso_coil_at_plant', 'upper_torso_rotation_range', 'upper_torso_direction_at_contact', 'max_hip_shoulder_separation'],
         'region-shoulders':['max_hip_shoulder_separation', 'upper_torso_rotation_range', 'sequence_quality'],
         'region-arm-r':    ['kinetic_chain_efficiency', 'hand_speed'],
         'region-arm-l':    ['kinetic_chain_efficiency', 'hand_speed'],
@@ -1491,6 +1502,10 @@ document.addEventListener('DOMContentLoaded', () => {
         return card;
     }
 
+    // Shown in the report but not in the Swing Score: no published batting values
+    // to score them against (backend/swing_score.py INFORMATIONAL).
+    const UNSCORED_DIMS = new Set(['negative_move', 'forward_move', 'kinetic_chain_efficiency', 'follow_through_quality']);
+
     function buildDimTile(dim) {
         const tile = document.createElement('div');
         tile.className = 'dim-tile';
@@ -1552,6 +1567,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="dim-info">
                 <div class="dim-name">${dim.label}</div>
                 <div class="dim-value">${dim.value} ${dim.unit}</div>
+                ${UNSCORED_DIMS.has(dim.key) ? '<div class="dim-unavailable-why">Not in the Swing Score: no published batting values</div>' : ''}
                 ${pctBar}
                 ${spread}
                 ${cues}
@@ -1758,9 +1774,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Pelvis open to pitcher, lead arm extended forward, back arm bent, slight squat
     // Bones to highlight per metric key
     const METRIC_HIGHLIGHTS = {
-        'pelvis_load':                      { bones: [['midHip','RHip'],['midHip','LHip']], seg: 'pelvis', desc: 'Pelvis — hip rotational energy storage during load.' },
+        'pelvis_speed':                     { bones: [['midHip','RHip'],['midHip','LHip']], seg: 'pelvis', desc: 'Pelvis — fastest hip rotation in the swing.' },
         'negative_move':                    { bones: [['midHip','RHip'],['midHip','LHip'],['RHip','RKnee'],['LHip','LKnee']], seg: 'pelvis', desc: 'Pelvis & legs — backward weight shift before stride.' },
-        'upper_torso_load':                 { bones: [['Neck','RShoulder'],['Neck','LShoulder'],['Neck','midHip']], seg: 'torso', desc: 'Torso & shoulders — upper body coil tension at load.' },
+        'torso_coil_at_plant':              { bones: [['Neck','RShoulder'],['Neck','LShoulder'],['midHip','RHip'],['midHip','LHip']], seg: 'torso', desc: 'Shoulders vs hips — how closed the shoulders stay as the front foot lands.' },
+        'torso_speed':                      { bones: [['Neck','RShoulder'],['Neck','LShoulder'],['Neck','midHip']], seg: 'torso', desc: 'Torso & shoulders — fastest chest rotation in the swing.' },
         'stride_length':                    { bones: [['LHip','LKnee'],['LKnee','LAnkle']], seg: 'pelvis', desc: 'Lead leg — stride length from load to foot plant.' },
         'forward_move':                     { bones: [['midHip','LHip'],['LHip','LKnee']], seg: 'pelvis', desc: 'Pelvis & lead leg — forward linear momentum into the ball.' },
         'max_hip_shoulder_separation':      { bones: [['midHip','RHip'],['midHip','LHip'],['Neck','RShoulder'],['Neck','LShoulder']], seg: 'torso', desc: 'Pelvis vs shoulders — X-Factor separation angle.' },

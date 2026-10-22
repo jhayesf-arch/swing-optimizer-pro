@@ -144,7 +144,8 @@ def analyze_subject(
                 "name": stem,
                 "mot_file": mot,
                 "has_markers": trc_data is not None,
-                "swing_score": rep.get("swing_score", 0.0),
+                "swing_score": rep.get("swing_score"),
+                "swing_score_detail": rep.get("swing_score_detail"),
                 "overall_percentile": rep.get("overall_percentile"),
                 "percentile_basis": rep.get("percentile_basis"),
                 "capture_quality": diag.get("capture_quality", {}),
@@ -317,7 +318,7 @@ def aggregate_swings(
     prescriptions = []
     for key, weight in DIMENSION_WEIGHTS.items():
         d = avg_dims.get(key)
-        if not d or d.get("available") is False or d["stars"] >= 4:
+        if not d or d.get("available") is False or d["stars"] >= 4 or weight <= 0:
             continue
         drill = DRILL_LIBRARY.get(key)
         if not drill:
@@ -346,11 +347,13 @@ def aggregate_swings(
             "dimensions": pdims,
         }
 
-    scores = [s["swing_score"] for s in usable]
+    # A swing without enough reliable measurements has no score; it still
+    # contributes its dimensions, but not to the score average.
+    scores = [s["swing_score"] for s in usable if isinstance(s.get("swing_score"), (int, float))]
     pcts = [s["overall_percentile"] for s in usable if isinstance(s.get("overall_percentile"), (int, float))]
     weighted_consistency = [
-        (DIMENSION_WEIGHTS[k], stats[k]["consistency"])
-        for k in dim_keys if stats[k]["consistency"] is not None
+        (DIMENSION_WEIGHTS.get(k, 0.0), stats[k]["consistency"])
+        for k in dim_keys if stats[k]["consistency"] is not None and DIMENSION_WEIGHTS.get(k, 0.0) > 0
     ]
     overall_consistency = (
         round(sum(w * c for w, c in weighted_consistency) / sum(w for w, _ in weighted_consistency), 1)
@@ -367,7 +370,7 @@ def aggregate_swings(
             avg_metrics[mkey] = _round_smart(statistics.fmean(mvals))
 
     average_report = {
-        "swing_score": round(statistics.fmean(scores), 1),
+        "swing_score": round(statistics.fmean(scores), 1) if scores else None,
         "overall_percentile": int(round(statistics.fmean(pcts))) if pcts else None,
         "percentile_basis": usable[0].get("percentile_basis"),
         "skill_level": level,
@@ -381,7 +384,7 @@ def aggregate_swings(
         "n_swings_captured": len(swings),
         "excluded_captures": excluded_captures if gating_applied else [],
         "overall_consistency": overall_consistency,
-        "swing_score_range": [round(min(scores), 1), round(max(scores), 1)],
+        "swing_score_range": [round(min(scores), 1), round(max(scores), 1)] if scores else None,
         "handedness": _handedness_summary(swings),
     }
 
@@ -434,7 +437,10 @@ def _print_summary(p: Dict) -> None:
     used, captured = avg.get("n_swings"), avg.get("n_swings_captured", p["n_swings"])
     suffix = f" ({used} of {captured} usable)" if used != captured else ""
     print(f"\n{p['athlete']}  ({p['level']})  —  {p['n_swings']} swings{suffix}")
-    print(f"  Swing Score : {avg['swing_score']}  (range {avg['swing_score_range'][0]}–{avg['swing_score_range'][1]})")
+    if avg['swing_score_range']:
+        print(f"  Swing Score : {avg['swing_score']}  (range {avg['swing_score_range'][0]}–{avg['swing_score_range'][1]})")
+    else:
+        print("  Swing Score : not enough reliable measurements")
     if avg.get("overall_percentile") is not None:
         print(f"  Percentile  : {avg['overall_percentile']}th  [{avg.get('percentile_basis')}]")
     if avg.get("overall_consistency") is not None:

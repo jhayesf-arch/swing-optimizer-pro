@@ -73,22 +73,42 @@ DIMENSION_THRESHOLDS = {
         'college':      [(-0.02,1),(0.00,2),(0.03,3),(0.05,4),(0.08,5)],
         'professional': [(-0.02,1),(0.00,2),(0.03,3),(0.06,4),(0.10,5)],
     },
-    'pelvis_load': {
-        # Pelvis KE during load (J).
-        # SOURCE: No direct hitting literature with KE values by level found.
-        # Relative benchmarks only — use for within-athlete comparison.
-        'youth':        [(0,1),(5,2),(15,3),(30,4),(50,5)],
-        'high_school':  [(0,1),(10,2),(25,3),(50,4),(80,5)],
-        'college':      [(0,1),(15,2),(40,3),(80,4),(120,5)],
-        'professional': [(0,1),(25,2),(60,3),(110,4),(160,5)],
+    'torso_coil_at_plant': {
+        # Trunk twist when the lead foot lands: how far the shoulder line sits
+        # closed relative to the hip line (deg, magnitude).
+        # SOURCE: Escamilla et al. 2009 (J Appl Biomech 25(3), Table 4): trunk
+        #   twist at lead foot contact -13 ± 7 deg (youth), -14 ± 9 deg (adults).
+        # Five stars = the skilled mean, stars below in equal steps. More coil
+        # than the mean is not shown to be better, so it is not rewarded further.
+        'youth':        [(0,1),(3,2),(6,3),(10,4),(13,5)],
+        'high_school':  [(0,1),(3,2),(7,3),(10,4),(13,5)],
+        'college':      [(0,1),(3,2),(7,3),(10,4),(14,5)],
+        'professional': [(0,1),(3,2),(7,3),(10,4),(14,5)],
     },
-    'upper_torso_load': {
-        # Torso KE during load (J).
-        # SOURCE: No direct hitting literature. Relative benchmarks only.
-        'youth':        [(0,1),(5,2),(12,3),(25,4),(40,5)],
-        'high_school':  [(0,1),(8,2),(18,3),(40,4),(65,5)],
-        'college':      [(0,1),(12,2),(28,3),(60,4),(95,5)],
-        'professional': [(0,1),(18,2),(40,3),(85,4),(130,5)],
+    'pelvis_speed': {
+        # Peak pelvis angular velocity (deg/s), marker-based, published:
+        #   youth 632 ± 117 and college + pro 678 ± 87 (Escamilla et al. 2009);
+        #   608 ± 51 skilled ex-college (Nakata et al. 2014); 643 ± 50 university
+        #   (Punchihewa et al. 2020); 714 minor league (Welch et al. 1995).
+        # Five stars at the level's mean; 4 at -0.5 SD, 3 at -1 SD, 2 at -2 SD.
+        # High school is interpolated between youth and adult.
+        'youth':        [(0,1),(398,2),(515,3),(574,4),(632,5)],
+        'high_school':  [(0,1),(455,2),(555,3),(605,4),(655,5)],
+        'college':      [(0,1),(504,2),(591,3),(635,4),(678,5)],
+        'professional': [(0,1),(540,2),(627,3),(671,4),(714,5)],
+    },
+    'torso_speed': {
+        # Peak upper-torso angular velocity in the ground frame (deg/s).
+        # SOURCE: Escamilla et al. 2009: 717 ± 86 youth vs 857 ± 53 adults, one
+        #   of the clearest youth/adult differences; Welch et al. 1995: 937
+        #   (minor league); Nakata et al. 2014: 984 ± 57 (skilled ex-college).
+        # Professional mean = midpoint of Escamilla's adults and Welch (897).
+        # High school is interpolated between youth and adult.
+        # Five stars at the level's mean; 4 at -0.5 SD, 3 at -1 SD, 2 at -2 SD.
+        'youth':        [(0,1),(545,2),(631,3),(674,4),(717,5)],
+        'high_school':  [(0,1),(647,2),(717,3),(752,4),(787,5)],
+        'college':      [(0,1),(751,2),(804,3),(831,4),(857,5)],
+        'professional': [(0,1),(791,2),(844,3),(870,4),(897,5)],
     },
     # PHASE 2 — STRIDE
     'stride_length': {
@@ -248,29 +268,18 @@ DIMENSION_THRESHOLDS = {
 PERCENTILE_ANCHORS = [5.0, 25.0, 50.0, 75.0, 92.0]
 
 # Dimension weights for Swing Score (must sum to 1.0)
-DIMENSION_WEIGHTS = {
-    'negative_move': 0.04,
-    'pelvis_load': 0.05,
-    'upper_torso_load': 0.04,
-    'stride_length': 0.05,
-    'forward_move': 0.05,
-    'max_hip_shoulder_separation': 0.12,
-    'pelvis_rotation_range': 0.08,
-    'upper_torso_rotation_range': 0.06,
-    'pelvis_direction_at_contact': 0.07,
-    'upper_torso_direction_at_contact': 0.07,
-    'kinetic_chain_efficiency': 0.10,
-    'sequence_quality': 0.10,
-    'hand_speed': 0.13,  # Most reliable discriminator — directly measured from TRC
-    'follow_through_quality': 0.04,
-    'lead_leg_block': 0.07,  # lead-knee extension correlates with bat speed (Perrett 2024)
-}
+# Swing Score weights live in swing_score.py with their evidence. Dimensions
+# with no published batting values are shown in the report at weight 0.
+from swing_score import WEIGHTS as _SWING_WEIGHTS, INFORMATIONAL as _INFORMATIONAL
+DIMENSION_WEIGHTS = {**{k: w for k, (w, _) in _SWING_WEIGHTS.items()},
+                     **{k: 0.0 for k in _INFORMATIONAL}}
 # NOTE: weights need not sum to 1.0 — build_phase_report normalises by total weight.
 
 DIMENSION_LABELS = {
     'negative_move': 'Negative Move',
-    'pelvis_load': 'Pelvis Load',
-    'upper_torso_load': 'Upper Torso Load',
+    'torso_coil_at_plant': 'Torso Coil at Plant',
+    'pelvis_speed': 'Peak Pelvis Speed',
+    'torso_speed': 'Peak Torso Speed',
     'stride_length': 'Stride Length',
     'forward_move': 'Forward Move',
     'max_hip_shoulder_separation': 'Max Hip-Shoulder Separation',
@@ -289,7 +298,7 @@ SWING_PHASES = {
     'balance_load': {
         'label': 'Balance & Load',
         'icon': '',
-        'dimensions': ['pelvis_load', 'upper_torso_load'],
+        'dimensions': ['torso_coil_at_plant'],
     },
     'stride': {
         'label': 'Stride',
@@ -299,7 +308,7 @@ SWING_PHASES = {
     'power_move': {
         'label': 'Power Move',
         'icon': '',
-        'dimensions': ['max_hip_shoulder_separation', 'pelvis_rotation_range', 'upper_torso_rotation_range'],
+        'dimensions': ['max_hip_shoulder_separation', 'pelvis_speed', 'torso_speed', 'pelvis_rotation_range', 'upper_torso_rotation_range'],
     },
     'contact': {
         'label': 'Contact & Follow-Through',
@@ -319,15 +328,20 @@ DRILL_LIBRARY = {
         'drill': 'Slow "load-and-hold" reps: coil into the rear hip, pause 1s, then stride. Builds a repeatable rearward load.',
         'why': 'Without a rearward gather there is no stretch to unload — you start the swing already leaking forward.',
     },
-    'pelvis_load': {
-        'cue': 'Coil into the back hip',
-        'drill': 'Banded hip-hinge coils and rear-hip loaded med-ball scoop tosses to store elastic energy in the pelvis.',
-        'why': 'A quiet pelvis at load means less rotational energy available to release through contact.',
+    'torso_coil_at_plant': {
+        'cue': 'Land with the shoulders still closed',
+        'drill': 'Counter-rotation "show-the-number" drills against a light band, then stride and hold the shoulders closed as the front foot lands.',
+        'why': 'Skilled hitters land with the shoulders about 13-14 deg closed to the hips (Escamilla 2009); landing open leaves no stretch for the torso to release.',
     },
-    'upper_torso_load': {
-        'cue': 'Keep the barrel back as the hips start',
-        'drill': 'Counter-rotation "show-the-number" drills against a light band to deepen trunk coil.',
-        'why': 'Insufficient trunk coil shrinks the stretch across the core and caps how much the torso can whip.',
+    'pelvis_speed': {
+        'cue': 'Turn the hips hard once the front foot lands',
+        'drill': 'Rear-hip loaded med-ball scoop tosses and step-behind rotational throws.',
+        'why': 'Skilled hitters reach roughly 630-715 deg/s at the pelvis; beyond that, pelvis speed barely separates levels, so treat it as a base to reach rather than a number to chase.',
+    },
+    'torso_speed': {
+        'cue': 'Let the chest whip through after the hips',
+        'drill': 'Hip-hold rotational med-ball throws (hips braced, chest turns) and overload/underload bat swings.',
+        'why': 'Upper-torso speed is what separates adult from youth hitters (857 vs 717 deg/s, Escamilla 2009) and feeds the hands and barrel.',
     },
     'stride_length': {
         'cue': 'Stride to a firm, athletic base',
@@ -505,6 +519,7 @@ SKILL_LEVEL_BENCHMARKS = {
 }
 
 from mechanics_score import compute_mechanics_score
+from swing_score import compute_swing_score
 
 try:
     from metric_evidence import build_metric_evidence, detect_ik_branch_jumps, TIER_LABELS
@@ -738,10 +753,15 @@ def _build_data_quality(trc_metrics: dict, has_grf: bool = False) -> dict:
                 "sequence_timing_ms (Taguchi et al. 2023, Fukushima J Med Sci, n=18 Div I batters)",
                 "pelvis_rotation_range (Welch et al. 1995, JOSPT)",
                 "upper_torso_rotation_range (Welch 1995; Taguchi 2023)",
+                "stride_length (Escamilla et al. 2009)",
+                "lead_leg_block (Escamilla et al. 2009; Perrett 2024)",
+                "torso_coil_at_plant (Escamilla et al. 2009)",
+                "pelvis_speed (Escamilla et al. 2009; Welch 1995; Nakata 2014; Punchihewa 2020)",
+                "torso_speed (Escamilla et al. 2009; Welch 1995; Nakata 2014)",
             ],
             "coaching_consensus_only": [
-                "negative_move", "stride_length", "forward_move",
-                "pelvis_load", "upper_torso_load", "kinetic_chain_efficiency",
+                "negative_move", "forward_move", "follow_through_quality",
+                "kinetic_chain_efficiency",
             ],
         },
     }
@@ -1728,6 +1748,12 @@ class RefinedHittingOptimizer:
             'pelvis_omega': pelvis_omega,
             'pelvis_angle': pelvis_angle,
             'swing_start_frame': swing_start,
+            # For the Torso Coil at Plant and Peak Torso Speed dimensions, which
+            # need the plant frame from stride analysis.
+            'separation_series_deg': np.asarray(separation_full, dtype=float),
+            'torso_omega_abs_deg_s': np.asarray(torso_om3d, dtype=float) * 180.0 / np.pi,
+            'pelvis_omega_abs_deg_s': np.asarray(pelvis_om3d, dtype=float) * 180.0 / np.pi,
+            'sample_rate_hz': float(fs),
             # Absolute segment angular-velocity series, exported so the kinematic
             # sequence chart is drawn from the same signals the sequence metric is
             # computed from. A separate proxy for the chart drifts out of agreement
@@ -2682,6 +2708,14 @@ class RefinedHittingOptimizer:
         except Exception as _e:   # never let the summary score break an analysis
             print(f'[mechanics] score failed: {type(_e).__name__}: {_e}')
             _mech = None
+        if phase_report:
+            try:
+                _swing = compute_swing_score(phase_report.get('dimensions', {}), _evidence, _mech,
+                                             self.skill_level, DIMENSION_THRESHOLDS)
+                phase_report['swing_score_detail'] = _swing
+                phase_report['swing_score'] = _swing['score']
+            except Exception as _e:
+                print(f'[swing] score failed: {type(_e).__name__}: {_e}')
         return {
             # Internal handle so the API can draw the kinematic-sequence chart from
             # the same segment velocities the metrics use. Contains numpy arrays —
@@ -2725,8 +2759,10 @@ class RefinedHittingOptimizer:
             return 3  # fallback
         
         if invert:
-            # Iterate from highest threshold downward — smaller is better
-            for threshold, stars in sorted(thresholds, key=lambda x: x[0], reverse=True):
+            # Smaller is better: the first (smallest) threshold the value fits under
+            # gives its rating. Walking from the largest down returned the 1-star
+            # bound for every value, so these dimensions always rated 1 star.
+            for threshold, stars in sorted(thresholds, key=lambda x: x[0]):
                 if value <= threshold:
                     return stars
             return 1
@@ -2898,47 +2934,59 @@ class RefinedHittingOptimizer:
             'description': 'Initial weight shift rearward to load energy before the stride.',
         }
 
-        # Pelvis Load: Pelvis KE during the load phase
-        pelvis_ke = rotation.get('pelvis_ke_J', 0.0) if rotation else 0.0
-        # Pelvis Load and Upper Torso Load: KE at swing onset (load phase),
-        # not peak swing KE. Peak KE reflects swing speed, not load quality.
-        # Use pelvis_omega and lumbar_omega at swing_start_frame as the load proxy.
-        if rotation and 'pelvis_angle' in rotation:
-            sw = rotation.get('swing_start_frame', 0)
-            # Recompute KE at onset using the stored omega arrays
-            # pelvis_ke_load = 0.5 * I * omega_at_onset²
-            # We use peak_pelvis_omega scaled by the fraction of swing completed at onset
-            # Simpler: use the stored pelvis_ke but scale by (onset_omega/peak_omega)²
-            # Best: use hip_power_per_kg as the load proxy (already swing-window corrected)
-            pelvis_ke_load = rotation.get('pelvis_ke_J', 0.0)
-            torso_ke_load  = rotation.get('torso_ke_J', 0.0)
-        else:
-            pelvis_ke_load = 0.0
-            torso_ke_load  = 0.0
-
-        pl_stars = self._rate_dimension('pelvis_load', pelvis_ke_load)
-        dims['pelvis_load'] = {
-            'label': DIMENSION_LABELS['pelvis_load'],
-            'stars': pl_stars,
-            'badge': self._rating_to_badge(pl_stars),
-            'value': round(pelvis_ke_load, 1),
-            'unit': 'J',
-            'description': 'Hip rotational energy during the swing (proxy for hip coil power).',
+        # Torso Coil at Plant: trunk twist (shoulder line vs hip line) when the
+        # lead foot lands — the "load" Escamilla et al. 2009 report (Table 4).
+        coil = None
+        plant_f = stride.get('plant_frame') if stride else None
+        sep_series = rotation.get('separation_series_deg') if rotation else None
+        if sep_series is not None and plant_f is not None and 0 <= int(plant_f) < len(sep_series):
+            coil = abs(float(sep_series[int(plant_f)]))
+        coil_ok = coil is not None
+        coil_stars = self._rate_dimension('torso_coil_at_plant', coil) if coil_ok else 1
+        dims['torso_coil_at_plant'] = {
+            'label': DIMENSION_LABELS['torso_coil_at_plant'],
+            'stars': coil_stars,
+            'badge': self._rating_to_badge(coil_stars) if coil_ok else 'unavailable',
+            'value': round(coil, 1) if coil_ok else None,
+            'unit': '°',
+            'description': 'How far the shoulders stay closed relative to the hips as the front foot lands. '
+                           'Skilled hitters: about 13-14° (Escamilla 2009).',
+            'available': coil_ok,
+            **({} if coil_ok else {'unavailable_reason': 'foot plant or separation signal not available'}),
         }
 
-        # Upper Torso Load: the omega cap (2× pelvis) was applied upstream in torque_refined,
-        # so torso_ke_J is already artifact-cleaned. Apply a matching 4× pelvis_ke guard here
-        # (equivalent to 2× omega) as a belt-and-suspenders check against any residual artifacts.
-        torso_ke_capped = min(torso_ke_load, pelvis_ke_load * 4.0) if pelvis_ke_load > 0 else torso_ke_load
-        utl_stars = self._rate_dimension('upper_torso_load', torso_ke_capped)
-        dims['upper_torso_load'] = {
-            'label': DIMENSION_LABELS['upper_torso_load'],
-            'stars': utl_stars,
-            'badge': self._rating_to_badge(utl_stars),
-            'value': round(torso_ke_capped, 1),
-            'unit': 'J',
-            'description': 'Trunk rotational energy during the swing (proxy for shoulder coil power).',
-        }
+        # Peak Pelvis Speed and Peak Torso Speed, ground frame, inside the swing:
+        # from swing start to 0.3 s after the pelvis peak, so the follow-through
+        # (where tracking breaks down) cannot set the peak.
+        fs_r = float(rotation.get('sample_rate_hz') or 60.0) if rotation else 60.0
+        pel_s = rotation.get('pelvis_omega_abs_deg_s') if rotation else None
+        tor_s = rotation.get('torso_omega_abs_deg_s') if rotation else None
+        pel_peak = tor_peak = None
+        if pel_s is not None and tor_s is not None and len(pel_s):
+            s0 = int(rotation.get('swing_start_frame') or 0)
+            pk = s0 + int(np.argmax(pel_s[s0:]))
+            s1 = min(len(tor_s), pk + int(round(0.3 * fs_r)) + 1)
+            pel_peak = float(pel_s[pk])
+            tor_peak = float(np.max(tor_s[s0:s1])) if s1 > s0 else None
+        for key, val, desc in (
+            ('pelvis_speed', pel_peak,
+             'Fastest the hips turn. Skilled hitters reach about 630-715°/s; beyond that it barely '
+             'separates levels, so it is a base to reach rather than a number to chase.'),
+            ('torso_speed', tor_peak,
+             'Fastest the chest turns. Separates adult from youth hitters: 857 vs 717°/s (Escamilla 2009).'),
+        ):
+            ok = val is not None and val > 0
+            st = self._rate_dimension(key, val) if ok else 1
+            dims[key] = {
+                'label': DIMENSION_LABELS[key],
+                'stars': st,
+                'badge': self._rating_to_badge(st) if ok else 'unavailable',
+                'value': round(val) if ok else None,
+                'unit': '°/s',
+                'description': desc,
+                'available': ok,
+                **({} if ok else {'unavailable_reason': 'rotation signal not available'}),
+            }
 
         # ------------------------------------------------------------------
         # PHASE 2: STRIDE
@@ -3234,7 +3282,10 @@ class RefinedHittingOptimizer:
             pct_weighted_sum += pct * weight
             pct_weight += weight
 
-        swing_score = round(weighted_sum / total_weight, 1) if total_weight > 0 else 0.0
+        # Provisional: comprehensive_diagnosis() rescores once the per-metric
+        # reliability flags and the mechanics score exist.
+        swing_detail = compute_swing_score(dims, {}, None, self.skill_level, DIMENSION_THRESHOLDS)
+        swing_score = swing_detail['score']
         overall_percentile = int(round(pct_weighted_sum / pct_weight)) if pct_weight > 0 else 50
         percentile_basis = 'blended' if n_empirical > 0 else 'benchmark'
 
@@ -3245,8 +3296,8 @@ class RefinedHittingOptimizer:
         # ------------------------------------------------------------------
         prescriptions = []
         for dim_key, weight in DIMENSION_WEIGHTS.items():
-            if dims[dim_key].get('available') is False:
-                continue  # never prescribe a drill for something we didn't measure
+            if dims[dim_key].get('available') is False or weight <= 0:
+                continue  # never prescribe for something unmeasured or not research-backed
             stars = dims[dim_key]['stars']
             if stars >= 4:
                 continue  # only prescribe for below-target dimensions
@@ -3285,6 +3336,7 @@ class RefinedHittingOptimizer:
 
         return {
             'swing_score': swing_score,
+            'swing_score_detail': swing_detail,
             'overall_percentile': overall_percentile,
             'percentile_basis': percentile_basis,      # 'library' (your own swings) or 'benchmark' (research)
             'percentile_library_dims': n_empirical,     # how many of the 15 used your library

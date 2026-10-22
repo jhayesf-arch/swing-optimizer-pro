@@ -473,3 +473,37 @@ A part is skipped (weights renormalise) when it is missing, flagged unreliable i
 1.3 × height, which means the whole clip's movement was measured). Below 50% of the
 weight, no score is given. Youth pelvis speed is from Escamilla et al. 2009;
 high school has no published value and is interpolated between youth and adult.
+
+## Swing Score v2
+
+Code: `backend/swing_score.py`. Same rules as the mechanics score, plus the
+result (hand speed). Score = Σ wᵢ·sᵢ / Σ wᵢ over the dimensions this capture
+supports; each sᵢ is a 0–100 ramp through the level's threshold table (the star
+boundaries as anchor points), so there are no star cliffs.
+
+| Dimension | Weight | Source |
+|---|---|---|
+| Hand / bat speed | 0.15 | Blast Motion level benchmarks |
+| Sequence quality | 0.15 | Nakata 2014; Taguchi 2023; Escamilla 2009 (scored by the mechanics sequencing ramp) |
+| Peak torso speed | 0.12 | Escamilla 2009 (717 youth, 857 adult); Welch 1995; Nakata 2014 |
+| Hip-shoulder separation | 0.12 | Fleisig 2013; Hoechstetter 2026 |
+| Lead-leg block | 0.10 | Escamilla 2009; Perrett 2024 |
+| Peak pelvis speed | 0.08 | Escamilla 2009; Welch 1995; Nakata 2014; Punchihewa 2020 |
+| Torso coil at plant | 0.06 | Escamilla 2009 (trunk twist at foot contact, Table 4) |
+| Stride | 0.06 | Escamilla 2009 |
+| Pelvis direction at contact | 0.06 | Escamilla 2009; Welch 1995 |
+| Upper-torso direction at contact | 0.05 | Escamilla 2009 |
+| Pelvis / upper-torso rotation range | 0.025 each | Welch 1995; Taguchi 2023 |
+
+Weight 0 (shown, not scored; no published batting values): negative move,
+forward move, energy-transfer proxy, follow-through quality.
+
+A dimension is skipped when unavailable, when the metric it rests on is flagged
+unreliable in `metric_evidence` (a trunk IK flip voids pelvis speed, torso
+speed, separation, coil and sequencing), or when it is implausible: torso speed
+over 1,300°/s or over 2× pelvis speed (batters show 1.1–1.6×), pelvis speed over
+1,200°/s. Below 50% of the weight measured, no score is given.
+
+Torso coil at plant = |shoulder-line minus hip-line rotation| at the lead-foot
+plant frame. Peak pelvis and torso speeds are ground-frame peaks between swing
+start and 0.3 s after the pelvis peak.
