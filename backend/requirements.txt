@@ -6,4 +6,6 @@ pandas
 python-multipart
 scipy
 uvicorn
-opensim
+# Optional: the 3-D bone view. Wheels exist for Python 3.11-3.13 only; without it
+# the report falls back to the stick figure, so a newer Python must not fail the build.
+opensim; python_version >= "3.11" and python_version < "3.14"
