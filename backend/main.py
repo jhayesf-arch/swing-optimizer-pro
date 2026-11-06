@@ -49,7 +49,7 @@ DEFAULT_MODEL = ENV_MODEL or os.path.expanduser(
 
 
 def _run_id(file_path, model_path, bat_mass_kg, bat_length_m, diagnosis,
-            foot_loads=None, body_mass_kg=None, model_uploaded=False):
+            foot_loads=None, body_mass_kg=None, model_uploaded=False, time_range=None):
     """Run OpenSim ID and attach results to the diagnosis.
 
     Always records diagnosis['opensim_id_status'] so the report can say WHY the
@@ -75,7 +75,7 @@ def _run_id(file_path, model_path, bat_mass_kg, bat_length_m, diagnosis,
         id_result = run_inverse_dynamics(
             file_path, model_path=model_path,
             bat_mass_kg=bat_mass_kg, bat_length_m=bat_length_m,
-            external_loads=foot_loads,
+            external_loads=foot_loads, time_range=time_range,
         )
     except Exception as e:
         status['reason'] = f'OpenSim ID failed: {type(e).__name__}: {e}'
@@ -223,6 +223,90 @@ def _kinematic_sequence(mot_df, rotation=None, max_points: int = 72) -> dict:
             'contact_ms': contact['t_ms'], 'units': 'deg/s', 'warning': warning}
 
 
+def _hand_peak_time(trc_df):
+    """Time (s) the wrists move fastest, or None without wrist markers. Only the
+    swing itself moves the hands that fast, so it marks the swing reliably."""
+    import numpy as np
+    from scipy.signal import butter, filtfilt
+    if trc_df is None:
+        return None
+    tcol = 'Time' if 'Time' in trc_df.columns else 'time' if 'time' in trc_df.columns else None
+    wrists = [w for w in ('LWrist', 'RWrist') if all(f'{w}_{x}' in trc_df.columns for x in 'XYZ')]
+    if not tcol or not wrists or len(trc_df) < 16:
+        return None
+    tt = trc_df[tcol].values.astype(float)
+    b, a = butter(4, min(12.0 / (0.5 / float(np.median(np.diff(tt)))), 0.99), btype='low')
+    speed = np.mean([np.linalg.norm(np.gradient(
+        filtfilt(b, a, trc_df[[f'{w}_{x}' for x in 'XYZ']].values.astype(float), axis=0),
+        tt, axis=0), axis=1) for w in wrists], axis=0)
+    return float(tt[int(np.argmax(speed))])
+
+
+def _crop_to_swing(kin, trc_df, before_s: float = 2.0, after_s: float = 1.0):
+    """Trim a long recording to the swing, so every analysis step sees the same
+    one. The analyzer, the sequence chart and the replay each found the swing as
+    the fastest pelvis turn anywhere in the file; a faster turn while walking off
+    or a tracking glitch then moved all of them onto the wrong moment. With
+    markers, the swing is where the hands are fastest. Without them, unchanged."""
+    hp = _hand_peak_time(trc_df)
+    if hp is None or kin is None or 'time' not in kin.columns:
+        return kin, trc_df
+    t0, t1 = hp - before_s, hp + after_s
+    keep = (kin['time'] >= t0) & (kin['time'] <= t1)
+    if keep.all() or keep.sum() < 16:
+        return kin, trc_df
+    attrs = dict(kin.attrs)
+    kin = kin[keep].reset_index(drop=True)
+    kin.attrs.update(attrs)
+    tcol = 'Time' if 'Time' in trc_df.columns else 'time'
+    trc_df = trc_df[(trc_df[tcol] >= t0) & (trc_df[tcol] <= t1)].reset_index(drop=True)
+    return kin, trc_df
+
+
+def _time_range(kin):
+    """(first, last) time of a kinematics table, for steps that reread the file."""
+    return (float(kin['time'].iloc[0]), float(kin['time'].iloc[-1])) if len(kin) else None
+
+
+def _swing_window(mot_df, trc_df=None):
+    """(start, peak, end) mot frame indices of the swing for the 3-D replay.
+
+    The peak is the fastest pelvis rotation. Taken over the whole recording it
+    can land on a fast turn during the load, walking in or out, or a tracking
+    glitch, and the replay then shows the wrong part. With markers, the wrists'
+    fastest moment marks the actual swing, and the pelvis peak is taken near it.
+    """
+    import numpy as np
+    from scipy.signal import butter, filtfilt, savgol_filter
+
+    t = mot_df['time'].values.astype(float)
+    dt = float(np.median(np.diff(t)))
+    fs = 1.0 / dt
+    b, a = butter(4, min(15.0 / (0.5 * fs), 0.99), btype='low')
+    pelvis = filtfilt(b, a, np.unwrap(np.deg2rad(mot_df['pelvis_rotation'].values)))
+    omega = savgol_filter(pelvis, max(11, int(0.10 * fs) | 1), 3, deriv=1, delta=dt)
+    n = len(omega)
+
+    lo, hi, hand_peak = 0, n, None
+    hp = _hand_peak_time(trc_df)
+    if hp is not None:
+        hand_peak = int(np.argmin(np.abs(t - hp)))
+        lo = max(0, hand_peak - int(0.40 * fs))
+        hi = min(n, hand_peak + int(0.15 * fs) + 1)
+    peak = lo + int(np.argmax(np.abs(omega[lo:hi])))
+
+    # Swing start: the last moment before the peak the pelvis turned the other way
+    # (the load), at most 1 s back so a long setup does not fill the replay.
+    start = max(0, peak - int(1.0 * fs))
+    sign = np.sign(omega[peak])
+    for i in range(peak - 1, start - 1, -1):
+        if np.sign(omega[i]) != sign and abs(omega[i]) * 180 / np.pi > 20:
+            start = i
+            break
+    end = min(n - 1, max(peak, hand_peak or 0) + int(0.3 * fs))
+    return start, peak, end
+
+
 def _extract_skeleton_frames(trc_df, mot_df, max_frames: int = 60) -> dict:
     """
     Extract downsampled marker positions during the swing window for visualization.
@@ -231,33 +315,17 @@ def _extract_skeleton_frames(trc_df, mot_df, max_frames: int = 60) -> dict:
     import numpy as np
     from scipy.signal import butter, filtfilt, savgol_filter
 
-    # Find swing window from pelvis_rotation in mot
     if 'pelvis_rotation' not in mot_df.columns:
         return {}
-
     dt = mot_df['time'].diff().mean()
-    fs = 1.0 / dt
-    pelvis_rad = np.unwrap(np.deg2rad(mot_df['pelvis_rotation'].values))
-    nyq = 0.5 * fs
-    b, a = butter(4, min(15.0 / nyq, 0.99), btype='low')
-    pelvis_f = filtfilt(b, a, pelvis_rad)
-    w = max(11, int(0.10 * fs) | 1)
-    pelvis_omega = savgol_filter(pelvis_f, w, 3, deriv=1, delta=dt)
-
-    peak = int(np.argmax(np.abs(pelvis_omega)))
-    swing_start = 0
-    peak_sign = np.sign(pelvis_omega[peak])
-    for i in range(peak - 1, -1, -1):
-        if np.sign(pelvis_omega[i]) != peak_sign and abs(pelvis_omega[i]) * 180 / np.pi > 20:
-            swing_start = i
-            break
+    swing_start, peak, swing_end = _swing_window(mot_df, trc_df)
 
     # Map mot frame indices to trc frame indices (both at 60Hz, same time base)
     mot_times = mot_df['time'].values
     trc_times = trc_df['Time'].values if 'Time' in trc_df.columns else trc_df['time'].values
 
     t_start = mot_times[swing_start]
-    t_end   = mot_times[min(peak + int(0.3 / dt), len(mot_times) - 1)]  # include 300ms follow-through
+    t_end   = mot_times[swing_end]   # includes ~300 ms of follow-through
 
     trc_mask = (trc_times >= t_start) & (trc_times <= t_end)
     trc_sub  = trc_df[trc_mask].reset_index(drop=True)
@@ -365,16 +433,7 @@ def _skeleton_from_mot(mot_df, body_height_m: float = 1.83, max_frames: int = 60
     py = mot_df['pelvis_ty'].values if 'pelvis_ty' in mot_df.columns else np.ones(len(mot_df)) * h * 0.53
     pz = mot_df['pelvis_tz'].values if 'pelvis_tz' in mot_df.columns else np.zeros(len(mot_df))
 
-    # Find swing window (same logic as _extract_skeleton_frames)
-    pelvis_omega = np.gradient(pelvis_rot, dt)
-    peak = int(np.argmax(np.abs(pelvis_omega)))
-    swing_start = 0
-    peak_sign = np.sign(pelvis_omega[peak])
-    for i in range(peak - 1, -1, -1):
-        if np.sign(pelvis_omega[i]) != peak_sign and abs(pelvis_omega[i]) * 180 / np.pi > 20:
-            swing_start = i
-            break
-    swing_end = min(peak + int(0.3 / dt), len(mot_df) - 1)
+    swing_start, peak, swing_end = _swing_window(mot_df)
 
     indices = np.arange(swing_start, swing_end + 1)
     step = max(1, len(indices) // max_frames)
@@ -492,6 +551,7 @@ async def analyze_upload(
             return JSONResponse(status_code=400, content={"success": False, "error": "Invalid or empty .mot file"})
 
         trc_data = optimizer.load_trc_file(trc_path) if trc_path else None
+        kinematics, trc_data = _crop_to_swing(kinematics, trc_data)
         # Only an athlete-specific model feeds our segment masses — never the
         # Desktop fallback, which belongs to a different session.
         diagnosis = optimizer.comprehensive_diagnosis(kinematics, file.filename, trc_data=trc_data,
@@ -514,7 +574,8 @@ async def analyze_upload(
         attach_bones(diagnosis, kinematics, model_path, height_m)
         id_mags = _run_id(file_path, model_path or DEFAULT_MODEL, bat_mass_kg, bat_length_m,
                           diagnosis, foot_loads=diagnosis.get('_foot_loads'),
-                          body_mass_kg=weight_kg, model_uploaded=bool(model_path))
+                          body_mass_kg=weight_kg, model_uploaded=bool(model_path),
+                          time_range=_time_range(kinematics))
         _attach_dynamics(diagnosis, id_mags, ref_path, handedness, weight_kg)
         diagnosis.pop('_rotation', None)   # numpy arrays — not JSON-serialisable
         return JSONResponse(content={"filename": file.filename, "success": True, "data": diagnosis})
@@ -595,6 +656,7 @@ async def analyze_batch(
                     continue
                 trc_path = trc_by_stem.get(stem.lower())
                 trc_data = opt.load_trc_file(trc_path) if trc_path else None
+                kin, trc_data = _crop_to_swing(kin, trc_data)
                 diag = opt.comprehensive_diagnosis(kin, name, trc_data=trc_data,
                                                    model_path=model_path or ENV_MODEL)
                 rep = diag.get("phase_report", {})
@@ -623,7 +685,8 @@ async def analyze_batch(
                     ref_path = next(iter(ref_by_stem.values()))
                 id_mags = _run_id(mot_path, model_path or DEFAULT_MODEL, bat_mass_kg,
                                   bat_length_m, diag, foot_loads=diag.get('_foot_loads'),
-                                  body_mass_kg=weight_kg, model_uploaded=bool(model_path))
+                                  body_mass_kg=weight_kg, model_uploaded=bool(model_path),
+                                  time_range=_time_range(kin))
                 _attach_dynamics(diag, id_mags, ref_path, handedness, weight_kg)
                 diag.pop('_rotation', None)
 

@@ -48,7 +48,8 @@ def run_inverse_dynamics(mot_path: str, model_path: str = DEFAULT_MODEL,
                           bat_mass_kg: float = 0.0,
                           bat_length_m: float = 0.0,
                           use_shoulder_model: bool = False,
-                          external_loads: Optional[dict] = None) -> dict:
+                          external_loads: Optional[dict] = None,
+                          time_range: Optional[tuple] = None) -> dict:
     """
     Run OpenSim Inverse Dynamics on a swing .mot file.
 
@@ -91,7 +92,7 @@ def run_inverse_dynamics(mot_path: str, model_path: str = DEFAULT_MODEL,
     with tempfile.TemporaryDirectory() as tmpdir:
         # ── 1. Trim .mot to swing window ────────────────────────────────────
         trimmed_mot = os.path.join(tmpdir, "swing_trimmed.mot")
-        t_start, t_end = _trim_to_swing_window(mot_path, trimmed_mot)
+        t_start, t_end = _trim_to_swing_window(mot_path, trimmed_mot, time_range=time_range)
 
         # ── 2. Build modified model (lumbar limits + optional bat) ──────────
         mod_model_path = os.path.join(tmpdir, "model_modified.osim")
@@ -206,7 +207,7 @@ def _read_mot_df(mot_path: str) -> pd.DataFrame:
 
 
 def _trim_to_swing_window(mot_path: str, out_path: str,
-                           window_s: float = 0.5) -> tuple:
+                           window_s: float = 0.5, time_range: Optional[tuple] = None) -> tuple:
     """
     Detect swing onset by walking backward from peak pelvis omega.
     Write a trimmed .mot covering [onset - 0.1s, onset + window_s].
@@ -232,7 +233,14 @@ def _trim_to_swing_window(mot_path: str, out_path: str,
     except Exception:
         pelvis_omega = np.gradient(np.unwrap(np.deg2rad(df['pelvis_rotation'].values)), dt)
 
-    peak_frame = int(np.argmax(np.abs(pelvis_omega)))
+    # Search only the swing the rest of the report analysed (main._crop_to_swing),
+    # so a faster turn elsewhere in the recording cannot move the ID window.
+    in_range = np.ones(len(time), bool)
+    if time_range is not None:
+        in_range = (time >= time_range[0]) & (time <= time_range[1])
+        if not in_range.any():
+            in_range[:] = True
+    peak_frame = int(np.flatnonzero(in_range)[np.argmax(np.abs(pelvis_omega[in_range]))])
     onset_frame = 0
     for i in range(peak_frame, -1, -1):
         if abs(pelvis_omega[i]) * 180 / np.pi < 50.0:
