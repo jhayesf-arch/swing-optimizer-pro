@@ -1447,6 +1447,27 @@ class RefinedHittingOptimizer:
 
         sequence_timing_ms = float((peak_shoulder_frac - peak_hip_frac) * dt * 1000.0)
 
+        # A segment speeds up once and slows once in a swing. A signal that surges,
+        # nearly stops and surges again inside the swing is tracking, not motion:
+        # on a 120 Hz capture (1001_120fps) the torso read 785 -> 71 -> 772 -> 219
+        # -> 848 deg/s within 250 ms, and the last spike, on the edge of the search
+        # window, was reported as the torso, arm and hand peak together.
+        def _surges(sig, lo, hi, high=0.6, low=0.35, half=3):
+            s = np.abs(np.asarray(sig[lo:hi], dtype=float))
+            if len(s) < 2 * half + 3 or s.max() <= 0:
+                return False
+            top = s.max()
+            peaks = [i for i in range(half, len(s) - half)
+                     if s[i] >= high * top and s[i] == s[i - half:i + half + 1].max()]
+            return any(s[a:b + 1].min() < low * top for a, b in zip(peaks, peaks[1:]))
+
+        _win_lo = max(swing_start, peak_hip_frame - _search_half)
+        _win_hi = min(len(pelvis_om3d), peak_hip_frame + _search_half + 1)
+        pelvis_signal_unstable = bool(_surges(pelvis_om3d, _win_lo, _win_hi))
+        torso_signal_unstable = bool(_surges(torso_om3d, _win_lo, _win_hi))
+        # A torso peak on the last frame searched is the window's edge, not a peak.
+        torso_peak_at_edge = bool(peak_shoulder_frame >= thr_hi - 2)
+
         # Resolution uncertainty flags:
         # 1. Timing within ±1 frame → cannot distinguish order at 60Hz.
         # 2. Peak pelvis omega < 120 deg/s → too weak a movement to sequence-analyze
@@ -1793,6 +1814,9 @@ class RefinedHittingOptimizer:
             'separation_source': separation_source,
             'separation_raw_peak_deg': _sep_raw_peak,
             # Single-frame arm IK jumps inside the swing window (see metric_evidence).
+            'pelvis_signal_unstable': pelvis_signal_unstable,
+            'torso_signal_unstable': torso_signal_unstable,
+            'torso_peak_at_edge': torso_peak_at_edge,
             'ik_branch_jumps': (detect_ik_branch_jumps(data, swing_start)
                                 if _HAS_EVIDENCE else {}),
             'lead_arm_side': lead_arm_side,
@@ -2700,6 +2724,9 @@ class RefinedHittingOptimizer:
              'separation_source': rotation.get('separation_source', 'model_lumbar_rotation') if rotation else 'model_lumbar_rotation',
              'separation_raw_peak_deg': rotation.get('separation_raw_peak_deg', 0.0) if rotation else 0.0,
              'ik_branch_jumps': rotation.get('ik_branch_jumps', {}) if rotation else {},
+             'pelvis_signal_unstable': bool(rotation.get('pelvis_signal_unstable')) if rotation else False,
+             'torso_signal_unstable': bool(rotation.get('torso_signal_unstable')) if rotation else False,
+             'torso_peak_at_edge': bool(rotation.get('torso_peak_at_edge')) if rotation else False,
              'lead_arm_side': rotation.get('lead_arm_side', 'l') if rotation else 'l'})
         try:
             _mech = compute_mechanics_score(asdict(metrics), (phase_report or {}).get('dimensions', {}),

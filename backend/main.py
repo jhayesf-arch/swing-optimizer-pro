@@ -206,8 +206,21 @@ def _kinematic_sequence(mot_df, rotation=None, max_points: int = 72) -> dict:
                     'value': int(round(float(v[min(pj, n - 1)])))}
 
     contact = peaks.get('Hands/Bat') or peaks.get('Lead Arm') or peaks['Pelvis']
+    # The torso, lead-arm and hand curves are all built on the torso's rotation,
+    # so when that signal is corrupt they share its spike: say so on the chart
+    # rather than show a sequence verdict.
+    unstable = [seg for seg, key in (('hips', 'pelvis_signal_unstable'),
+                                     ('trunk', 'torso_signal_unstable')) if rotation.get(key)]
+    warning = None
+    if unstable:
+        warning = (f'Tracking of the {" and ".join(unstable)} was unstable in this swing '
+                   '(the rotation speed surged, nearly stopped and surged again), so the '
+                   'peaks below are not a reliable sequence.')
+    elif rotation.get('torso_peak_at_edge'):
+        warning = ('The torso was still speeding up at the end of the window analysed, '
+                   'so its true peak, and the sequence timing, were not captured.')
     return {'time_ms': time_ms, 'series': out_series, 'peaks': peaks,
-            'contact_ms': contact['t_ms'], 'units': 'deg/s'}
+            'contact_ms': contact['t_ms'], 'units': 'deg/s', 'warning': warning}
 
 
 def _extract_skeleton_frames(trc_df, mot_df, max_frames: int = 60) -> dict:

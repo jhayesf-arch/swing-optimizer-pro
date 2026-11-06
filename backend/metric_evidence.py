@@ -330,6 +330,9 @@ def _capture_flags(diagnosis: dict) -> dict:
         'max_separation_deg': float(metrics.get('max_separation_deg', 0.0) or 0.0),
         'separation_raw_peak_deg': float(rot.get('separation_raw_peak_deg', 0.0) or 0.0),
         'ik_branch_jumps': rot.get('ik_branch_jumps') or {},
+        'pelvis_signal_unstable': bool(rot.get('pelvis_signal_unstable')),
+        'torso_signal_unstable': bool(rot.get('torso_signal_unstable')),
+        'torso_peak_at_edge': bool(rot.get('torso_peak_at_edge')),
         'lead_arm_side': rot.get('lead_arm_side', 'l'),
     }
 
@@ -375,6 +378,31 @@ def build_metric_evidence(diagnosis: dict) -> dict:
                 'comes from fast rotation filmed at 60 fps; 120-240 fps capture helps.')
         for n in _TRUNK_METRICS:
             jump_caveats[n] = text
+
+    # A rotation speed that surges, nearly stops and surges again inside one
+    # swing is tracking noise; its peaks (and the sequence built on them) are not.
+    unstable = [seg for seg, on in (('pelvis', f['pelvis_signal_unstable']),
+                                    ('torso', f['torso_signal_unstable'])) if on]
+    if unstable:
+        text = (f'The {" and ".join(unstable)} rotation speed surges, nearly stops and '
+                'surges again within the swing, which a body segment does not do. '
+                'Tracking of the hips or trunk is unstable on this capture, so their '
+                'peak speeds and the sequence between them cannot be trusted. Camera '
+                'placement that keeps both hips and shoulders in view through the turn helps.')
+        names = ['sequence_timing_ms', 'proper_sequence', 'torso_arm_sequence_gap_ms']
+        if 'pelvis' in unstable:
+            names += ['peak_pelvis_omega_3d_deg_s', 'time_to_peak_pelvis_from_plant_ms']
+        if 'torso' in unstable:
+            names += ['torso_to_pelvis_rot_ratio']
+        for n in names:
+            jump_caveats.setdefault(n, text)
+    elif f['torso_peak_at_edge']:
+        text = ('The torso was still speeding up at the end of the window searched '
+                'after the pelvis peak (200 ms), so its true peak, and the sequence '
+                'timing, were not captured.')
+        for n in ('sequence_timing_ms', 'proper_sequence', 'torso_arm_sequence_gap_ms',
+                  'torso_to_pelvis_rot_ratio'):
+            jump_caveats.setdefault(n, text)
 
     for name, (tier, citation, note) in METRIC_EVIDENCE.items():
         reliable, caveat = True, ''

@@ -102,6 +102,21 @@ def test_fast_but_human_trunk_turn_is_not_flagged():
     assert detect_ik_branch_jumps(_kin(lumbar_rotation=q)) == {}
 
 
+def test_unstable_trunk_signal_voids_sequence_and_torso_but_not_pelvis():
+    ev = build_metric_evidence({'metrics': {'max_hand_speed_mph': 20.0},
+                                '_rotation_context': {'torso_signal_unstable': True}})
+    for m in ('sequence_timing_ms', 'proper_sequence', 'torso_to_pelvis_rot_ratio'):
+        assert not ev[m]['reliable'] and 'surges' in ev[m]['caveat'], m
+    assert ev['peak_pelvis_omega_3d_deg_s']['reliable']
+
+
+def test_torso_peak_on_the_window_edge_voids_sequence():
+    ev = build_metric_evidence({'metrics': {'max_hand_speed_mph': 20.0},
+                                '_rotation_context': {'torso_peak_at_edge': True}})
+    assert not ev['sequence_timing_ms']['reliable']
+    assert 'end of the window' in ev['sequence_timing_ms']['caveat']
+
+
 if __name__ == '__main__':
     tests = [v for k, v in dict(globals()).items() if k.startswith('test_')]
     for fn in tests:

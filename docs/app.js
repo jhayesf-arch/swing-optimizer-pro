@@ -1198,7 +1198,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const lag = (pk['Pelvis'] && pk['Torso']) ? (pk['Torso'].t_ms - pk['Pelvis'].t_ms) : null;
         const proper = lag != null && lag > 0;
         const cap = document.getElementById('kinematic-caption');
-        cap.innerHTML = proper
+        cap.innerHTML = seq.warning
+            ? `<span class="val-warn" style="font-weight:500;">Sequence not measured reliably</span> <span class="text-muted">— ${seq.warning}</span>`
+            : proper
             ? `<span class="val-good" style="font-weight:600;">Proper sequence</span> <span class="text-muted">— hips peak ${Math.round(lag)}ms before the torso, building speed up the chain. Arm and hand timing is indicative only at this capture rate.</span>`
             : (lag == null
                 ? '<span class="text-muted">Sequence timing could not be resolved for this capture.</span>'
