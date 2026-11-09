@@ -20,7 +20,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from grf_estimation import estimate_grf                     # noqa: E402
 from bottom_up_id import _leg_id, split_grf_by_foot, SEG, segment_params_from_osim  # noqa: E402
-from opensim_id import write_external_loads, summarize_id_magnitudes  # noqa: E402
+from opensim_id import (write_external_loads, summarize_id_magnitudes,  # noqa: E402
+                        required_ground_force, check_required_grf, consistent_foot_loads)
 from dynamics_compare import build_comparison, reference_stem         # noqa: E402
 
 G = 9.81
@@ -160,6 +161,42 @@ def test_comparison_needs_two_sources_and_maps_lead():
 def test_reference_stem_pairs_common_suffixes():
     for name in ('Emilio_1_10_cortex.json', 'Emilio_1_10_ID.sto', 'emilio_1_10.json'):
         assert reference_stem(name) == 'emilio_1_10'
+
+
+def test_required_grf_reads_pelvis_translation_residuals():
+    df = pd.DataFrame({'time': [0, 1], 'pelvis_tx_force': [1., 2.],
+                       'pelvis_ty_force': [700., 710.], 'pelvis_tz_force': [3., 4.]})
+    assert required_ground_force(df).tolist() == [[1, 700, 3], [2, 710, 4]]
+    # A planar model has no sideways translation: no 3-D check is possible.
+    assert required_ground_force(df.drop(columns='pelvis_tz_force')) is None
+
+
+def test_grf_check_passes_standing_and_rejects_impossible_forces():
+    W = M * G
+    standing = np.tile([0.0, W, 0.0], (10, 1))
+    assert check_required_grf(standing, W)['plausible']
+    # The ground pushes; it cannot pull. Nor can a batter push 2 BW sideways.
+    pulled = standing.copy(); pulled[4, 1] = -0.5 * W
+    sideways = standing.copy(); sideways[4, 0] = 2.0 * W
+    for F in (pulled, sideways):
+        chk = check_required_grf(F, W)
+        assert not chk['plausible'] and chk['reasons']
+
+
+def test_consistent_loads_sum_to_required_and_follow_estimated_split():
+    t = np.linspace(0, 1, 5)
+    est = {'time': t,
+           'grf_l': np.tile([0, 300.0, 0], (5, 1)), 'grf_r': np.tile([0, 100.0, 0], (5, 1)),
+           'cop_l': np.tile([0.1, 0, -0.2], (5, 1)), 'cop_r': np.tile([0.1, 0, 0.2], (5, 1))}
+    req = np.tile([40.0, 800.0, -20.0], (5, 1))
+    out = consistent_foot_loads(est, t, req)
+    assert np.allclose(out['grf_l'] + out['grf_r'], req)
+    assert np.allclose(out['grf_l'][:, 1], 600.0)          # 75 % share, as estimated
+    assert np.allclose(out['cop_r'], est['cop_r'])
+    # No vertical force in the estimate (both feet unloaded): split evenly.
+    est['grf_l'][:] = 0; est['grf_r'][:] = 0
+    out = consistent_foot_loads(est, t, req)
+    assert np.allclose(out['grf_l'], req / 2)
 
 
 if __name__ == '__main__':

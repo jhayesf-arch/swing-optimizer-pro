@@ -1647,7 +1647,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (st && st.reason) notes.push('OpenSim: ' + st.reason);
         if (!cmp || !cmp.rows || !cmp.rows.length) {
             // Still surface why nothing could be compared when the user asked for it.
-            if (notes.length && diagnosis.dynamics_reference_error) {
+            if (notes.length && (diagnosis.dynamics_reference_error || (st && st.reliable === false))) {
                 wrap.style.display = '';
                 table.innerHTML = '';
                 notesEl.textContent = notes.join('  ');

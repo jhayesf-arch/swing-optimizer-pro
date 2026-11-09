@@ -44,17 +44,23 @@ LUMBAR_ROT_LIMIT_RAD = math.radians(50.0)
 
 
 def run_inverse_dynamics(mot_path: str, model_path: str = DEFAULT_MODEL,
-                          lowpass_hz: float = 15.0,
+                          lowpass_hz: float = 10.0,
                           bat_mass_kg: float = 0.0,
                           bat_length_m: float = 0.0,
                           use_shoulder_model: bool = False,
                           external_loads: Optional[dict] = None,
-                          time_range: Optional[tuple] = None) -> dict:
+                          time_range: Optional[tuple] = None,
+                          consistent_grf: bool = True) -> dict:
     """
     Run OpenSim Inverse Dynamics on a swing .mot file.
 
     Parameters
     ----------
+    lowpass_hz : coordinate filter before ID differentiates twice. 10 Hz, not the
+                 15 Hz used for velocities elsewhere: on OpenCap capture 1001,
+                 quiet standing at 15 Hz implied 0.2–1.65 BW vertical and 1.2 BW
+                 sideways (impossible); at 10 Hz 0.56–1.28 and 0.45 BW. Provisional
+                 until a clean swing is checked against lab force plates.
     use_shoulder_model : if True, use the ISB shoulder model (adds scapular DOFs)
                          instead of the standard ball-and-socket arm model.
     external_loads : per-foot ground reaction forces to apply, as produced by
@@ -62,6 +68,14 @@ def run_inverse_dynamics(mot_path: str, model_path: str = DEFAULT_MODEL,
                      frame, N and m). Without them ID sees no ground force at all
                      and the lower-limb moments are missing the load the legs
                      carry — the pelvis residuals then absorb it instead.
+    consistent_grf : with external_loads, take the TOTAL ground force from the
+                     model's own dynamics (a first ID pass without loads) and
+                     use the estimated loads only to split it between the feet
+                     and place it (CoP). The estimate comes from a simpler body
+                     model than OpenSim's, so applying it as-is leaves a pelvis
+                     residual of ~1 BW that the leg moments silently absorb.
+                     The result also carries grf_check: whether the force the
+                     motion requires is physically possible for a swing.
     """
     if use_shoulder_model:
         try:
@@ -99,37 +113,55 @@ def run_inverse_dynamics(mot_path: str, model_path: str = DEFAULT_MODEL,
         _build_modified_model(model_path, mod_model_path, bat_mass_kg, bat_length_m)
 
         # ── 3. Run ID ────────────────────────────────────────────────────────
-        sto_path = os.path.join(tmpdir, "ID_results.sto")
         model = osim.Model(mod_model_path)
-        model.initSystem()
+        state = model.initSystem()
+        weight_N = model.getTotalMass(state) * 9.81
 
-        id_tool = osim.InverseDynamicsTool()
-        id_tool.setModel(model)
-        id_tool.setCoordinatesFileName(trimmed_mot)
-        id_tool.setLowpassCutoffFrequency(lowpass_hz)
-        id_tool.setStartTime(t_start)
-        id_tool.setEndTime(t_end)
-        id_tool.setOutputGenForceFileName(sto_path)
-        id_tool.setResultsDir(tmpdir)
-        force_set = osim.ArrayStr()
-        force_set.append("Muscles")
-        id_tool.setExcludedForces(force_set)
-        if external_loads is not None:
-            xml_path = write_external_loads(external_loads, tmpdir)
-            id_tool.setExternalLoadsFileName(xml_path)
-        id_tool.run()
+        def _run(loads, name):
+            sto = os.path.join(tmpdir, f"{name}.sto")
+            id_tool = osim.InverseDynamicsTool()
+            id_tool.setModel(model)
+            id_tool.setCoordinatesFileName(trimmed_mot)
+            id_tool.setLowpassCutoffFrequency(lowpass_hz)
+            id_tool.setStartTime(t_start)
+            id_tool.setEndTime(t_end)
+            id_tool.setOutputGenForceFileName(sto)
+            id_tool.setResultsDir(tmpdir)
+            force_set = osim.ArrayStr()
+            force_set.append("Muscles")
+            id_tool.setExcludedForces(force_set)
+            if loads is not None:
+                load_dir = os.path.join(tmpdir, name)
+                os.makedirs(load_dir, exist_ok=True)
+                id_tool.setExternalLoadsFileName(write_external_loads(loads, load_dir))
+            id_tool.run()
+            if not os.path.exists(sto):
+                raise RuntimeError("ID tool produced no output.")
+            return sto, _load_sto(sto)
 
-        if not os.path.exists(sto_path):
-            raise RuntimeError("ID tool produced no output.")
+        # Pass 1, no ground force: the pelvis translational residuals are then
+        # exactly the external force the model's own motion requires
+        # (M·a_com − M·g, from the same filtered coordinates ID differentiates).
+        grf_check = None
+        loads_used = external_loads
+        if external_loads is not None and consistent_grf:
+            _, df_free = _run(None, "ID_no_loads")
+            required = required_ground_force(df_free)
+            if required is not None:
+                grf_check = check_required_grf(required, weight_N)
+                loads_used = consistent_foot_loads(external_loads, df_free['time'].values, required)
 
-        df = _load_sto(sto_path)
+        sto_path, df = _run(loads_used, "ID_results")
         out_sto = mot_path.replace(".mot", "_ID.sto")
         shutil.copy(sto_path, out_sto)
 
     joints = _extract_peak_kinetics(df)
     return {'sto_path': out_sto, 'joints': joints, 'dataframe': df,
             'swing_t_start': t_start, 'swing_t_end': t_end,
-            'external_loads_applied': external_loads is not None,
+            'external_loads_applied': loads_used is not None,
+            'grf_source': ('model_consistent' if loads_used is not external_loads
+                           else 'estimated' if loads_used is not None else 'none'),
+            'grf_check': grf_check, 'body_weight_N': weight_N,
             'model_path': model_path}
 
 
@@ -193,6 +225,77 @@ def write_external_loads(loads: dict, out_dir: str) -> str:
     xml_path = os.path.join(out_dir, 'external_loads.xml')
     ET.ElementTree(root).write(xml_path, encoding='UTF-8', xml_declaration=True)
     return xml_path
+
+
+# ── Model-consistent ground force ────────────────────────────────────────────
+
+# What a swing's ground force can physically be, in body weights. Measured at
+# the Cal Poly MBL (trial 261105_1001_0001, force plates): total vertical peak
+# 1.71 BW, horizontal under 0.15 BW per foot. The limits are kept generous so a
+# hard swing is never rejected; what they catch is a motion whose implied force
+# is impossible — the ground cannot pull (vertical < 0), and a batter cannot
+# push several body weights sideways. Such forces come from noisy accelerations
+# (e.g. an IK trunk flip), and every joint moment computed from them inherits it.
+GRF_LIMITS_BW = {'vertical_max': 3.0, 'vertical_min': -0.25, 'horizontal_max': 1.0}
+_PELVIS_FORCE_COLS = ('pelvis_tx_force', 'pelvis_ty_force', 'pelvis_tz_force')
+
+
+def required_ground_force(df_no_loads: pd.DataFrame) -> Optional[np.ndarray]:
+    """Total external force (N, ground frame, Y up) the motion requires.
+
+    With no external loads applied, ID's pelvis translational generalized forces
+    are M·a_com − M·g: exactly what the ground must supply. OpenCap models put
+    the pelvis translations along ground X/Y/Z, so the columns are the vector.
+    """
+    if not all(c in df_no_loads.columns for c in _PELVIS_FORCE_COLS):
+        return None
+    return df_no_loads[list(_PELVIS_FORCE_COLS)].values.astype(float)
+
+
+def check_required_grf(required: np.ndarray, weight_N: float) -> dict:
+    """Is the ground force this motion implies physically possible?"""
+    F = np.asarray(required, dtype=float) / weight_N
+    vert = F[:, 1]
+    horiz = np.linalg.norm(F[:, [0, 2]], axis=1)
+    out = {'peak_vertical_BW': round(float(vert.max()), 2),
+           'min_vertical_BW': round(float(vert.min()), 2),
+           'peak_horizontal_BW': round(float(horiz.max()), 2)}
+    lim = GRF_LIMITS_BW
+    reasons = []
+    if out['peak_vertical_BW'] > lim['vertical_max']:
+        reasons.append(f"vertical {out['peak_vertical_BW']:.1f} BW (a swing stays under ~{lim['vertical_max']:g})")
+    if out['min_vertical_BW'] < lim['vertical_min']:
+        reasons.append(f"the ground would have to pull down ({out['min_vertical_BW']:.1f} BW)")
+    if out['peak_horizontal_BW'] > lim['horizontal_max']:
+        reasons.append(f"sideways {out['peak_horizontal_BW']:.1f} BW (a swing stays under ~{lim['horizontal_max']:g})")
+    out['plausible'] = not reasons
+    out['reasons'] = reasons
+    return out
+
+
+def consistent_foot_loads(estimated: dict, time: np.ndarray, required: np.ndarray) -> dict:
+    """Split the model-required total force between the feet.
+
+    The estimate's vertical share per foot decides the split (equal when the
+    estimate has no vertical force), and its CoP places each foot's force.
+    The total then matches the model's dynamics exactly, so the pelvis force
+    residual is ~0 and the leg moments carry the load the legs really do.
+    """
+    t_est = np.asarray(estimated['time'], dtype=float)
+    time = np.asarray(time, dtype=float)
+
+    def interp(arr):
+        a = np.nan_to_num(np.asarray(arr, dtype=float))
+        return np.column_stack([np.interp(time, t_est, a[:, j]) for j in range(3)])
+
+    fl = np.clip(interp(estimated['grf_l'])[:, 1], 0, None)
+    fr = np.clip(interp(estimated['grf_r'])[:, 1], 0, None)
+    tot = fl + fr
+    w_l = np.divide(fl, tot, out=np.full_like(tot, 0.5), where=tot > 1e-6)
+    req = np.asarray(required, dtype=float)
+    return {'time': time,
+            'grf_l': req * w_l[:, None], 'grf_r': req * (1 - w_l)[:, None],
+            'cop_l': interp(estimated['cop_l']), 'cop_r': interp(estimated['cop_r'])}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -427,19 +530,65 @@ def summarize_id_magnitudes(df: pd.DataFrame, body_mass_kg: Optional[float] = No
     return out
 
 
-if __name__ == '__main__':
-    import sys
-    mot = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser(
-        '~/Desktop/OpenCapData_94fba876-8deb-4074-afe5-8d7872fec1ae'
-        '/OpenSimData/Kinematics/swing_lower_first.mot')
-    bat_mass   = float(sys.argv[2]) if len(sys.argv) > 2 else 0.88   # kg (~31oz)
-    bat_length = float(sys.argv[3]) if len(sys.argv) > 3 else 0.864  # m  (34 inch)
+def _cli():
+    """python opensim_id.py trial.mot --trc trial.trc --model scaled.osim [--mass 81]
 
-    print(f'Running OpenSim ID: {os.path.basename(mot)}  bat={bat_mass}kg {bat_length}m')
-    result = run_inverse_dynamics(mot, bat_mass_kg=bat_mass, bat_length_m=bat_length)
-    summary = summarize_id_results(result)
-    print(f'Swing window: {result["swing_t_start"]:.2f}s – {result["swing_t_end"]:.2f}s')
-    print(f'Saved: {result["sto_path"]}')
-    print('\n=== JOINT TORQUE SUMMARY ===')
-    for k, v in summary.items():
-        print(f'  {k:<35} {v:>8.1f} N·m')
+    With --trc the run matches the web upload: ground force estimated from the
+    markers, made consistent with the model, split between the feet. Without it
+    ID has no ground force and the leg/pelvis numbers are not meaningful.
+    """
+    import argparse
+    p = argparse.ArgumentParser(description='OpenSim inverse dynamics for one swing.')
+    p.add_argument('mot', help='OpenCap IK result (.mot)')
+    p.add_argument('--trc', help='OpenCap markers (.trc) — needed for ground forces')
+    p.add_argument('--model', default=DEFAULT_MODEL, help='athlete-scaled .osim')
+    p.add_argument('--mass', type=float, default=None, help='body mass kg (default: model mass)')
+    p.add_argument('--height', type=float, default=1.83, help='body height m')
+    p.add_argument('--bat-mass', type=float, default=0.88)
+    p.add_argument('--bat-length', type=float, default=0.864)
+    a = p.parse_args()
+
+    loads, time_range = None, None
+    mass = a.mass
+    if mass is None and HAS_OPENSIM:
+        m = osim.Model(a.model)
+        mass = m.getTotalMass(m.initSystem())
+    if a.trc:
+        from analyzer import RefinedHittingOptimizer
+        from main import _crop_to_swing, _time_range
+        opt = RefinedHittingOptimizer(body_mass_kg=mass or 82.0, body_height_m=a.height,
+                                      bat_mass_kg=a.bat_mass, bat_length_m=a.bat_length)
+        kin = opt.load_mot_file(a.mot)
+        kin, trc = _crop_to_swing(kin, opt.load_trc_file(a.trc))
+        diag = opt.comprehensive_diagnosis(kin, os.path.basename(a.mot), trc_data=trc,
+                                           model_path=a.model)
+        loads, time_range = diag.get('_foot_loads'), _time_range(kin)
+        if loads is None:
+            print('Warning: no ground force could be estimated from the .trc; running without.')
+    else:
+        print('Warning: no --trc, so no ground force is applied. Leg and pelvis results '
+              'are not meaningful; pass the trial .trc.')
+
+    r = run_inverse_dynamics(a.mot, model_path=a.model, bat_mass_kg=a.bat_mass,
+                             bat_length_m=a.bat_length, external_loads=loads,
+                             time_range=time_range)
+    mags = summarize_id_magnitudes(r['dataframe'], r['body_weight_N'] / 9.81)
+    print(f"\nSwing window {r['swing_t_start']:.2f}–{r['swing_t_end']:.2f} s   "
+          f"ground force: {r['grf_source']}")
+    chk = r.get('grf_check')
+    if chk:
+        print(f"Ground force the motion requires: vertical {chk['min_vertical_BW']}..{chk['peak_vertical_BW']} BW, "
+              f"sideways peak {chk['peak_horizontal_BW']} BW -> "
+              + ('plausible' if chk['plausible'] else 'NOT plausible: ' + '; '.join(chk['reasons'])))
+        if not chk['plausible']:
+            print('The motion is too noisy for inverse dynamics; the moments below are not reliable.')
+    print(f"Pelvis residual: {mags['pelvis_residual_force_N']:.0f} N "
+          f"({mags.get('pelvis_residual_force_BW', 0):.2f} BW), {mags['pelvis_residual_moment_Nm']:.0f} N·m")
+    for k in ('hip_moment_l_Nm', 'hip_moment_r_Nm', 'knee_moment_l_Nm', 'knee_moment_r_Nm',
+              'ankle_moment_l_Nm', 'ankle_moment_r_Nm'):
+        print(f"  {k:<20} {mags[k]:7.0f}")
+    print(f"Full results: {r['sto_path']}")
+
+
+if __name__ == '__main__':
+    _cli()

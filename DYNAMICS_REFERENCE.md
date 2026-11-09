@@ -114,11 +114,33 @@ The model carries the athlete's segment masses, so use the model from the
 **same athlete's** session. The report flags it when it had to fall back to a
 default model.
 
-**Pelvis residual.** When OpenSim runs, the notes show the peak pelvis residual
-force. That is the force OpenSim needs at the pelvis to balance the motion
-against the ground force we applied. Under roughly 5–10% of body weight means
-the applied GRF and the kinematics agree. A large residual means they don't, and
-the GRF estimate on that trial shouldn't be trusted.
+**Model-consistent ground force.** OpenSim ID runs twice. The first pass applies
+no ground force, so the pelvis translational residuals equal exactly the
+external force the model's own motion requires (M·a_com − M·g). That total is
+split between the feet by the marker-based estimate's vertical share and placed
+at its centre of pressure, and the second pass applies it. The pelvis *force*
+residual is then ~0 by construction. The pelvis *moment* residual remains and
+reflects the split and CoP, which are still estimates. Applying the marker-based
+estimate directly (as before) left ~1 BW of residual force that the leg moments
+silently absorbed, because the estimate uses a simpler body model than OpenSim's.
+
+**Plausibility gate.** Before reporting moments, the required ground force is
+checked: vertical over 3 BW, below −0.25 BW (the ground would have to pull), or
+sideways over 1 BW means the tracked motion is too noisy to differentiate twice,
+usually from trunk or arm tracking. The report then says why and withholds the
+OpenSim moments. For scale, the MBL force plates on trial 261105_1001_0001 read
+1.71 BW total vertical and under 0.15 BW sideways per foot.
+
+**Filter.** ID filters coordinates at 10 Hz, not the 15 Hz used for velocities.
+On OpenCap capture 1001, quiet standing at 15 Hz already implied 1.2 BW sideways
+(impossible); at 10 Hz it implied 0.45 BW. This is provisional until a clean
+swing is checked against force plates.
+
+Command line, matching the web upload:
+
+```bash
+python backend/opensim_id.py trial.mot --trc trial.trc --model LaiUhlrich2022_scaled.osim
+```
 
 ### Why the OpenCap dynamic simulation isn't included
 

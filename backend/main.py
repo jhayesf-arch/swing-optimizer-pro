@@ -53,8 +53,8 @@ def _run_id(file_path, model_path, bat_mass_kg, bat_length_m, diagnosis,
     """Run OpenSim ID and attach results to the diagnosis.
 
     Always records diagnosis['opensim_id_status'] so the report can say WHY the
-    OpenSim column is empty, rather than silently leaving it blank — on Render
-    it is always empty because opensim is a conda-only package.
+    OpenSim column is empty, rather than silently leaving it blank (opensim not
+    installed, no scaled model, or a motion too noisy for ID to be meaningful).
     """
     status = {'ran': False, 'external_loads': False,
               'model': os.path.basename(model_path) if model_path else None,
@@ -62,9 +62,8 @@ def _run_id(file_path, model_path, bat_mass_kg, bat_length_m, diagnosis,
                                'OPENSIM_MODEL_PATH' if ENV_MODEL else 'default')}
     diagnosis['opensim_id_status'] = status
     if not HAS_OPENSIM_ID:
-        status['reason'] = ('OpenSim is not installed on this server. It runs when the '
-                            'backend is started locally from an env with opensim '
-                            '(see DYNAMICS_REFERENCE.md).')
+        status['reason'] = ('OpenSim is not installed on this server (the opensim '
+                            'wheel needs Python 3.11–3.13; see DYNAMICS_REFERENCE.md).')
         return None
     if not model_path or not os.path.exists(model_path):
         status['reason'] = ('No scaled .osim model. Upload the athlete\'s '
@@ -81,10 +80,24 @@ def _run_id(file_path, model_path, bat_mass_kg, bat_length_m, diagnosis,
         status['reason'] = f'OpenSim ID failed: {type(e).__name__}: {e}'
         print(f"[opensim_id] {status['reason']}")
         return None
+    status.update(ran=True, external_loads=bool(id_result.get('external_loads_applied')),
+                  grf_source=id_result.get('grf_source'))
+    check = id_result.get('grf_check')
+    if check:
+        status['grf_check'] = check
+        if not check['plausible']:
+            # The ground force this motion implies is impossible for a swing, so
+            # the joint moments built on it are noise. Say so; don't show them.
+            status.update(reliable=False, reason=(
+                'OpenSim ID ran, but the tracked motion implies an impossible ground '
+                'force (' + '; '.join(check['reasons']) + '), usually from noisy trunk '
+                'or arm tracking. Joint moments are withheld for this capture.'))
+            return None
+    status['reliable'] = True
     diagnosis['opensim_id'] = summarize_id_results(id_result)
-    mags = summarize_id_magnitudes(id_result['dataframe'], body_mass_kg)
+    mags = summarize_id_magnitudes(id_result['dataframe'],
+                                   (id_result.get('body_weight_N') or 0) / 9.81 or body_mass_kg)
     diagnosis['opensim_id_magnitudes'] = mags
-    status.update(ran=True, external_loads=bool(id_result.get('external_loads_applied')))
     if not model_uploaded and not ENV_MODEL:
         status['reason'] = ('Ran with the default model, which belongs to a different '
                             'session — upload this athlete\'s scaled .osim for '

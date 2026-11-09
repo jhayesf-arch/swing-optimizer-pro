@@ -158,7 +158,7 @@ def build_comparison(metrics: dict,
     if opensim_mag:
         os_peaks = {k: v for k, v in opensim_mag.items() if k in KNOWN_KEYS and v}
         if os_peaks:
-            sources.append({'key': 'opensim', 'label': 'OpenSim ID (same GRF)'})
+            sources.append({'key': 'opensim', 'label': 'OpenSim ID (model-consistent GRF)'})
             values['opensim'] = os_peaks
     if reference and reference.get('peaks'):
         sources.append({'key': 'reference', 'label': reference.get('label', 'Reference')})
