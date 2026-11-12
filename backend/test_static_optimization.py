@@ -37,6 +37,25 @@ def test_summary_sides_groups_and_reserve_reliance():
     assert s['pelvis_residuals']['pelvis_tilt'] == 12.0
 
 
+def test_fast_solver_meets_moments_with_least_effort_and_reserves_last():
+    from muscle_forces import solve_frame
+    # One joint, two identical muscles (F0 1000 N, moment arm 0.05 m) and a reserve.
+    A = np.array([[50.0, 50.0, 1.0]])
+    x = solve_frame(A, np.array([40.0]), n_muscles=2)
+    assert np.allclose(x[:2], [0.4, 0.4], atol=1e-3)      # shared equally, as min sum a^2 says
+    assert abs(x[2]) < 0.05
+    # Beyond what the muscles can make, the reserve covers the rest; a stays <= 1.
+    x = solve_frame(A, np.array([130.0]), n_muscles=2)
+    assert np.all(x[:2] <= 1 + 1e-9) and np.isclose(A @ x, 130, atol=0.5)
+    assert x[2] > 25
+
+
+def test_muscle_report_withholds_on_implausible_ground_force():
+    from muscle_forces import muscle_report
+    out = muscle_report('unused.osim', None, {'grf_check': {'plausible': False, 'reasons': ['x']}})
+    assert out['status'] == 'withheld' and 'groups' not in out
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):

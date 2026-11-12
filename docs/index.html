@@ -232,6 +232,13 @@
                         <p class="small text-muted" id="dyn-notes" style="margin-top:0.6rem;"></p>
                     </div>
 
+                    <div id="muscle-loads" style="display:none;">
+                        <h4 class="panel-title" style="font-size:1rem;margin-top:1.4rem;margin-bottom:0.2rem;">Leg Muscle Loads <span class="dyn-unit">experimental</span></h4>
+                        <p class="small text-muted" style="margin-top:0;margin-bottom:0.8rem;max-width:680px;">Static optimization: the OpenSim joint moments split among the model&rsquo;s 80 leg muscles, using the least total effort. The model has no trunk or arm muscles. Shown only when the ground force and pelvis balance pass their checks; not yet validated against force plates or EMG.</p>
+                        <div class="dyn-table-wrap"><table class="dyn-table" id="muscle-table"></table></div>
+                        <p class="small text-muted" id="muscle-notes" style="margin-top:0.6rem;"></p>
+                    </div>
+
                     <div class="ev-legend">
                         <span class="ev-badge ev-A">A</span> research-backed &nbsp;
                         <span class="ev-badge ev-B">B</span> literature-based, our definition &nbsp;
@@ -409,6 +416,6 @@
     <div id="print-report" aria-hidden="true"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-    <script src="app.js?v=27"></script>
+    <script src="app.js?v=28"></script>
 </body>
 </html>

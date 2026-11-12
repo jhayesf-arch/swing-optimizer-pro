@@ -49,7 +49,8 @@ DEFAULT_MODEL = ENV_MODEL or os.path.expanduser(
 
 
 def _run_id(file_path, model_path, bat_mass_kg, bat_length_m, diagnosis,
-            foot_loads=None, body_mass_kg=None, model_uploaded=False, time_range=None):
+            foot_loads=None, body_mass_kg=None, model_uploaded=False, time_range=None,
+            handedness=None):
     """Run OpenSim ID and attach results to the diagnosis.
 
     Always records diagnosis['opensim_id_status'] so the report can say WHY the
@@ -82,6 +83,7 @@ def _run_id(file_path, model_path, bat_mass_kg, bat_length_m, diagnosis,
         return None
     status.update(ran=True, external_loads=bool(id_result.get('external_loads_applied')),
                   grf_source=id_result.get('grf_source'))
+    diagnosis['muscle_loads'] = _muscle_loads(file_path, model_path, id_result, handedness)
     check = id_result.get('grf_check')
     if check:
         status['grf_check'] = check
@@ -103,6 +105,21 @@ def _run_id(file_path, model_path, bat_mass_kg, bat_length_m, diagnosis,
                             'session — upload this athlete\'s scaled .osim for '
                             'correct segment masses.')
     return mags
+
+
+def _muscle_loads(mot_path, model_path, id_result, handedness):
+    """Leg-muscle static optimization on this ID result (a few seconds).
+
+    Never raises: any failure comes back as status 'failed' with a reason, so
+    the rest of the analysis is unaffected.
+    """
+    try:
+        from muscle_forces import muscle_report
+        from opensim_id import _read_mot_df
+        mot_df, _ = _read_mot_df(mot_path)
+        return muscle_report(model_path, mot_df, id_result, handedness)
+    except Exception as e:
+        return {'status': 'failed', 'reason': f'{type(e).__name__}: {e}', 'experimental': True}
 
 
 async def _save_upload(upload, allowed_exts):
@@ -588,7 +605,7 @@ async def analyze_upload(
         id_mags = _run_id(file_path, model_path or DEFAULT_MODEL, bat_mass_kg, bat_length_m,
                           diagnosis, foot_loads=diagnosis.get('_foot_loads'),
                           body_mass_kg=weight_kg, model_uploaded=bool(model_path),
-                          time_range=_time_range(kinematics))
+                          time_range=_time_range(kinematics), handedness=handedness)
         _attach_dynamics(diagnosis, id_mags, ref_path, handedness, weight_kg)
         diagnosis.pop('_rotation', None)   # numpy arrays — not JSON-serialisable
         return JSONResponse(content={"filename": file.filename, "success": True, "data": diagnosis})
@@ -699,7 +716,7 @@ async def analyze_batch(
                 id_mags = _run_id(mot_path, model_path or DEFAULT_MODEL, bat_mass_kg,
                                   bat_length_m, diag, foot_loads=diag.get('_foot_loads'),
                                   body_mass_kg=weight_kg, model_uploaded=bool(model_path),
-                                  time_range=_time_range(kin))
+                                  time_range=_time_range(kin), handedness=handedness)
                 _attach_dynamics(diag, id_mags, ref_path, handedness, weight_kg)
                 diag.pop('_rotation', None)
 
@@ -731,6 +748,7 @@ async def analyze_batch(
                     "dynamics_comparison": diag.get("dynamics_comparison"),
                     "dynamics_reference_error": diag.get("dynamics_reference_error"),
                     "opensim_id_status": diag.get("opensim_id_status"),
+                    "muscle_loads": diag.get("muscle_loads"),
                     **extras,
                 })
             except Exception as e:

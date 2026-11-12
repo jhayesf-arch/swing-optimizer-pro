@@ -113,7 +113,8 @@ def _build_so_model(src_model: str, dst_path: str) -> None:
     model.printToXML(dst_path)
 
 
-def _write_setup(path, model_path, mot_path, results_dir, t0, t1, lowpass_hz, loads_xml):
+def _write_setup(path, model_path, mot_path, results_dir, t0, t1, lowpass_hz, loads_xml,
+                 use_muscle_physiology=True):
     xml = f"""<?xml version="1.0" encoding="UTF-8" ?>
 <OpenSimDocument Version="40000">
   <AnalyzeTool name="SO">
@@ -132,7 +133,7 @@ def _write_setup(path, model_path, mot_path, results_dir, t0, t1, lowpass_hz, lo
         <in_degrees>true</in_degrees>
         <use_model_force_set>true</use_model_force_set>
         <activation_exponent>2</activation_exponent>
-        <use_muscle_physiology>true</use_muscle_physiology>
+        <use_muscle_physiology>{str(use_muscle_physiology).lower()}</use_muscle_physiology>
         <optimizer_convergence_criterion>0.0001</optimizer_convergence_criterion>
         <optimizer_max_iterations>200</optimizer_max_iterations>
       </StaticOptimization>
@@ -206,7 +207,8 @@ def run_static_optimization(mot_path: str, model_path: str,
                             time_range: Optional[tuple] = None,
                             bat_mass_kg: float = 0.88, bat_length_m: float = 0.864,
                             handedness: Optional[str] = None,
-                            lowpass_hz: Optional[float] = None) -> Dict:
+                            lowpass_hz: Optional[float] = None,
+                            use_muscle_physiology: bool = True) -> Dict:
     """Static optimization on the same window, model and ground force as ID."""
     if not HAS_OPENSIM:
         raise RuntimeError('opensim not available')
@@ -228,7 +230,8 @@ def run_static_optimization(mot_path: str, model_path: str,
         if idr.get('external_loads') is not None:
             loads_xml = write_external_loads(idr['external_loads'], tmp)
         setup = os.path.join(tmp, 'so_setup.xml')
-        _write_setup(setup, so_model, trimmed, tmp, t0, t1, idr['lowpass_hz'], loads_xml)
+        _write_setup(setup, so_model, trimmed, tmp, t0, t1, idr['lowpass_hz'], loads_xml,
+                     use_muscle_physiology)
         t_so = time.time()
         osim.AnalyzeTool(setup).run()
         so_seconds = time.time() - t_so
@@ -255,7 +258,8 @@ def run_static_optimization(mot_path: str, model_path: str,
     reliable = (bool(chk is None or chk['plausible'])
                 and not summary['joints_not_explained_by_muscles']
                 and res_m <= limit)
-    return {'summary': summary, 'grf_check': chk, 'grf_source': idr.get('grf_source'),
+    return {'summary': summary, 'grf_check': chk, 'activations': act, 'forces': force,
+            'id_result': idr, 'grf_source': idr.get('grf_source'),
             'reliable': reliable, 'window_s': (t0, t1), 'frames': len(act),
             'seconds_total': round(time.time() - t_begin, 1), 'seconds_so': round(so_seconds, 1),
             'activation_sto': out_act, 'force_sto': out_frc if force is not None else None}

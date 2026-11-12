@@ -712,6 +712,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     dynamics_comparison: s.dynamics_comparison || null,
                     dynamics_reference_error: s.dynamics_reference_error || null,
                     opensim_id_status: s.opensim_id_status || null,
+                    muscle_loads: s.muscle_loads || null,
                 },
             });
         });
@@ -998,6 +999,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         renderDynamicsComparison(diagnosis);
+        renderMuscleLoads(diagnosis);
 
         // Reset advanced panel state
         document.getElementById('advanced-panels').classList.add('hidden');
@@ -1635,6 +1637,46 @@ document.addEventListener('DOMContentLoaded', () => {
     // Hidden entirely when fewer than two sources have data. A reference that
     // failed to parse, or an OpenSim run that could not happen, is explained in
     // the notes line rather than left as a silently missing column.
+    // Leg muscle loads from static optimization. Withheld runs show only why:
+    // muscle numbers built on an unbalanced ground force would look precise
+    // and mean nothing.
+    function renderMuscleLoads(diagnosis) {
+        const wrap = document.getElementById('muscle-loads');
+        const table = document.getElementById('muscle-table');
+        const notesEl = document.getElementById('muscle-notes');
+        if (!wrap || !table) return;
+        const ml = diagnosis.muscle_loads;
+        if (!ml) { wrap.style.display = 'none'; return; }
+        const esc = t => String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+        wrap.style.display = '';
+        if (ml.status !== 'ok' || !ml.groups) {
+            table.innerHTML = '';
+            notesEl.textContent = ml.status === 'failed'
+                ? 'Muscle loads could not be computed for this capture (' + (ml.reason || 'unknown error') + ').'
+                : (ml.reason || 'Muscle loads withheld for this capture.');
+            return;
+        }
+        // Rows by muscle group, lead and trail side by side.
+        const rows = {};
+        Object.entries(ml.groups).forEach(([name, g]) => {
+            const side = name.split(' ')[0];
+            const group = name.slice(side.length + 1);
+            rows[group] = rows[group] || {};
+            rows[group][side] = g;
+        });
+        const sides = Object.keys(ml.groups).some(k => k.startsWith('Lead')) ? ['Lead', 'Trail'] : ['Left', 'Right'];
+        const cell = g => g ? `${Math.round(g.peak_activation * 100)}% <span class="dyn-unit">${Math.round(g.peak_force_N)} N</span>` : '<span class="dyn-na">—</span>';
+        let html = '<thead><tr><th>Muscle group</th>' + sides.map(s => `<th>${s} leg</th>`).join('') + '</tr></thead><tbody>';
+        Object.keys(rows).sort().forEach(group => {
+            html += `<tr><td>${esc(group.charAt(0).toUpperCase() + group.slice(1))}</td>` + sides.map(s => `<td>${cell(rows[group][s])}</td>`).join('') + '</tr>';
+        });
+        table.innerHTML = html + '</tbody>';
+        const rc = ml.residual_moment_check || {};
+        notesEl.textContent = 'Peak activation of the group\'s most active muscle, and the group\'s peak combined force. '
+            + (rc.limit_Nm != null ? `Pelvis residual ${rc.peak_Nm} N·m (limit ${rc.limit_Nm}). ` : '')
+            + (ml.seconds != null ? `Computed in ${ml.seconds} s.` : '');
+    }
+
     function renderDynamicsComparison(diagnosis) {
         const wrap = document.getElementById('dyn-compare');
         const table = document.getElementById('dyn-table');

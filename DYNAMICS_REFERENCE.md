@@ -142,6 +142,33 @@ Command line, matching the web upload:
 python backend/opensim_id.py trial.mot --trc trial.trc --model LaiUhlrich2022_scaled.osim
 ```
 
+### Leg muscle loads in every analysis (experimental)
+
+When OpenSim ID runs, `backend/muscle_forces.py` splits its leg moments among
+the 80 leg muscles in a few seconds (3.4 s for a 0.6 s window on CPU) and the
+report shows a **Leg Muscle Loads** table: peak activation and peak combined
+force per muscle group, lead and trail leg. Per frame it solves the classic
+static-optimization problem (minimise the sum of squared activations, meet the
+ID moments, 0 ≤ activation ≤ 1, expensive reserves) with muscle force =
+activation × max isometric force, i.e. OpenSim's `use_muscle_physiology=false`
+option. Leaving out force-length-velocity is what makes it fast; the full
+OpenSim tool below took 140 s for the same window.
+
+Against OpenSim's own static optimization with the same setting (standing
+window of capture 1001), hip and knee groups agreed closely (e.g. lead
+adductors 0.80 vs 0.81, glute max 0.44 vs 0.53, trail glutes and hamstrings
+within 0.02). Calf and shin groups did not: OpenSim maxed every foot muscle for
+ankle moments of only 14–16 N·m, which the fast solve meets at about 10%
+activation with no reserve. Unresolved, and one reason the table is labelled
+experimental.
+
+The table is withheld, with the reason shown, unless the ground force passes
+the plausibility gate, no leg joint relies on reserves for more than 25% of its
+moment, and the pelvis residual moment is under 1% of body weight × COM height
+(Hicks et al. 2015). With ground forces estimated from video, captures so far
+fail the last check, so expect "withheld" until force plates (or a
+contact-solving simulation) supply the centre of pressure.
+
 ### Static optimization (experimental, command line only)
 
 ```bash
