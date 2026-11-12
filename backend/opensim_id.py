@@ -162,6 +162,7 @@ def run_inverse_dynamics(mot_path: str, model_path: str = DEFAULT_MODEL,
             'grf_source': ('model_consistent' if loads_used is not external_loads
                            else 'estimated' if loads_used is not None else 'none'),
             'grf_check': grf_check, 'body_weight_N': weight_N,
+            'external_loads': loads_used, 'lowpass_hz': lowpass_hz,
             'model_path': model_path}
 
 

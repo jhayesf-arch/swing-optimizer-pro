@@ -142,6 +142,29 @@ Command line, matching the web upload:
 python backend/opensim_id.py trial.mot --trc trial.trc --model LaiUhlrich2022_scaled.osim
 ```
 
+### Static optimization (experimental, command line only)
+
+```bash
+python backend/static_optimization.py trial.mot --trc trial.trc --model LaiUhlrich2022_scaled.osim --handedness right
+```
+
+Splits the ID moments among the model's 80 leg muscles (LaiUhlrich2022 has no
+trunk or arm muscles; those joints are torque-driven), using the same window,
+bat and model-consistent ground force as ID, with the pelvis free. Leg reserves
+are deliberately weak (1 N·m) and their share of each joint moment is reported.
+A run is marked reliable only if the ground force is plausible, no leg joint
+leans on reserves for more than 25% of its moment, and the peak pelvis residual
+moment is under 1% of body weight × centre-of-mass height (Hicks et al. 2015).
+
+On OpenCap capture 1001 (0.6 s window, about 3–5 minutes on CPU) no run met
+that bar. The swing: every leg muscle at 100% and reserves carrying 76–98% of
+the lead-leg moments. Quiet standing at 6 Hz: reserves near zero, but calves,
+shin muscles and adductors at 84–100% and a 250 N·m pelvis residual moment
+against a 7 N·m limit. The total force is consistent by construction, so what
+remains is the split between the feet and the centre of pressure, which the
+markers cannot give. Muscle forces need measured force plates (the MBL) or a
+simulation that solves foot contact itself, such as OpenCap's OpenSimAD.
+
 ### Why the OpenCap dynamic simulation isn't included
 
 `opencap-processing`'s `example_kinetics.py` (OpenSimAD) solves ground forces and

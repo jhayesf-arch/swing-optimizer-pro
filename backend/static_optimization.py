@@ -1,28 +1,38 @@
 """
 static_optimization.py
 ----------------------
-Runs OpenSim Static Optimization on a swing .mot file to decompose net joint
-torques into individual muscle forces and activations.
+OpenSim Static Optimization for one swing: splits the joint moments from
+inverse dynamics among the leg muscles, frame by frame, by minimising the sum
+of squared activations (Anderson & Pandy 2001).
 
-Static Optimization minimizes sum of squared muscle activations subject to:
-  - Muscle force = activation × max_isometric_force × force-length-velocity factor
-  - Net joint torque (from ID) = sum of muscle moment arms × muscle forces
+What the model can and cannot say. LaiUhlrich2022 (OpenCap) has 80 muscles,
+all in the legs (40 per side). The trunk and arms are driven by torque
+actuators, so there are no obliques, erector spinae, lats or rotator cuff here:
+anything about those muscles would be invented. Outputs are therefore leg
+muscle activations and forces (glutes, hamstrings, quads, adductors, calves),
+which is where the lead-leg block and hip drive live.
 
-Outputs per-muscle activation (0-1) and force (N) at each time frame.
-Key muscles for baseball swing injury risk and performance:
-  - Obliques (external/internal): lumbar rotation torque
-  - Gluteus maximus/medius: hip extension and rotation power
-  - Erector spinae: lumbar extension stability
-  - Latissimus dorsi: shoulder internal rotation
-  - Subscapularis/infraspinatus: shoulder rotator cuff loading
+Set-up, consistent with opensim_id.py:
+  * Ground force: the model-consistent loads from run_inverse_dynamics (total
+    from the model's own dynamics, split and placed by the marker estimate).
+    The pelvis is free, not locked.
+  * Pelvis residual actuators absorb what the loads cannot (the moment part).
+  * Leg joints get reserve actuators with optimal force 1 N·m, so they are
+    expensive and used only where the muscles cannot produce the moment; their
+    share of the joint moment is reported, because a muscle solution leaning on
+    reserves is not a muscle solution.
+  * Trunk, arm and scapular coordinates are torque-driven (strong, unbounded).
 
-Reference:
-  Anderson & Pandy (2001) Static and dynamic optimization solutions for gait
-  are practically equivalent. J Biomech 34(2):153-161.
+Validated for gait-like tasks, not batting; and minimising activation
+underestimates co-contraction, which bracing uses. Treat the numbers as an
+experiment until checked against EMG.
 """
 import os
 import shutil
 import tempfile
+import time
+from typing import Dict, Optional
+
 import numpy as np
 import pandas as pd
 
@@ -32,188 +42,108 @@ try:
 except ImportError:
     HAS_OPENSIM = False
 
-# Muscles most relevant to baseball swing biomechanics and injury risk
-SWING_RELEVANT_MUSCLES = {
-    # Lumbar rotation — oblique strain risk
-    'extobl_r': 'External Oblique (R)',
-    'extobl_l': 'External Oblique (L)',
-    'intobl_r': 'Internal Oblique (R)',
-    'intobl_l': 'Internal Oblique (L)',
-    # Hip power generation
-    'glmax1_r': 'Glut Max (R)',
-    'glmax2_r': 'Glut Max (R)',
-    'glmax3_r': 'Glut Max (R)',
-    'glmax1_l': 'Glut Max (L)',
-    'glmax2_l': 'Glut Max (L)',
-    'glmax3_l': 'Glut Max (L)',
-    'glmed1_r': 'Glut Med (R)',
-    'glmed1_l': 'Glut Med (L)',
-    # Lumbar stability
-    'ercspn_r': 'Erector Spinae (R)',
-    'ercspn_l': 'Erector Spinae (L)',
-    # Hamstrings — trail leg bracing
-    'bflh_r': 'Biceps Femoris LH (R)',
-    'bfsh_r': 'Biceps Femoris SH (R)',
-    # Quadriceps — lead leg bracing
-    'recfem_l': 'Rectus Femoris (L)',
-    'vasmed_l': 'Vastus Medialis (L)',
-    'vaslat_l': 'Vastus Lateralis (L)',
+# Muscle name prefix -> group, for the LaiUhlrich2022 / Rajagopal leg set.
+MUSCLE_GROUPS = {
+    'glmax': 'Glute max', 'glmed': 'Glute med', 'glmin': 'Glute min',
+    'bflh': 'Hamstrings', 'bfsh': 'Hamstrings', 'semimem': 'Hamstrings', 'semiten': 'Hamstrings',
+    'recfem': 'Quadriceps', 'vaslat': 'Quadriceps', 'vasmed': 'Quadriceps', 'vasint': 'Quadriceps',
+    'addbrev': 'Adductors', 'addlong': 'Adductors', 'addmagDist': 'Adductors',
+    'addmagIsch': 'Adductors', 'addmagMid': 'Adductors', 'addmagProx': 'Adductors', 'grac': 'Adductors',
+    'iliacus': 'Hip flexors', 'psoas': 'Hip flexors', 'sart': 'Hip flexors', 'tfl': 'Hip flexors',
+    'piri': 'Deep hip rotators',
+    'gaslat': 'Calf', 'gasmed': 'Calf', 'soleus': 'Calf',
+    'tibant': 'Shin/foot', 'tibpost': 'Shin/foot', 'perbrev': 'Shin/foot', 'perlong': 'Shin/foot',
+    'edl': 'Shin/foot', 'ehl': 'Shin/foot', 'fdl': 'Shin/foot', 'fhl': 'Shin/foot',
 }
+PELVIS = ('pelvis_tilt', 'pelvis_list', 'pelvis_rotation', 'pelvis_tx', 'pelvis_ty', 'pelvis_tz')
+LEG_JOINTS = ('hip_flexion', 'hip_adduction', 'hip_rotation', 'knee_angle',
+              'ankle_angle', 'subtalar_angle', 'mtp_angle')
+RESERVE_OPTIMAL_FORCE = 1.0      # N·m per unit control: expensive on purpose
+RESIDUAL_OPTIMAL_FORCE = 1.0
+TORQUE_DRIVEN_OPTIMAL_FORCE = 300.0
+# A leg joint where reserves supply more than this share of the ID moment is
+# reported as not explained by the muscles.
+MAX_RESERVE_SHARE = 0.25
+# Hicks et al. (2015) J Biomech Eng 137:020905, "Is my model good enough?":
+# peak residual moments under ~1% of (centre-of-mass height x body weight).
+# Larger means the applied ground force (split, centre of pressure) and the
+# motion disagree, and the muscles are being asked to make up the difference.
+RESIDUAL_MOMENT_LIMIT_FRAC = 0.01
 
 
-def run_static_optimization(mot_path: str,
-                             model_path: str,
-                             id_sto_path: str = None,
-                             lowpass_hz: float = 15.0) -> dict:
-    """
-    Run OpenSim Static Optimization on a swing .mot file.
-    Trims to swing window before running to avoid pre-swing optimizer failures.
-    """
-    if not HAS_OPENSIM:
-        raise RuntimeError("opensim not available")
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Trim .mot to swing window (reuse opensim_id's trimmer)
-        trimmed_mot = os.path.join(tmpdir, 'swing_trimmed.mot')
-        try:
-            from opensim_id import _trim_to_swing_window
-            t_start, t_end = _trim_to_swing_window(mot_path, trimmed_mot)
-        except Exception:
-            shutil.copy(mot_path, trimmed_mot)
-            df_mot = _load_mot(mot_path)
-            t_start = float(df_mot['time'].iloc[0])
-            t_end   = float(df_mot['time'].iloc[-1])
-
-        mod_model_path = os.path.join(tmpdir, 'model_so.osim')
-        _build_so_model(model_path, mod_model_path)
-
-        setup_path = os.path.join(tmpdir, 'so_setup.xml')
-        _write_so_setup(setup_path, mod_model_path, trimmed_mot,
-                        tmpdir, t_start, t_end, lowpass_hz)
-
-        analyze_tool = osim.AnalyzeTool(setup_path)
-        analyze_tool.run()
-
-        act_file   = os.path.join(tmpdir, 'StaticOptimization_activation.sto')
-        force_file = os.path.join(tmpdir, 'StaticOptimization_force.sto')
-
-        if not os.path.exists(act_file):
-            raise RuntimeError("Static Optimization produced no output. "
-                               "The optimizer likely failed — check reserve actuator strength.")
-
-        act_df   = _load_sto(act_file)
-        force_df = _load_sto(force_file) if os.path.exists(force_file) else None
-
-        out_act   = mot_path.replace('.mot', '_SO_activation.sto')
-        out_force = mot_path.replace('.mot', '_SO_force.sto')
-        shutil.copy(act_file, out_act)
-        if force_df is not None:
-            shutil.copy(force_file, out_force)
-
-    summary      = _summarize_activations(act_df, force_df)
-    injury_flags = _flag_high_activation(act_df)
-
-    return {
-        'activations':   act_df,
-        'forces':        force_df,
-        'summary':       summary,
-        'injury_flags':  injury_flags,
-        'sto_path':      out_act,
-    }
+def _group(muscle: str) -> Optional[str]:
+    base = muscle.rsplit('_', 1)[0]
+    for prefix in sorted(MUSCLE_GROUPS, key=len, reverse=True):
+        if base.startswith(prefix):
+            return MUSCLE_GROUPS[prefix]
+    return None
 
 
-def _build_so_model(src_path: str, dst_path: str):
-    """
-    Copy model, add reserve actuators, and lock pelvis translations/rotations.
-    Locking the pelvis allows SO to converge without force plates by treating
-    the pelvis as a fixed base. This is physically approximate but gives valid
-    upper-body (lumbar, shoulder, arm) muscle activations.
-    Note: lower-extremity activations will be less accurate with a locked pelvis.
-    """
-    with open(src_path) as f:
-        content = f.read()
-
-    import re
-    coords = re.findall(r'<Coordinate name="([^"]+)"', content)
-
-    # Lock pelvis DOFs — these require GRFs to solve correctly
-    pelvis_coords = {'pelvis_tilt', 'pelvis_list', 'pelvis_rotation',
-                     'pelvis_tx', 'pelvis_ty', 'pelvis_tz'}
-
-    # Add reserve actuators only for non-pelvis coordinates
-    reserves_xml = ''
-    for coord in coords:
-        if coord in pelvis_coords:
+def _build_so_model(src_model: str, dst_path: str) -> None:
+    """Add pelvis residuals and leg reserves; make torque-driven DOFs unbounded."""
+    model = osim.Model(src_model)
+    fs = model.updForceSet()
+    actuated = set()
+    for i in range(fs.getSize()):
+        ca = osim.CoordinateActuator.safeDownCast(fs.get(i))
+        if ca is not None:
+            ca.setMinControl(-np.inf)
+            ca.setMaxControl(np.inf)
+            ca.setOptimalForce(TORQUE_DRIVEN_OPTIMAL_FORCE)
+            actuated.add(ca.get_coordinate())
+    cs = model.getCoordinateSet()
+    for i in range(cs.getSize()):
+        c = cs.get(i)
+        name = c.getName()
+        if name in actuated or c.isConstrained(model.initSystem()) or name.endswith('_beta'):
             continue
-        reserves_xml += f'''
-        <CoordinateActuator name="reserve_{coord}">
-            <coordinate>{coord}</coordinate>
-            <optimal_force>500</optimal_force>
-            <min_control>-Inf</min_control>
-            <max_control>Inf</max_control>
-        </CoordinateActuator>'''
-
-    content = content.replace('</ForceSet>', reserves_xml + '\n</ForceSet>', 1)
-
-    # Lock pelvis coordinates by setting <locked>true</locked>
-    for coord in pelvis_coords:
-        # Find the coordinate block and set locked=true
-        pattern = f'<Coordinate name="{coord}">'
-        if pattern in content:
-            idx = content.find(pattern)
-            block_end = content.find('</Coordinate>', idx)
-            block = content[idx:block_end]
-            if '<locked>' in block:
-                block = re.sub(r'<locked>.*?</locked>', '<locked>true</locked>', block)
-            else:
-                block = block.rstrip() + '\n\t\t\t\t\t\t\t<locked>true</locked>\n'
-            content = content[:idx] + block + content[block_end:]
-
-    with open(dst_path, 'w') as f:
-        f.write(content)
+        if name in PELVIS:
+            label, opt = 'residual_' + name, RESIDUAL_OPTIMAL_FORCE
+        elif name.rsplit('_', 1)[0] in LEG_JOINTS:
+            label, opt = 'reserve_' + name, RESERVE_OPTIMAL_FORCE
+        else:   # e.g. scapular translations of the shoulder model
+            label, opt = 'torque_' + name, TORQUE_DRIVEN_OPTIMAL_FORCE
+        act = osim.CoordinateActuator(name)
+        act.setName(label)
+        act.setOptimalForce(opt)
+        act.setMinControl(-np.inf)
+        act.setMaxControl(np.inf)
+        model.addForce(act)
+    model.finalizeConnections()
+    model.printToXML(dst_path)
 
 
-def _write_so_setup(setup_path: str, model_path: str, mot_path: str,
-                    results_dir: str, t_start: float, t_end: float,
-                    lowpass_hz: float):
-    """Write the AnalyzeTool XML setup file for Static Optimization."""
+def _write_setup(path, model_path, mot_path, results_dir, t0, t1, lowpass_hz, loads_xml):
     xml = f"""<?xml version="1.0" encoding="UTF-8" ?>
 <OpenSimDocument Version="40000">
-    <AnalyzeTool name="StaticOptimization">
-        <model_file>{model_path}</model_file>
-        <coordinates_file>{mot_path}</coordinates_file>
-        <lowpass_cutoff_frequency_for_coordinates>{lowpass_hz}</lowpass_cutoff_frequency_for_coordinates>
-        <initial_time>{t_start}</initial_time>
-        <final_time>{t_end}</final_time>
-        <results_directory>{results_dir}</results_directory>
-        <output_precision>8</output_precision>
-        <AnalysisSet>
-            <objects>
-                <StaticOptimization name="StaticOptimization">
-                    <start_time>{t_start}</start_time>
-                    <end_time>{t_end}</end_time>
-                    <step_interval>1</step_interval>
-                    <in_degrees>true</in_degrees>
-                    <use_model_force_set>true</use_model_force_set>
-                    <activation_exponent>2</activation_exponent>
-                    <optimizer_convergence_criterion>1e-004</optimizer_convergence_criterion>
-                    <optimizer_max_iterations>100</optimizer_max_iterations>
-                </StaticOptimization>
-            </objects>
-        </AnalysisSet>
-    </AnalyzeTool>
+  <AnalyzeTool name="SO">
+    <model_file>{model_path}</model_file>
+    <replace_force_set>false</replace_force_set>
+    <results_directory>{results_dir}</results_directory>
+    <initial_time>{t0}</initial_time>
+    <final_time>{t1}</final_time>
+    <solve_for_equilibrium_for_auxiliary_states>true</solve_for_equilibrium_for_auxiliary_states>
+    <AnalysisSet><objects>
+      <StaticOptimization name="StaticOptimization">
+        <on>true</on>
+        <start_time>{t0}</start_time>
+        <end_time>{t1}</end_time>
+        <step_interval>1</step_interval>
+        <in_degrees>true</in_degrees>
+        <use_model_force_set>true</use_model_force_set>
+        <activation_exponent>2</activation_exponent>
+        <use_muscle_physiology>true</use_muscle_physiology>
+        <optimizer_convergence_criterion>0.0001</optimizer_convergence_criterion>
+        <optimizer_max_iterations>200</optimizer_max_iterations>
+      </StaticOptimization>
+    </objects></AnalysisSet>
+    <external_loads_file>{loads_xml or ''}</external_loads_file>
+    <coordinates_file>{mot_path}</coordinates_file>
+    <lowpass_cutoff_frequency_for_coordinates>{lowpass_hz}</lowpass_cutoff_frequency_for_coordinates>
+  </AnalyzeTool>
 </OpenSimDocument>"""
-    with open(setup_path, 'w') as f:
+    with open(path, 'w') as f:
         f.write(xml)
-
-
-def _load_mot(path: str) -> pd.DataFrame:
-    with open(path) as f:
-        lines = f.readlines()
-    he = next(i for i, l in enumerate(lines) if 'endheader' in l.lower()) + 1
-    df = pd.read_csv(path, sep='\t', skiprows=he, skipinitialspace=True)
-    df.columns = df.columns.str.strip()
-    return df
 
 
 def _load_sto(path: str) -> pd.DataFrame:
@@ -225,65 +155,159 @@ def _load_sto(path: str) -> pd.DataFrame:
     return df
 
 
-def _summarize_activations(act_df: pd.DataFrame,
-                            force_df: pd.DataFrame = None) -> dict:
-    """Peak activation and force for swing-relevant muscles."""
-    summary = {}
-    muscle_cols = [c for c in act_df.columns if c != 'time']
-
-    for muscle_id, label in SWING_RELEVANT_MUSCLES.items():
-        # Try exact match and prefix match (model may append _r/_l)
-        matches = [c for c in muscle_cols if c == muscle_id or c.startswith(muscle_id)]
-        if not matches:
+def summarize(act: pd.DataFrame, force: pd.DataFrame, id_df: Optional[pd.DataFrame],
+              handedness: Optional[str] = None) -> Dict:
+    """Per-group peaks per leg, reserve reliance per joint, pelvis residuals."""
+    lead = {'right': 'l', 'left': 'r'}.get((handedness or '').lower())
+    side_name = (lambda s: ('Lead' if s == lead else 'Trail') if lead else ('Left' if s == 'l' else 'Right'))
+    groups: Dict[str, Dict] = {}
+    for col in act.columns:
+        g = _group(col)
+        if g is None or col[-2:] not in ('_l', '_r'):
             continue
-        col = matches[0]
-        peak_act = float(act_df[col].max())
-        peak_force = float(force_df[col].max()) if force_df is not None and col in force_df.columns else None
-        summary[col] = {
-            'label':       label,
-            'peak_activation': round(peak_act, 3),
-            'peak_force_N':    round(peak_force, 1) if peak_force is not None else None,
-        }
-    return summary
+        key = f'{side_name(col[-1])} {g.lower()}'
+        e = groups.setdefault(key, {'peak_activation': 0.0, 'peak_force_N': 0.0, 'muscles': []})
+        e['muscles'].append(col)
+        e['peak_activation'] = round(max(e['peak_activation'], float(act[col].max())), 2)
+        if force is not None and col in force:
+            # Group force: per-frame sum across the group's muscles.
+            e['_sum'] = e.get('_sum', 0) + force[col].values
+    for e in groups.values():
+        if '_sum' in e:
+            e['peak_force_N'] = round(float(np.max(e.pop('_sum'))), 0)
+
+    reserves = {}
+    if force is not None:
+        for col in force.columns:
+            if not col.startswith('reserve_'):
+                continue
+            coord = col[len('reserve_'):]
+            peak = float(np.max(np.abs(force[col].values)))
+            share = None
+            if id_df is not None:
+                idc = coord + '_moment'
+                if idc in id_df:
+                    tot = float(np.max(np.abs(id_df[idc].values)))
+                    share = round(peak / tot, 2) if tot > 1 else None
+            reserves[coord] = {'peak_Nm': round(peak, 1), 'share_of_id_moment': share}
+    residuals = {}
+    if force is not None:
+        for col in force.columns:
+            if col.startswith('residual_'):
+                residuals[col[len('residual_'):]] = round(float(np.max(np.abs(force[col].values))), 1)
+    leaning = [c for c, r in reserves.items()
+               if r['share_of_id_moment'] is not None and r['share_of_id_moment'] > MAX_RESERVE_SHARE]
+    return {'groups': dict(sorted(groups.items())), 'reserves': reserves,
+            'pelvis_residuals': residuals, 'joints_not_explained_by_muscles': sorted(leaning)}
 
 
-def _flag_high_activation(act_df: pd.DataFrame, threshold: float = 0.8) -> list:
-    """Flag muscles with peak activation above threshold — potential injury risk."""
-    flags = []
-    for col in [c for c in act_df.columns if c != 'time']:
-        if act_df[col].max() > threshold:
-            label = SWING_RELEVANT_MUSCLES.get(col, col)
-            flags.append({
-                'muscle': col,
-                'label':  label,
-                'peak_activation': round(float(act_df[col].max()), 3),
-            })
-    return flags
+def run_static_optimization(mot_path: str, model_path: str,
+                            external_loads: Optional[dict] = None,
+                            time_range: Optional[tuple] = None,
+                            bat_mass_kg: float = 0.88, bat_length_m: float = 0.864,
+                            handedness: Optional[str] = None,
+                            lowpass_hz: Optional[float] = None) -> Dict:
+    """Static optimization on the same window, model and ground force as ID."""
+    if not HAS_OPENSIM:
+        raise RuntimeError('opensim not available')
+    from opensim_id import (run_inverse_dynamics, _trim_to_swing_window,
+                            _build_modified_model, write_external_loads)
+    t_begin = time.time()
+    idr = run_inverse_dynamics(mot_path, model_path=model_path, bat_mass_kg=bat_mass_kg,
+                               bat_length_m=bat_length_m, external_loads=external_loads,
+                               time_range=time_range,
+                               **({'lowpass_hz': lowpass_hz} if lowpass_hz else {}))
+    with tempfile.TemporaryDirectory() as tmp:
+        trimmed = os.path.join(tmp, 'swing.mot')
+        t0, t1 = _trim_to_swing_window(mot_path, trimmed, time_range=time_range)
+        bat_model = os.path.join(tmp, 'model_bat.osim')
+        _build_modified_model(model_path, bat_model, bat_mass_kg, bat_length_m)
+        so_model = os.path.join(tmp, 'model_so.osim')
+        _build_so_model(bat_model, so_model)
+        loads_xml = None
+        if idr.get('external_loads') is not None:
+            loads_xml = write_external_loads(idr['external_loads'], tmp)
+        setup = os.path.join(tmp, 'so_setup.xml')
+        _write_setup(setup, so_model, trimmed, tmp, t0, t1, idr['lowpass_hz'], loads_xml)
+        t_so = time.time()
+        osim.AnalyzeTool(setup).run()
+        so_seconds = time.time() - t_so
+        act_f = os.path.join(tmp, 'SO_StaticOptimization_activation.sto')
+        frc_f = os.path.join(tmp, 'SO_StaticOptimization_force.sto')
+        if not os.path.exists(act_f):
+            raise RuntimeError('Static optimization produced no output.')
+        act, force = _load_sto(act_f), (_load_sto(frc_f) if os.path.exists(frc_f) else None)
+        out_act = mot_path.replace('.mot', '_SO_activation.sto')
+        out_frc = mot_path.replace('.mot', '_SO_force.sto')
+        shutil.copy(act_f, out_act)
+        if force is not None:
+            shutil.copy(frc_f, out_frc)
+    summary = summarize(act, force, idr['dataframe'], handedness)
+    chk = idr.get('grf_check')
+    m = osim.Model(model_path)
+    st = m.initSystem()
+    com_h = float(m.calcMassCenterPosition(st).get(1))
+    limit = RESIDUAL_MOMENT_LIMIT_FRAC * idr['body_weight_N'] * com_h
+    res_m = max([v for k, v in summary['pelvis_residuals'].items()
+                 if k in ('pelvis_tilt', 'pelvis_list', 'pelvis_rotation')] or [0.0])
+    summary['residual_moment_check'] = {'peak_Nm': res_m, 'limit_Nm': round(limit, 1),
+                                        'ok': res_m <= limit}
+    reliable = (bool(chk is None or chk['plausible'])
+                and not summary['joints_not_explained_by_muscles']
+                and res_m <= limit)
+    return {'summary': summary, 'grf_check': chk, 'grf_source': idr.get('grf_source'),
+            'reliable': reliable, 'window_s': (t0, t1), 'frames': len(act),
+            'seconds_total': round(time.time() - t_begin, 1), 'seconds_so': round(so_seconds, 1),
+            'activation_sto': out_act, 'force_sto': out_frc if force is not None else None}
+
+
+def _cli():
+    import argparse
+    p = argparse.ArgumentParser(description='Static optimization (leg muscles) for one swing.')
+    p.add_argument('mot')
+    p.add_argument('--trc', help='markers, for the ground force (strongly recommended)')
+    p.add_argument('--model', required=True, help='athlete-scaled .osim')
+    p.add_argument('--handedness', choices=['right', 'left'])
+    p.add_argument('--height', type=float, default=1.83)
+    a = p.parse_args()
+    loads = tr = None
+    if a.trc:
+        from analyzer import RefinedHittingOptimizer
+        from main import _crop_to_swing, _time_range
+        m = osim.Model(a.model)
+        opt = RefinedHittingOptimizer(body_mass_kg=m.getTotalMass(m.initSystem()), body_height_m=a.height)
+        kin, trc = _crop_to_swing(opt.load_mot_file(a.mot), opt.load_trc_file(a.trc))
+        loads = opt.comprehensive_diagnosis(kin, os.path.basename(a.mot), trc_data=trc,
+                                            model_path=a.model).get('_foot_loads')
+        tr = _time_range(kin)
+    r = run_static_optimization(a.mot, a.model, external_loads=loads, time_range=tr,
+                                handedness=a.handedness)
+    s = r['summary']
+    print(f"\nWindow {r['window_s'][0]:.2f}-{r['window_s'][1]:.2f} s, {r['frames']} frames; "
+          f"static optimization {r['seconds_so']} s ({r['seconds_total']} s with ID)")
+    if r['grf_check']:
+        c = r['grf_check']
+        print(f"Ground force check: {'plausible' if c['plausible'] else 'NOT plausible: ' + '; '.join(c['reasons'])}")
+    print('\nPeak activation / peak group force:')
+    for g, e in s['groups'].items():
+        print(f"  {g:28s} {e['peak_activation']:5.2f}  {e['peak_force_N']:7.0f} N")
+    print('\nReserve torque needed (share of the ID moment):')
+    for c, e in s['reserves'].items():
+        sh = '' if e['share_of_id_moment'] is None else f"{100 * e['share_of_id_moment']:.0f}%"
+        print(f"  {c:20s} {e['peak_Nm']:8.1f} N·m  {sh}")
+    print('\nPelvis residuals:', s['pelvis_residuals'])
+    rc = s['residual_moment_check']
+    print(f"Residual moment {rc['peak_Nm']:.0f} N·m vs limit {rc['limit_Nm']:.0f} N·m "
+          f"(Hicks et al. 2015): {'ok' if rc['ok'] else 'too large'}")
+    why = []
+    if r['grf_check'] and not r['grf_check']['plausible']:
+        why.append('implausible ground force')
+    if s['joints_not_explained_by_muscles']:
+        why.append('reserves carry ' + ', '.join(s['joints_not_explained_by_muscles']))
+    if not rc['ok']:
+        why.append('pelvis residual moment too large')
+    print('\nReliable:', r['reliable'], f"({'; '.join(why)})" if why else '')
 
 
 if __name__ == '__main__':
-    import sys
-
-    mot  = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser(
-        '~/Desktop/OpenCapData_94fba876-8deb-4074-afe5-8d7872fec1ae'
-        '/OpenSimData/Kinematics/swing_lower_first.mot')
-    model = os.path.expanduser(
-        '~/Desktop/OpenCapData_94fba876-8deb-4074-afe5-8d7872fec1ae'
-        '/OpenSimData/Model/LaiUhlrich2022_scaled.osim')
-
-    print(f'Running Static Optimization: {os.path.basename(mot)}')
-    result = run_static_optimization(mot, model)
-
-    print(f'\nSaved: {result["sto_path"]}')
-    print('\n=== PEAK MUSCLE ACTIVATIONS (swing-relevant) ===')
-    for muscle, data in result['summary'].items():
-        bar = '█' * int(data['peak_activation'] * 20)
-        force_str = f"  {data['peak_force_N']:.0f} N" if data['peak_force_N'] else ''
-        print(f"  {data['label']:<30} {data['peak_activation']:.2f}  {bar}{force_str}")
-
-    if result['injury_flags']:
-        print('\n⚠️  HIGH ACTIVATION FLAGS (>80%):')
-        for flag in result['injury_flags']:
-            print(f"  {flag['label']}: {flag['peak_activation']:.2f}")
-    else:
-        print('\n✅ No muscles flagged above 80% activation')
+    _cli()
