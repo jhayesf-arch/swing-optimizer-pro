@@ -246,9 +246,9 @@ def run_static_optimization(mot_path: str, model_path: str,
         not_converged = 0
         if log_path and os.path.exists(log_path):
             with open(log_path, errors='replace') as f:
-                not_converged = sum(1 for line in f if 'could not find a solution' in line
-                                    or 'Maximum iterations exceeded' in line
-                                    or 'Restoration failed' in line)
+                # One "could not find a solution at time = ..." line per failed
+                # frame (the Ipopt status line that precedes it is not counted).
+                not_converged = sum(1 for line in f if 'could not find a solution' in line)
             try:
                 osim.Logger.removeFileSink()
             except Exception:
