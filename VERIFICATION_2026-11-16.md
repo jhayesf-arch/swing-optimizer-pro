@@ -88,6 +88,8 @@ dimensions, or re-anchor those tables so 3 stars = mean.
 
 ### Other
 
+**Status (2026-11-17): B6–B10 fixed on the same branch; tests in `backend/test_phase_report.py` (units, frame mapping, missing markers) and a hand-checked bat inertia (0.0718 kg·m², centre −0.276 m per hand).**
+
 **B6. Bat inertia added without the parallel-axis shift.**
 `opensim_id.py:401–429` adds m_bat to hand_r mass and m·L²/12 to Ixx/Izz but
 leaves `mass_center` unchanged. The bat's centre is ~L/2 ≈ 0.43 m beyond the

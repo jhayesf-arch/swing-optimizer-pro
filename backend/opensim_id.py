@@ -9,8 +9,8 @@ Improvements over baseline:
      — prevents pre-swing standing from contaminating the filter IC.
   2. Tightens lumbar_rotation joint limits to ±50° in a temp model copy
      — prevents IK from pushing lumbar to its ±90° hard limit.
-  3. Adds bat mass/inertia to hand_r body
-     — makes upper-extremity torques physically accurate.
+  3. Adds the bat to both hands (half each) with its mass centre and
+     parallel-axis inertia, so elbow and shoulder loads carry the bat.
 """
 import os
 import shutil
@@ -299,6 +299,50 @@ def consistent_foot_loads(estimated: dict, time: np.ndarray, required: np.ndarra
             'cop_l': interp(estimated['cop_l']), 'cop_r': interp(estimated['cop_r'])}
 
 
+def _parse_vec(block: str, tag: str):
+    a = block.find(f'<{tag}>'); b = block.find(f'</{tag}>', a)
+    if a == -1 or b == -1:
+        return None, (a, b)
+    return [float(v) for v in block[a + len(tag) + 2:b].split()], (a, b + len(tag) + 3)
+
+
+def _add_rod_to_body(content: str, body: str, m_rod: float, length: float) -> str:
+    """Attach a uniform rod (mass m_rod, length `length`) to `body`, extending
+    from the body's origin along its -Y axis (distal for the OpenSim hand).
+    Updates <mass>, <mass_center> and <inertia> (about the new mass centre, in
+    the body frame) with parallel-axis terms. Returns the modified .osim text."""
+    marker = f'<Body name="{body}">'
+    idx = content.find(marker)
+    if idx == -1:
+        return content
+    end = content.find('</Body>', idx)
+    block = content[idx:end]
+    (m_vals, m_span) = _parse_vec(block, 'mass')
+    (c_vals, c_span) = _parse_vec(block, 'mass_center')
+    (i_vals, i_span) = _parse_vec(block, 'inertia')
+    if not m_vals or not c_vals or not i_vals or len(i_vals) < 6:
+        return content
+    m_h = m_vals[0]
+    c_h = np.array(c_vals, dtype=float)
+    # Rod centre: half its length beyond the hand's own centre, along -Y.
+    c_r = np.array([0.0, c_h[1] - length / 2.0, 0.0])
+    m_new = m_h + m_rod
+    c_new = (m_h * c_h + m_rod * c_r) / m_new
+    I_h = np.array(i_vals[:3], dtype=float)       # about the hand's centre
+    I_r = np.array([m_rod * length ** 2 / 12.0, 0.001 * m_rod, m_rod * length ** 2 / 12.0])
+    def shift(m, d):
+        # parallel-axis: I += m (|d|^2 - d_i^2) on the diagonal
+        return m * (np.dot(d, d) - d ** 2)
+    I_new = I_h + shift(m_h, c_h - c_new) + I_r + shift(m_rod, c_r - c_new)
+    prod = i_vals[3:6]
+    block = (block[:i_span[0]] + '<inertia>' + ' '.join(f'{v:.10f}' for v in list(I_new) + prod)
+             + '</inertia>' + block[i_span[1]:])
+    block = (block[:c_span[0]] + '<mass_center>' + ' '.join(f'{v:.10f}' for v in c_new)
+             + '</mass_center>' + block[c_span[1]:])
+    block = block[:m_span[0]] + f'<mass>{m_new:.10f}</mass>' + block[m_span[1]:]
+    return content[:idx] + block + content[end:]
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _read_mot_df(mot_path: str) -> pd.DataFrame:
@@ -376,7 +420,7 @@ def _build_modified_model(src_path: str, dst_path: str,
     """
     Copy the .osim model and apply:
       - Tighten lumbar_rotation range to ±LUMBAR_ROT_LIMIT_RAD
-      - Add bat mass/inertia to hand_r body (if bat_mass_kg > 0)
+      - Add the bat to hand_r and hand_l (half each) if bat_mass_kg > 0
     Uses string replacement to avoid full XML re-serialisation (which
     can corrupt the large .osim file).
     """
@@ -398,35 +442,16 @@ def _build_modified_model(src_path: str, dst_path: str,
         block_new = block.replace(old_range, new_range, 1)
         content = content[:idx] + block_new + content[block_end:]
 
-    # ── Add bat mass/inertia to hand_r ──────────────────────────────────────
+    # ── Add the bat to the hands ────────────────────────────────────────────
+    # Uniform rod of mass m and length L, held at its knob with both hands, so
+    # each hand carries half of it. The rod's own centre sits L/2 beyond the grip
+    # along the hand's distal (-Y) axis, so the hand body's mass centre moves and
+    # the inertia about that new centre needs the parallel-axis terms for both
+    # the hand and the bat. Adding m L^2/12 at the unchanged hand centre (as
+    # before) understated the bat's inertia about the hand roughly four-fold.
     if bat_mass_kg > 0 and bat_length_m > 0:
-        # Bat modelled as uniform rod: I_perp = (1/12)*m*L^2 (about CoM)
-        # CoM at L/2 from handle (grip end), so offset from hand origin ≈ L/2
-        bat_I_perp = (1.0 / 12.0) * bat_mass_kg * bat_length_m ** 2
-        bat_I_long = 0.001 * bat_mass_kg  # negligible axial inertia
-
-        hand_r_marker = '<Body name="hand_r">'
-        idx = content.find(hand_r_marker)
-        if idx != -1:
-            # Find existing mass tag in this body block
-            mass_tag_start = content.find('<mass>', idx)
-            mass_tag_end   = content.find('</mass>', idx) + len('</mass>')
-            old_mass_str   = content[mass_tag_start:mass_tag_end]
-            old_mass = float(old_mass_str.replace('<mass>', '').replace('</mass>', '').strip())
-            new_mass = old_mass + bat_mass_kg
-            content = content[:mass_tag_start] + f'<mass>{new_mass}</mass>' + content[mass_tag_end:]
-
-            # Find existing inertia tag and add bat contribution
-            inertia_start = content.find('<inertia>', idx)
-            inertia_end   = content.find('</inertia>', idx) + len('</inertia>')
-            old_inertia_str = content[inertia_start:inertia_end]
-            vals = [float(v) for v in old_inertia_str.replace('<inertia>', '').replace('</inertia>', '').split()]
-            # Ixx, Iyy (long axis), Izz — bat swings primarily in Ixx/Izz plane
-            vals[0] += bat_I_perp
-            vals[1] += bat_I_long
-            vals[2] += bat_I_perp
-            new_inertia = '<inertia>' + ' '.join(f'{v:.10f}' for v in vals) + '</inertia>'
-            content = content[:inertia_start] + new_inertia + content[inertia_end:]
+        for body in ('hand_r', 'hand_l'):
+            content = _add_rod_to_body(content, body, bat_mass_kg / 2.0, bat_length_m)
 
     with open(dst_path, 'w') as f:
         f.write(content)

@@ -927,7 +927,9 @@ class RefinedHittingOptimizer:
             
         start_row = 0
         header_line = ""
-        for i in range(min(20, len(lines))):
+        # Line 1 is the file name (which may itself contain "time"), so the
+        # column header is searched from line 2.
+        for i in range(1, min(20, len(lines))):
             if 'Frame#' in lines[i] or 'Time' in lines[i] or 'time' in lines[i].lower() or 'frame#' in lines[i].lower():
                 start_row = i
                 header_line = lines[i]
@@ -938,6 +940,20 @@ class RefinedHittingOptimizer:
             
         main_cols = [c.strip() for c in header_line.split('\t') if c.strip() != '']
         data_start = start_row + 2
+        # Units from the DataRate block (the row after the one naming "Units"):
+        # OpenCap writes metres, Cortex and most labs write millimetres. Every
+        # downstream speed and force assumes metres.
+        scale = 1.0
+        for i in range(1, start_row):
+            fields = [c.strip() for c in lines[i].split('\t')]
+            if 'Units' in fields and i + 1 < len(lines):
+                vals = [c.strip() for c in lines[i + 1].split('\t')]
+                try:
+                    unit = vals[fields.index('Units')].lower()
+                    scale = {'mm': 0.001, 'cm': 0.01, 'm': 1.0}.get(unit, 1.0)
+                except (IndexError, ValueError):
+                    pass
+                break
         
         try:
             df = pd.read_csv(filepath, sep='\t', skiprows=data_start, header=None)
@@ -958,6 +974,8 @@ class RefinedHittingOptimizer:
                 flat_cols.append(f"{marker_name}_{axis}")
                 
             df.columns = flat_cols[:len(df.columns)]
+            if scale != 1.0:
+                df.iloc[:, 2:] = df.iloc[:, 2:].astype(float) * scale
             return df
         except Exception:
             return None
@@ -1865,6 +1883,18 @@ class RefinedHittingOptimizer:
             'contact_frame': int(contact_frame),
         }
         
+    @staticmethod
+    def _trc_index_at(trc_data: pd.DataFrame, t: float) -> int:
+        """TRC row closest to time t (s). The .trc and .mot can run at different
+        rates or start a sample apart, so frame numbers are never shared."""
+        tt = trc_data['Time'].values.astype(float)
+        return int(np.clip(np.argmin(np.abs(tt - t)), 0, len(tt) - 1))
+
+    @staticmethod
+    def _mot_frame_at(mot_time: np.ndarray, t: float) -> int:
+        mt = np.asarray(mot_time, dtype=float)
+        return int(np.clip(np.argmin(np.abs(mt - t)), 0, len(mt) - 1))
+
     def _stride_from_markers(self, trc_data: pd.DataFrame, data: pd.DataFrame,
                              rotation: Dict) -> Optional[Dict]:
         """Stride length from foot markers: the horizontal distance between the two
@@ -1890,8 +1920,12 @@ class RefinedHittingOptimizer:
                                                   - np.mean(trc_data['LAnkle_' + a].values)))
             horiz = [a for a in 'XYZ' if a != vert]
 
-            # Contact ≈ peak pelvis angular velocity.
-            contact = int(min(int(np.argmax(np.abs(rotation['pelvis_omega']))), len(trc_data) - 1))
+            # Contact: the hand-anchored contact frame when the rotation step found
+            # one, else peak pelvis angular velocity. Mapped into the .trc by time.
+            mot_frame = int(rotation.get('contact_frame',
+                                         int(np.argmax(np.abs(rotation['pelvis_omega'])))))
+            mot_frame = min(mot_frame, len(data) - 1)
+            contact = self._trc_index_at(trc_data, float(data['time'].values[mot_frame]))
 
             def ankle(side):
                 return np.array([float(trc_data[f'{side}Ankle_{a}'].values[contact]) for a in horiz])
@@ -1913,7 +1947,7 @@ class RefinedHittingOptimizer:
             return None
 
     def _lead_foot_touchdown(self, trc_data: Optional[pd.DataFrame], peak_frame: int,
-                             fs: float) -> Optional[int]:
+                             fs: float, mot_time: Optional[np.ndarray] = None) -> Optional[int]:
         """Frame the lead foot lands: the first frame after the lead ankle's highest
         point in the second before peak pelvis speed at which the ankle is back
         within 2 cm of its standing height. None when there are no ankle markers or
@@ -1926,6 +1960,11 @@ class RefinedHittingOptimizer:
                 return None
             vert = max('XYZ', key=lambda a: float(np.mean(trc_data['Neck_' + a].values)
                                                   - np.mean(trc_data['LAnkle_' + a].values)))
+            # peak_frame and fs describe the .mot; the search runs on .trc rows.
+            if mot_time is not None:
+                peak_frame = self._trc_index_at(trc_data, float(np.asarray(mot_time)[min(peak_frame, len(mot_time) - 1)]))
+                tt = trc_data['Time'].values.astype(float)
+                fs = 1.0 / float(np.mean(np.diff(tt))) if len(tt) > 1 else fs
             n = min(len(trc_data), peak_frame + 1)
             start = max(0, n - int(round(1.0 * fs)))
             if n - start < 5:
@@ -1944,6 +1983,8 @@ class RefinedHittingOptimizer:
                 return None
             for i in range(apex, n):
                 if h[i] - floor <= 0.02:
+                    if mot_time is not None:   # back to a .mot frame
+                        return self._mot_frame_at(mot_time, float(trc_data['Time'].values[i]))
                     return i
             return None
         except Exception:
@@ -1991,7 +2032,8 @@ class RefinedHittingOptimizer:
             # The onset above is when the pelvis starts turning, which on a
             # leg-kick swing comes while the lead foot is still in the air. When
             # the ankle markers can see the foot come down, use that instead.
-            touchdown = self._lead_foot_touchdown(trc_data, peak_frame, fs)
+            touchdown = self._lead_foot_touchdown(trc_data, peak_frame, fs,
+                                                  mot_time=data['time'].values)
             if touchdown is not None:
                 plant_frame, plant_method = touchdown, "lead_ankle_touchdown"
         else:
@@ -2309,7 +2351,7 @@ class RefinedHittingOptimizer:
 
         return {
             'timing_ms': timing_ms,
-            'proper_sequence': bool(timing_ms <= 0),  # torax ≤ pelvis = correct (pos = pelvis first)
+            'proper_sequence': bool(timing_ms >= 0),  # positive = pelvis peaked first = correct
             'indeterminate': indeterminate,
         }
 

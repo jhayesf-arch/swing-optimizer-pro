@@ -111,6 +111,78 @@ def test_percentile_at_published_mean_is_fiftieth():
     assert o._percentile_for('max_hip_shoulder_separation', 46) > 50
 
 
+def _trc_df(fs, n, ankle_lift_frames=None, units_scale=1.0):
+    """Minimal .trc DataFrame: standing body, left ankle lifts and lands."""
+    t = np.arange(n) / fs
+    cols = {'Frame': np.arange(1, n + 1), 'Time': t}
+    pose = {'Neck': (0, 1.5, 0), 'midHip': (0, 0.95, 0), 'RShoulder': (0, 1.45, .18), 'LShoulder': (0, 1.45, -.18),
+            'RElbow': (0, 1.15, .2), 'LElbow': (0, 1.15, -.2), 'RWrist': (0, .9, .2), 'LWrist': (0, .9, -.2),
+            'RHip': (0, .95, .1), 'LHip': (0, .95, -.1), 'RKnee': (0, .52, .15), 'LKnee': (0, .52, -.15),
+            'RAnkle': (0, .08, .15), 'LAnkle': (0, .08, -.45), 'RBigToe': (.18, .02, .15), 'LBigToe': (.18, .02, -.45)}
+    for m, (x, y, z) in pose.items():
+        for ax, v in zip('XYZ', (x, y, z)):
+            cols[f'{m}_{ax}'] = np.full(n, float(v)) * units_scale
+    if ankle_lift_frames:
+        a, b = ankle_lift_frames
+        lift = 0.10 * np.sin(np.linspace(0, np.pi, b - a))
+        cols['LAnkle_Y'][a:b] += lift * units_scale
+    return pd.DataFrame(cols)
+
+
+def test_trc_in_millimetres_is_scaled_to_metres(tmp_path=None):
+    import tempfile
+    o = RefinedHittingOptimizer(81, 1.83)
+    n = 24
+    body = '\n'.join('\t'.join(['%d' % (i + 1), '%.4f' % (i / 120)] + ['1000.0', '950.0', '0.0']) for i in range(n))
+    for unit, expect in (('mm', 1.0), ('m', 1000.0)):
+        txt = ('PathFileType\t4\t(X/Y/Z)\tswing_time.trc\n'
+               'DataRate\tCameraRate\tNumFrames\tNumMarkers\tUnits\tOrigDataRate\tOrigDataStartFrame\tOrigNumFrames\n'
+               f'120.0\t120.0\t{n}\t1\t{unit}\t120.0\t1\t{n}\n'
+               'Frame#\tTime\tmidHip\t\t\t\n\t\tX1\tY1\tZ1\n' + body + '\n')
+        with tempfile.NamedTemporaryFile('w', suffix='.trc', delete=False) as f:
+            f.write(txt); path = f.name
+        df = o.load_trc_file(path)
+        os.unlink(path)
+        assert df is not None, 'header line containing "time" in the file name must not break parsing'
+        assert abs(float(df['midHip_X'].iloc[0]) - expect) < 1e-9, (unit, df['midHip_X'].iloc[0])
+
+
+def test_foot_plant_maps_between_trc_and_mot_rates():
+    # .trc at 120 Hz, .mot at 60 Hz: the lead ankle lifts over trc rows 120-180
+    # (1.0-1.5 s) and lands at 1.5 s, which is .mot frame 90, not 180.
+    trc = _trc_df(120.0, 360, ankle_lift_frames=(120, 180))
+    o = RefinedHittingOptimizer(81, 1.83)
+    o.handedness = 'right'
+    mot_time = np.arange(180) / 60.0
+    plant = o._lead_foot_touchdown(trc, peak_frame=120, fs=60.0, mot_time=mot_time)
+    assert plant is not None and abs(mot_time[plant] - 1.5) < 0.06, plant
+
+
+def test_stride_from_markers_uses_time_not_frame_numbers():
+    trc = _trc_df(120.0, 360)
+    o = RefinedHittingOptimizer(81, 1.83)
+    pelvis, lumbar = _swing(n=180)        # 60 Hz .mot: 3 s of motion
+    mot = _mot(pelvis, lumbar); mot['time'] = np.arange(180) / 60.0
+    rot = o.calculate_rotational_torques_refined(mot)
+    out = o._stride_from_markers(trc, mot, rot)
+    assert out and out['stride_detected'] and abs(out['stride_length_m'] - 0.60) < 0.01, out
+
+
+def test_com_drops_missing_segments_and_refuses_without_trunk():
+    from grf_estimation import compute_com
+    trc = _trc_df(60.0, 10)
+    full = compute_com(trc)
+    no_hand = compute_com(trc.drop(columns=['RWrist_X', 'RWrist_Y', 'RWrist_Z']))
+    # One hand is 0.6% of body mass: the centre barely moves, and is not pulled
+    # toward the origin as it was when a missing marker read (0, 0, 0).
+    assert abs(no_hand[0, 1] - full[0, 1]) < 0.01
+    try:
+        compute_com(trc.drop(columns=['Neck_X', 'Neck_Y', 'Neck_Z']))
+        assert False, 'trunk missing must raise'
+    except ValueError:
+        pass
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):

@@ -57,7 +57,13 @@ Or time series, and the peaks are computed for you:
 }
 ```
 
-- Units are SI: newtons and newton-metres.
+- Units are SI: newtons and newton-metres. A `.trc` in millimetres (Cortex
+  exports) is converted on load from its `Units` header.
+- The bat is a uniform rod held at the knob, half on each hand: each hand
+  body's mass, mass centre and inertia are recomputed about the combined
+  centre with parallel-axis terms (0.88 kg × 0.864 m gives 0.072 kg·m² per
+  hand, versus 0.014 when the rod's own inertia was simply added at the
+  hand's centre).
 - `l` / `r` are the athlete's **left / right**, not lead / trail. The report maps
   them to lead and trail from the handedness you enter.
 - `grf_*_N` vectors must be **Y-up** so column 1 is vertical. Cortex exports are

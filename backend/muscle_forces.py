@@ -161,7 +161,7 @@ def muscle_report(model_path: str, mot_df: pd.DataFrame, id_result: dict,
     out = {'method': 'static optimization (activation x max force), leg muscles only',
            'experimental': True}
     chk = id_result.get('grf_check')
-    if chk and not chk['plausible']:
+    if chk and not chk.get('plausible', True):
         out.update(status='withheld', reason='The tracked motion implies an impossible ground '
                    'force, so the joint moments the muscles would have to make are not reliable.')
         return out
@@ -171,17 +171,19 @@ def muscle_report(model_path: str, mot_df: pd.DataFrame, id_result: dict,
     except Exception as e:      # never let this break an analysis
         out.update(status='failed', reason=f'{type(e).__name__}: {e}')
         return out
-    s = summarize(r['activations'], r['forces'], df, handedness)
-    weight = id_result.get('body_weight_N') or 0.0
-    model = osim.Model(model_path)
-    com_h = float(model.calcMassCenterPosition(model.initSystem()).get(1))
+    try:
+        s = summarize(r['activations'], r['forces'], df, handedness)
+        weight = id_result.get('body_weight_N') or 0.0
+        model = osim.Model(model_path)
+        com_h = float(model.calcMassCenterPosition(model.initSystem()).get(1))
+    except Exception as e:
+        out.update(status='failed', reason=f'{type(e).__name__}: {e}')
+        return out
     limit = RESIDUAL_MOMENT_LIMIT_FRAC * weight * com_h
     cols = [c for c in ('pelvis_tilt_moment', 'pelvis_list_moment', 'pelvis_rotation_moment') if c in df]
     res_m = float(np.max(np.abs(df[cols].values))) if cols else 0.0
     out['seconds'] = r['seconds']
-    out['residual_moment_check'] = {'peak_Nm': round(res_m, 1), 'limit_Nm': round(limit, 1),
-                                    'ok': res_m <= limit}
-    out['reserves'] = s['reserves']
+    residual_check = {'peak_Nm': round(res_m, 1), 'limit_Nm': round(limit, 1), 'ok': res_m <= limit}
     reasons = []
     if s['joints_not_explained_by_muscles']:
         reasons.append('the leg muscles could not produce the moments at '
@@ -190,7 +192,9 @@ def muscle_report(model_path: str, mot_df: pd.DataFrame, id_result: dict,
         reasons.append(f'the ground force estimate leaves {res_m:.0f} N·m unbalanced at the pelvis '
                        f'(limit {limit:.0f} N·m, Hicks et al. 2015)')
     if reasons:
+        # Only the reason leaves here: a withheld result carries no numbers.
         out.update(status='withheld', reason='Muscle loads withheld: ' + '; '.join(reasons) + '.')
         return out
-    out.update(status='ok', groups=s['groups'])
+    out.update(status='ok', groups=s['groups'], reserves=s['reserves'],
+               residual_moment_check=residual_check)
     return out

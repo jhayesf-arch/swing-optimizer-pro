@@ -135,7 +135,7 @@ def _write_setup(path, model_path, mot_path, results_dir, t0, t1, lowpass_hz, lo
         <activation_exponent>2</activation_exponent>
         <use_muscle_physiology>{str(use_muscle_physiology).lower()}</use_muscle_physiology>
         <optimizer_convergence_criterion>0.0001</optimizer_convergence_criterion>
-        <optimizer_max_iterations>200</optimizer_max_iterations>
+        <optimizer_max_iterations>1000</optimizer_max_iterations>
       </StaticOptimization>
     </objects></AnalysisSet>
     <external_loads_file>{loads_xml or ''}</external_loads_file>
@@ -233,8 +233,26 @@ def run_static_optimization(mot_path: str, model_path: str,
         _write_setup(setup, so_model, trimmed, tmp, t0, t1, idr['lowpass_hz'], loads_xml,
                      use_muscle_physiology)
         t_so = time.time()
+        log_path = os.path.join(tmp, 'so.log')
+        try:
+            osim.Logger.removeFileSink()
+            osim.Logger.addFileSink(log_path)
+        except Exception:
+            log_path = None
         osim.AnalyzeTool(setup).run()
         so_seconds = time.time() - t_so
+        # Frames where Ipopt gave up are written to the .sto like any other; find
+        # them from the log so they are not reported as muscle forces.
+        not_converged = 0
+        if log_path and os.path.exists(log_path):
+            with open(log_path, errors='replace') as f:
+                not_converged = sum(1 for line in f if 'could not find a solution' in line
+                                    or 'Maximum iterations exceeded' in line
+                                    or 'Restoration failed' in line)
+            try:
+                osim.Logger.removeFileSink()
+            except Exception:
+                pass
         act_f = os.path.join(tmp, 'SO_StaticOptimization_activation.sto')
         frc_f = os.path.join(tmp, 'SO_StaticOptimization_force.sto')
         if not os.path.exists(act_f):
@@ -255,9 +273,10 @@ def run_static_optimization(mot_path: str, model_path: str,
                  if k in ('pelvis_tilt', 'pelvis_list', 'pelvis_rotation')] or [0.0])
     summary['residual_moment_check'] = {'peak_Nm': res_m, 'limit_Nm': round(limit, 1),
                                         'ok': res_m <= limit}
+    summary['frames_not_converged'] = int(not_converged)
     reliable = (bool(chk is None or chk['plausible'])
                 and not summary['joints_not_explained_by_muscles']
-                and res_m <= limit)
+                and res_m <= limit and not_converged == 0)
     return {'summary': summary, 'grf_check': chk, 'activations': act, 'forces': force,
             'id_result': idr, 'grf_source': idr.get('grf_source'),
             'reliable': reliable, 'window_s': (t0, t1), 'frames': len(act),
@@ -310,6 +329,8 @@ def _cli():
         why.append('reserves carry ' + ', '.join(s['joints_not_explained_by_muscles']))
     if not rc['ok']:
         why.append('pelvis residual moment too large')
+    if s.get('frames_not_converged'):
+        why.append(f"{s['frames_not_converged']} frames did not converge")
     print('\nReliable:', r['reliable'], f"({'; '.join(why)})" if why else '')
 
 

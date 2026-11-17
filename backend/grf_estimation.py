@@ -53,30 +53,47 @@ SEGMENT_DEFS = {
 }
 
 
-def _get_marker(trc_df: pd.DataFrame, name: str) -> np.ndarray:
-    """Return (N,3) array for a marker. Returns zeros if not found."""
+def _get_marker(trc_df: pd.DataFrame, name: str):
+    """Return (N,3) array for a marker, or None if it is not in the file."""
     cols = [f'{name}_X', f'{name}_Y', f'{name}_Z']
     if all(c in trc_df.columns for c in cols):
-        return trc_df[cols].values
-    return np.zeros((len(trc_df), 3))
+        return trc_df[cols].values.astype(float)
+    return None
+
+
+# Segments whose absence makes a whole-body centre of mass meaningless.
+_REQUIRED_SEGMENTS = ('trunk',)
+MAX_MISSING_MASS_FRAC = 0.15
 
 
 def compute_com(trc_df: pd.DataFrame) -> np.ndarray:
     """
     Compute whole-body CoM trajectory (N,3) from TRC marker data.
     Uses de Leva 1996 segment mass fractions.
+
+    A segment whose markers are missing is left out and the remaining
+    fractions renormalised. Silently placing it at the origin (as before)
+    pulled the centre of mass tens of centimetres off. Raises ValueError when
+    the trunk is missing or more than MAX_MISSING_MASS_FRAC of body mass is.
     """
     com = np.zeros((len(trc_df), 3))
     total_mass_frac = 0.0
+    missing = []
 
     for seg, (prox, dist, mf, cf) in SEGMENT_DEFS.items():
         p = _get_marker(trc_df, prox)
         d = _get_marker(trc_df, dist)
+        if p is None or d is None:
+            missing.append(seg)
+            continue
         seg_com = p + cf * (d - p)
         com += mf * seg_com
         total_mass_frac += mf
 
-    # Normalise in case fractions don't sum to exactly 1.0
+    missing_frac = sum(SEGMENT_DEFS[m][2] for m in missing)
+    if any(m in missing for m in _REQUIRED_SEGMENTS) or missing_frac > MAX_MISSING_MASS_FRAC:
+        raise ValueError('cannot build a whole-body centre of mass: markers missing for '
+                         + ', '.join(missing) + f' ({100 * missing_frac:.0f}% of body mass)')
     com /= total_mass_frac
     return com
 
