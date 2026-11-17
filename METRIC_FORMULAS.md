@@ -506,4 +506,20 @@ over 1,300°/s or over 2× pelvis speed (batters show 1.1–1.6×), pelvis speed
 
 Torso coil at plant = |shoulder-line minus hip-line rotation| at the lead-foot
 plant frame. Peak pelvis and torso speeds are ground-frame peaks between swing
-start and 0.3 s after the pelvis peak.
+start and 0.3 s after the pelvis peak. Torso speed is the absolute upper-torso
+rate (pelvis + lumbar twist), the quantity Escamilla and Nakata report; the
+lumbar twist rate alone peaks early and reads about a third of it.
+
+Pelvis / upper-torso direction at contact = |90° − rotation of the segment from
+the top of the backswing to the contact frame|. Measured at contact (anchored
+on hand speed), not at foot plant; relative to the top, so it does not depend
+on how the athlete stood relative to the cameras. Without a contact frame both
+are reported unavailable, never scored from a placeholder. Lead-leg block is
+likewise unavailable, not zero, when the capture has no lead-knee angle.
+
+Percentiles: for dimensions whose five-star threshold is the published
+skilled-hitter mean (pelvis speed, torso speed, stride, lead-leg block, torso
+coil), the percentile comes from that mean and SD (normal CDF), so a hitter at
+the mean is at the 50th percentile of skilled hitters at that level. Other
+dimensions interpolate the star thresholds across fixed anchors (5, 25, 50,
+75, 92).

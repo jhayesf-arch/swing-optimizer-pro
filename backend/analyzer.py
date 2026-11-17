@@ -1,3 +1,4 @@
+import math
 import os
 import glob
 import numpy as np
@@ -264,8 +265,29 @@ DIMENSION_THRESHOLDS = {
 }
 
 # Percentile anchors for each of the 5 star-boundary thresholds (per dimension).
-# Used to translate a raw value into an approximate cohort percentile (0-100).
+# Used to translate a raw value into an approximate cohort percentile (0-100)
+# for dimensions whose tables are relative benchmarks.
 PERCENTILE_ANCHORS = [5.0, 25.0, 50.0, 75.0, 92.0]
+
+# Dimensions whose 5-star threshold IS the published skilled-hitter mean take
+# their percentile from that mean and SD instead (normal CDF): at the mean the
+# athlete is at the 50th percentile of skilled hitters, not the 92nd. Values are
+# the ones the threshold tables above are built from (Escamilla et al. 2009);
+# high-school entries are interpolated like the tables.
+PUBLISHED_NORMS = {
+    'pelvis_speed': {'youth': (632, 117), 'high_school': (655, 102),
+                     'college': (678, 87), 'professional': (714, 87)},
+    'torso_speed':  {'youth': (717, 86), 'high_school': (787, 70),
+                     'college': (857, 53), 'professional': (897, 53)},
+    'stride_length': {'youth': (0.47, 0.03), 'high_school': (0.47, 0.04),
+                      'college': (0.48, 0.05), 'professional': (0.48, 0.05)},
+    # Extension = flexion at hands-forward minus flexion at contact; SD combined
+    # from the two reported SDs (adults 15 and 4; youth 19 and 11).
+    'lead_leg_block': {'youth': (32, 22), 'high_school': (45, 19),
+                       'college': (59, 16), 'professional': (59, 16)},
+    'torso_coil_at_plant': {'youth': (13, 7), 'high_school': (13, 8),
+                            'college': (14, 9), 'professional': (14, 9)},
+}
 
 # Dimension weights for Swing Score (must sum to 1.0)
 # Swing Score weights live in swing_score.py with their evidence. Dimensions
@@ -1388,7 +1410,11 @@ class RefinedHittingOptimizer:
         # Validated ground truth: ~50ms pelvis-before-torso (Driveline landmarks).
         def _om1d(col):
             if col not in data.columns: return np.zeros(len(pelvis_omega))
-            arr = np.unwrap(np.deg2rad(data[col].values))
+            # lumbar_rotation is read from the joint-limit-repaired angle, never the
+            # raw column: a repaired flip would otherwise come back as a 3000 deg/s
+            # spike in every torso signal built here.
+            arr = (lumbar_angle_unwrapped if col == 'lumbar_rotation'
+                   else np.unwrap(np.deg2rad(data[col].values)))
             if HAS_SCIPY:
                 return savgol_smooth_and_diff(butter_lowpass_filter(arr, cutoff_hz, fs), window=window_size, polyorder=3, deriv=1, dt=dt)
             return np.gradient(smooth_data(arr, 11), dt)
@@ -1498,14 +1524,18 @@ class RefinedHittingOptimizer:
         _ke_half = int(0.20 * fs)
         _ke_lo = max(swing_start, peak_hip_frame - _ke_half)
         _ke_hi = min(len(lumbar_omega), peak_hip_frame + _ke_half + 1)
-        peak_shoulder_w = float(np.max(np.abs(lumbar_omega[_ke_lo:_ke_hi])))
+        # Absolute upper-torso rate (pelvis + lumbar twist), which is what the
+        # published torso speeds and the torso/pelvis ratio (1.1-1.6, Escamilla
+        # 2009; Nakata 2014) refer to. The lumbar twist rate alone peaks early
+        # and reads about a third of the real torso speed.
+        peak_shoulder_w = float(np.max(np.abs(thorax_abs_omega[_ke_lo:_ke_hi])))
 
         peak_arm_w_val  = float(np.max(np.abs(arm_omega_sw)))
         peak_elb_w_val  = float(np.max(np.abs(elb_omega_sw)))
 
         # Segmental Kinetic Energy: KE = 0.5 * I * omega^2
         # All segments use their own angular velocity in their own reference frame.
-        # pelvis: absolute rotation; torso: relative to pelvis (lumbar); arms: absolute.
+        # pelvis, torso and arms: absolute rotation rates.
         bat_I = (1.0 / 3.0) * self.bat_mass_kg * (self.bat_length_m ** 2)
 
         pelvis_ke = 0.5 * hip_inertia * (peak_pelvis_w ** 2)
@@ -1577,7 +1607,8 @@ class RefinedHittingOptimizer:
         def _omega_1d(col):
             if col not in data.columns:
                 return np.zeros(len(pelvis_omega))
-            arr = np.unwrap(np.deg2rad(data[col].values))
+            arr = (lumbar_angle_unwrapped if col == 'lumbar_rotation'
+                   else np.unwrap(np.deg2rad(data[col].values)))
             if HAS_SCIPY:
                 arr = butter_lowpass_filter(arr, cutoff_hz, fs)
                 return savgol_smooth_and_diff(arr, window=window_size, polyorder=3, deriv=1, dt=dt)
@@ -1587,7 +1618,7 @@ class RefinedHittingOptimizer:
         pelvis_omega_z = _omega_1d('pelvis_list')
         pelvis_omega_3d = np.sqrt(pelvis_omega**2 + pelvis_omega_x**2 + pelvis_omega_z**2)
         torso_omega_x = _omega_1d('lumbar_bending')
-        torso_omega_3d = np.sqrt(lumbar_omega**2 + torso_omega_x**2)
+        torso_omega_3d = np.sqrt(thorax_abs_omega**2 + torso_omega_x**2)
         peak_pelvis_omega_3d = float(np.max(pelvis_omega_3d[swing_start:]))
         peak_torso_omega_3d  = float(np.max(torso_omega_3d[swing_start:]))
 
@@ -1768,6 +1799,8 @@ class RefinedHittingOptimizer:
             'peak_torso_omega_3d_deg_s': peak_torso_omega_3d * 180.0 / np.pi,
             'pelvis_omega': pelvis_omega,
             'pelvis_angle': pelvis_angle,
+            'shoulder_angle': shoulder_angle,
+            'transition_frame': int(transition_frame),
             'swing_start_frame': swing_start,
             # For the Torso Coil at Plant and Peak Torso Speed dimensions, which
             # need the plant frame from stride analysis.
@@ -2899,6 +2932,14 @@ class RefinedHittingOptimizer:
     def _percentile_for(self, key: str, value: float) -> Optional[float]:
         """Translate a raw dimension value into an approximate cohort percentile (1-99)
         by interpolating the value across the level's 5 star-boundary thresholds."""
+        norm = PUBLISHED_NORMS.get(key, {}).get(self.skill_level)
+        if norm:
+            mean, sd = norm
+            z = (float(value) - mean) / sd
+            if key in INVERT_DIMS:
+                z = -z
+            pct = 50.0 * (1.0 + math.erf(z / math.sqrt(2.0)))
+            return round(max(1.0, min(99.0, pct)), 0)
         thr = DIMENSION_THRESHOLDS.get(key, {}).get(self.skill_level, [])
         if not thr:
             return None
@@ -3116,52 +3157,68 @@ class RefinedHittingOptimizer:
         # ------------------------------------------------------------------
         # PHASE 4: CONTACT & FOLLOW-THROUGH
         # ------------------------------------------------------------------
-        # Pelvis Direction at Contact — how close to 90° (square) at plant frame
-        if rotation and 'pelvis_angle' in rotation and stride:
-            plant_idx = min(stride['plant_frame'], len(rotation['pelvis_angle']) - 1)
-            pelvis_at_contact_deg = float(np.abs(rotation['pelvis_angle'][plant_idx]) * 180.0 / np.pi)
-            # Deviation from "square" — 90° is ideal so deviation = |90 - angle|
-            pelvis_dev = abs(90.0 - pelvis_at_contact_deg)
-        else:
-            pelvis_dev = 45.0
-        pdc_stars = self._rate_dimension('pelvis_direction_at_contact', pelvis_dev, invert=True)
-        dims['pelvis_direction_at_contact'] = {
-            'label': DIMENSION_LABELS['pelvis_direction_at_contact'],
-            'stars': pdc_stars,
-            'badge': self._rating_to_badge(pdc_stars),
-            'value': round(pelvis_dev, 1),
-            'unit': '° off-square',
-            'description': 'Hip alignment at contact. Hips should be square (90°) to the pitcher.',
-        }
+        # Pelvis / upper-torso direction at CONTACT. Measured at the contact frame
+        # (hand-speed anchored), not at foot plant, where the hips are still closed.
+        # "Square" means the segment has turned 90 deg from the top of the backswing
+        # to face the pitcher, so the deviation is |90 - rotation from the top|. That
+        # is independent of how the athlete stood relative to the cameras, which the
+        # raw capture-frame yaw is not. Without a contact frame the dimension is
+        # reported as unavailable rather than scored from a placeholder.
+        def _direction_at_contact(series_key):
+            if not rotation or series_key not in rotation or 'contact_frame' not in rotation:
+                return None
+            ang = rotation[series_key]
+            c = int(rotation['contact_frame']); t = int(rotation.get('transition_frame', 0))
+            if ang is None or c >= len(ang) or t >= len(ang):
+                return None
+            turned = abs(float(ang[c] - ang[t])) * 180.0 / np.pi
+            return abs(90.0 - turned)
 
-        # Upper Torso Direction at Contact
-        if rotation:
-            torso_dev = pelvis_dev * (1.0 / max(0.5, rotation.get('torso_to_pelvis_rot_ratio', 1.0)))
-        else:
-            torso_dev = 50.0
-        utdc_stars = self._rate_dimension('upper_torso_direction_at_contact', float(torso_dev), invert=True)
-        dims['upper_torso_direction_at_contact'] = {
-            'label': DIMENSION_LABELS['upper_torso_direction_at_contact'],
-            'stars': utdc_stars,
-            'badge': self._rating_to_badge(utdc_stars),
-            'value': round(torso_dev, 1),
-            'unit': '° off-square',
-            'description': 'Shoulder alignment at contact for optimal barrel control and plate coverage.',
-        }
+        for key, series_key, desc in (
+            ('pelvis_direction_at_contact', 'pelvis_angle',
+             'How far the hips have turned to face the pitcher at contact (0 = square).'),
+            ('upper_torso_direction_at_contact', 'shoulder_angle',
+             'How far the shoulders have turned to face the pitcher at contact (0 = square).'),
+        ):
+            dev = _direction_at_contact(series_key)
+            if dev is None:
+                dims[key] = {
+                    'label': DIMENSION_LABELS[key], 'stars': None, 'badge': 'unavailable',
+                    'value': None, 'unit': '° off-square', 'description': desc,
+                    'available': False,
+                    'unavailable_reason': 'No contact frame on this capture (needs the .trc markers).',
+                }
+                continue
+            st = self._rate_dimension(key, float(dev), invert=True)
+            dims[key] = {
+                'label': DIMENSION_LABELS[key], 'stars': st, 'badge': self._rating_to_badge(st),
+                'value': round(dev, 1), 'unit': '° off-square', 'description': desc,
+            }
 
         # Lead-Leg Block — front-knee extension from plant to contact (OBP bat-speed correlate)
         llb = self.calculate_lead_leg_block(lower_body or {}, rotation, stride)
-        llb_val = llb.get('lead_leg_block_deg', 0.0)
-        llb_stars = self._rate_dimension('lead_leg_block', llb_val)
-        dims['lead_leg_block'] = {
-            'label': DIMENSION_LABELS['lead_leg_block'],
-            'stars': llb_stars,
-            'badge': self._rating_to_badge(llb_stars),
-            'value': round(llb_val, 1),
-            'unit': '° ext',
-            'description': 'Lead (front) knee straightening from foot plant to contact. A firm, '
-                           'extending front leg posts up and whips energy into the barrel (Escamilla 2009; Perrett 2024).',
-        }
+        llb_desc = ('Lead (front) knee straightening from foot plant to contact. A firm, '
+                    'extending front leg posts up and whips energy into the barrel (Escamilla 2009; Perrett 2024).')
+        if llb and 'lead_leg_block_deg' in llb:
+            llb_val = float(llb['lead_leg_block_deg'])
+            llb_stars = self._rate_dimension('lead_leg_block', llb_val)
+            dims['lead_leg_block'] = {
+                'label': DIMENSION_LABELS['lead_leg_block'],
+                'stars': llb_stars,
+                'badge': self._rating_to_badge(llb_stars),
+                'value': round(llb_val, 1),
+                'unit': '° ext',
+                'description': llb_desc,
+            }
+        else:
+            # No knee angles on this capture: say so. Scoring it as 0 deg would cost
+            # the full weight and prescribe a front-leg drill for nothing measured.
+            dims['lead_leg_block'] = {
+                'label': DIMENSION_LABELS['lead_leg_block'], 'stars': None, 'badge': 'unavailable',
+                'value': None, 'unit': '° ext', 'description': llb_desc,
+                'available': False,
+                'unavailable_reason': 'Lead-knee angle not measured on this capture.',
+            }
 
         # Kinetic Chain Efficiency
         chain_eff = rotation.get('energy_transfer_proxy_pct', 0.0) if rotation else 0.0

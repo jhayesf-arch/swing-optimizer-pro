@@ -49,7 +49,7 @@ Every dimension shows a **percentile** — where you rank *at your level* (youth
 
 **How percentiles are computed — the report tells you which mode is active:**
 
-- **Research‑guided (default)** — percentiles are *estimated* from published benchmarks (Blast Motion, Fleisig, Escamilla, etc.). Good directionally, but not a measured rank against real hitters. Only Hand/Bat Speed is anchored to fully level‑stratified data.
+- **Research‑guided (default)** — percentiles are *estimated* from published benchmarks (Blast Motion, Fleisig, Escamilla, etc.). Where a published mean and SD exist for your level (pelvis speed, torso speed, stride, lead‑leg block, torso coil) the percentile is your place in that skilled‑hitter distribution, so matching the published mean reads 50th. Elsewhere it is interpolated from the star thresholds. Good directionally, but not a measured rank against real hitters.
 - **Blended (library + research)** — once you've built a library of *your own* swings, percentiles blend your cohort with the research benchmark using **empirical‑Bayes shrinkage**: your cohort's weight is `n / (n + 25)`, and the research benchmark carries the rest. So research still **anchors** the number (and dominates small cohorts), and your own data takes over as you log more swings — the benchmarks are never abandoned. Tiles show **·blend**; hover any bar to see the split (e.g. *"78th pct — blend of your library (68th, n=20) and research (86th); 44% library"*).
 
 The blend constant (`COHORT_SHRINKAGE`, default 25) lives in `analyzer.py` — lower it to trust your library sooner, raise it to lean on research longer. A level still needs ≥ `COHORT_MIN_N` (5) swings before its data blends in at all.
