@@ -52,7 +52,9 @@ MAX_TORSO_PELVIS_RATIO = 2.0
 
 # In the report, not in the score: no published batting values to score against.
 INFORMATIONAL = ('negative_move', 'forward_move', 'kinetic_chain_efficiency',
-                 'follow_through_quality')
+                 'follow_through_quality',
+                 # balance as coaches use the word: coaching consensus, needs the .trc
+                 'head_movement', 'com_balance', 'finish_balance')
 
 
 def _unreliable(evidence: Dict, keys) -> str:
