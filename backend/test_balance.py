@@ -165,6 +165,13 @@ def test_without_foot_plant_both_head_parts_are_not_measured():
         assert dims[k]['available'] is False and 'Foot plant' in dims[k]['unavailable_reason']
 
 
+def test_balance_measures_carry_no_percentile():
+    opt, b = run(body())
+    rep = opt.build_phase_report(None, None, {}, {}, balance=b)
+    for k in ('head_movement_load', 'head_movement_swing', 'com_balance', 'finish_balance'):
+        assert 'percentile' not in rep['dimensions'][k], k
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):

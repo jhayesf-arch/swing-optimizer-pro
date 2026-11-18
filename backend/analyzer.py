@@ -3682,6 +3682,8 @@ class RefinedHittingOptimizer:
             total_weight += weight
 
             val = dims[dim_key]['value']
+            if dim_key in BALANCE_DIMS:
+                continue   # no hitter distribution to rank against yet: value and stars only
             # Research-guided benchmark percentile — always computed; it is the prior.
             bench_pct = self._percentile_for(dim_key, val)
             if bench_pct is None:
