@@ -52,11 +52,14 @@ const DEMO_DIAGNOSIS = {
         percentile_library_dims: 0,
         lead_leg_block: { lead_leg_block_deg: 19.4, lead_side: 'l', lead_knee_peak_flex_deg: 46.1, lead_knee_flex_at_contact_deg: 26.7 },
         phases: {
-            balance_load: { label: 'Balance & Load', icon: '', avg_stars: 3.7, badge: 'satisfactory', dimensions: [
-                { key: 'negative_move', label: 'Negative Move', value: '0.06', unit: 'm', stars: 4, percentile: 74, badge: 'satisfactory', description: 'Good backward weight shift before stride.' },
-                { key: 'torso_coil_at_plant', label: 'Torso Coil at Plant', value: '12.0', unit: '°', stars: 4, percentile: 72, badge: 'satisfactory', description: 'Shoulders stay closed to the hips as the front foot lands. Skilled hitters: about 13-14° (Escamilla 2009).' },
+            balance_load: { label: 'Balance & Head Movement', icon: '', avg_stars: 4.3, badge: 'satisfactory', dimensions: [
+                { key: 'head_movement', label: 'Head Movement', value: '9.4', unit: 'cm', stars: 4, percentile: 70, badge: 'satisfactory', description: 'How far the head travels from stance to contact. Coaches want a quiet head: the body turns under it. Estimated from the upper trunk (no head markers in the capture). Forward +7.8 cm, drop +2.1 cm.' },
+                { key: 'com_balance', label: 'Center of Mass at Contact', value: '3.5', unit: '% off centre', stars: 5, percentile: 90, badge: 'excellent', description: "Where the body's centre of mass sits between the feet at contact. Coaches look for roughly centred (40-65 % of the way to the front foot). This swing: 56 % of the way to the front foot." },
+                { key: 'finish_balance', label: 'Finish Balance', value: '7.8', unit: 'cm drift', stars: 3, percentile: 50, badge: 'satisfactory', description: 'How much the body is still moving after contact (centre of mass travel 0.3-0.8 s later), and whether the front foot steps out to catch it.' },
             ]},
             stride: { label: 'Stride', icon: '', avg_stars: 4.0, badge: 'satisfactory', dimensions: [
+                { key: 'negative_move', label: 'Negative Move', value: '0.06', unit: 'm', stars: 4, percentile: 74, badge: 'satisfactory', description: 'Good backward weight shift before stride.' },
+                { key: 'torso_coil_at_plant', label: 'Torso Coil at Plant', value: '12.0', unit: '°', stars: 4, percentile: 72, badge: 'satisfactory', description: 'Shoulders stay closed to the hips as the front foot lands. Skilled hitters: about 13-14° (Escamilla 2009).' },
                 { key: 'stride_length', label: 'Stride Length', value: '0.74', unit: 'x Ht', stars: 5, percentile: 92, badge: 'excellent', description: 'Good stride length relative to height.' },
                 { key: 'forward_move', label: 'Forward Move', value: '94', unit: '%', stars: 4, percentile: 73, badge: 'satisfactory', description: 'Efficient forward momentum.' },
             ]},
@@ -1090,6 +1093,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Drill / Cue Tags per dimension
     // -----------------------------------------
     const DIM_CUES = {
+        'head_movement':                    ['Quiet-head tee work', 'Stride-and-hold'],
+        'com_balance':                      ['Stride to a balance hold', 'Swing from the hold'],
+        'finish_balance':                   ['Finish-and-freeze swings', '2-second hold'],
         'negative_move':                    ['Hip hinge load drill', 'Toe tap rhythm'],
         'torso_coil_at_plant':              ['Shoulder coil drill', 'Show-the-number at plant'],
         'pelvis_speed':                     ['Rear-hip med-ball scoop toss', 'Step-behind rotational throw'],
@@ -1398,7 +1404,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Map each body region (in body.svg) to the dimensions that load it.
     const REGION_DIMS = {
-        'region-pelvis':   ['pelvis_speed', 'pelvis_rotation_range', 'pelvis_direction_at_contact', 'negative_move'],
+        'region-head':     ['head_movement'],
+        'region-neck':     ['head_movement'],
+        'region-pelvis':   ['pelvis_speed', 'pelvis_rotation_range', 'pelvis_direction_at_contact', 'negative_move', 'com_balance'],
         'region-torso':    ['torso_speed', 'torso_coil_at_plant', 'upper_torso_rotation_range', 'upper_torso_direction_at_contact', 'max_hip_shoulder_separation'],
         'region-shoulders':['max_hip_shoulder_separation', 'upper_torso_rotation_range', 'sequence_quality'],
         'region-arm-r':    ['kinetic_chain_efficiency', 'hand_speed'],
@@ -1411,8 +1419,8 @@ document.addEventListener('DOMContentLoaded', () => {
         'region-thigh-l':  ['stride_length', 'forward_move'],
         'region-shin-r':   ['forward_move', 'follow_through_quality'],
         'region-shin-l':   ['forward_move', 'follow_through_quality'],
-        'region-foot-r':   ['stride_length'],
-        'region-foot-l':   ['stride_length'],
+        'region-foot-r':   ['stride_length', 'finish_balance', 'com_balance'],
+        'region-foot-l':   ['stride_length', 'finish_balance', 'com_balance'],
     };
 
     let _bodySvgCache = null;
@@ -1485,7 +1493,10 @@ document.addEventListener('DOMContentLoaded', () => {
         card.className = 'phase-card';
         card.style.animationDelay = `${0.05 + index * 0.08}s`;
 
-        const phaseStars = renderStars(Math.round(phase.avg_stars));
+        // A phase with nothing measured (e.g. balance without the .trc) shows no stars.
+        const phaseStars = phase.avg_stars == null
+            ? '<span class="dim-unavailable-why">needs the .trc file</span>'
+            : renderStars(Math.round(phase.avg_stars));
         const badgeClass = badgeCssClass(phase.badge);
         
         card.innerHTML = `
@@ -1508,7 +1519,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Shown in the report but not in the Swing Score: no published batting values
     // to score them against (backend/swing_score.py INFORMATIONAL).
-    const UNSCORED_DIMS = new Set(['negative_move', 'forward_move', 'kinetic_chain_efficiency', 'follow_through_quality']);
+    const UNSCORED_DIMS = new Set(['negative_move', 'forward_move', 'kinetic_chain_efficiency', 'follow_through_quality',
+                                   'head_movement', 'com_balance', 'finish_balance']);
 
     function buildDimTile(dim) {
         const tile = document.createElement('div');
@@ -1818,6 +1830,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Pelvis open to pitcher, lead arm extended forward, back arm bent, slight squat
     // Bones to highlight per metric key
     const METRIC_HIGHLIGHTS = {
+        'head_movement':                    { bones: [['Neck','midHip'],['Neck','RShoulder'],['Neck','LShoulder']], seg: 'torso', desc: 'Head & upper trunk — how far the head travels from stance to contact.' },
+        'com_balance':                      { bones: [['midHip','RHip'],['midHip','LHip'],['RHip','RKnee'],['RKnee','RAnkle'],['LHip','LKnee'],['LKnee','LAnkle']], seg: 'pelvis', desc: 'Whole body over the feet — where the centre of mass sits between them at contact.' },
+        'finish_balance':                   { bones: [['LHip','LKnee'],['LKnee','LAnkle'],['RHip','RKnee'],['RKnee','RAnkle'],['Neck','midHip']], seg: 'pelvis', desc: 'Base and trunk — whether the body holds the finish or keeps moving.' },
         'pelvis_speed':                     { bones: [['midHip','RHip'],['midHip','LHip']], seg: 'pelvis', desc: 'Pelvis — fastest hip rotation in the swing.' },
         'negative_move':                    { bones: [['midHip','RHip'],['midHip','LHip'],['RHip','RKnee'],['LHip','LKnee']], seg: 'pelvis', desc: 'Pelvis & legs — backward weight shift before stride.' },
         'torso_coil_at_plant':              { bones: [['Neck','RShoulder'],['Neck','LShoulder'],['midHip','RHip'],['midHip','LHip']], seg: 'torso', desc: 'Shoulders vs hips — how closed the shoulders stay as the front foot lands.' },
