@@ -46,22 +46,22 @@ const DEMO_DIAGNOSIS = {
     phase_report: {
         skill_level: 'college',
         swing_score: 87.3,
-        swing_score_detail: {"version":"swing_v2","score":87.3,"coverage":1.0,"parts_scored":12,"parts_total":12,"skill_level":"college","components":[{"key":"hand_speed","label":"Hand / Bat Speed","weight":0.15,"value":24.2,"unit":null,"score":93.3,"status":"scored","reason":""},{"key":"sequence_quality","label":"Sequence Quality","weight":0.15,"value":48,"unit":null,"score":100.0,"status":"scored","reason":""},{"key":"torso_speed","label":"Peak Torso Speed","weight":0.12,"value":880,"unit":null,"score":100.0,"status":"scored","reason":""},{"key":"max_hip_shoulder_separation","label":"Max Hip-Shoulder Separation","weight":0.12,"value":44.1,"unit":null,"score":87.7,"status":"scored","reason":""},{"key":"lead_leg_block","label":"Lead-Leg Block","weight":0.1,"value":19.4,"unit":null,"score":32.3,"status":"scored","reason":""},{"key":"pelvis_speed","label":"Peak Pelvis Speed","weight":0.08,"value":714,"unit":null,"score":100.0,"status":"scored","reason":""},{"key":"torso_coil_at_plant","label":"Torso Coil at Plant","weight":0.06,"value":12.0,"unit":null,"score":87.5,"status":"scored","reason":""},{"key":"stride_length","label":"Stride Length","weight":0.06,"value":0.74,"unit":null,"score":100.0,"status":"scored","reason":""},{"key":"pelvis_direction_at_contact","label":"Pelvis Direction at Contact","weight":0.06,"value":18,"unit":null,"score":85.0,"status":"scored","reason":""},{"key":"upper_torso_direction_at_contact","label":"Upper Torso Direction at Contact","weight":0.05,"value":28,"unit":null,"score":71.4,"status":"scored","reason":""},{"key":"pelvis_rotation_range","label":"Pelvis Total Rotation Range","weight":0.025,"value":68,"unit":null,"score":92.9,"status":"scored","reason":""},{"key":"upper_torso_rotation_range","label":"Upper Torso Total Rotation Range","weight":0.025,"value":92,"unit":null,"score":92.5,"status":"scored","reason":""}],"informational":["negative_move","forward_move","kinetic_chain_efficiency","follow_through_quality","head_movement","com_over_base","finish_balance"],"note":null},
+        swing_score_detail: {"version":"swing_v2","score":87.3,"coverage":1.0,"parts_scored":12,"parts_total":12,"skill_level":"college","components":[{"key":"hand_speed","label":"Hand / Bat Speed","weight":0.15,"value":24.2,"unit":null,"score":93.3,"status":"scored","reason":""},{"key":"sequence_quality","label":"Sequence Quality","weight":0.15,"value":48,"unit":null,"score":100.0,"status":"scored","reason":""},{"key":"torso_speed","label":"Peak Torso Speed","weight":0.12,"value":880,"unit":null,"score":100.0,"status":"scored","reason":""},{"key":"max_hip_shoulder_separation","label":"Max Hip-Shoulder Separation","weight":0.12,"value":44.1,"unit":null,"score":87.7,"status":"scored","reason":""},{"key":"lead_leg_block","label":"Lead-Leg Block","weight":0.1,"value":19.4,"unit":null,"score":32.3,"status":"scored","reason":""},{"key":"pelvis_speed","label":"Peak Pelvis Speed","weight":0.08,"value":714,"unit":null,"score":100.0,"status":"scored","reason":""},{"key":"torso_coil_at_plant","label":"Torso Coil at Plant","weight":0.06,"value":12.0,"unit":null,"score":87.5,"status":"scored","reason":""},{"key":"stride_length","label":"Stride Length","weight":0.06,"value":0.74,"unit":null,"score":100.0,"status":"scored","reason":""},{"key":"pelvis_direction_at_contact","label":"Pelvis Direction at Contact","weight":0.06,"value":18,"unit":null,"score":85.0,"status":"scored","reason":""},{"key":"upper_torso_direction_at_contact","label":"Upper Torso Direction at Contact","weight":0.05,"value":28,"unit":null,"score":71.4,"status":"scored","reason":""},{"key":"pelvis_rotation_range","label":"Pelvis Total Rotation Range","weight":0.025,"value":68,"unit":null,"score":92.9,"status":"scored","reason":""},{"key":"upper_torso_rotation_range","label":"Upper Torso Total Rotation Range","weight":0.025,"value":92,"unit":null,"score":92.5,"status":"scored","reason":""}],"informational":["negative_move","forward_move","kinetic_chain_efficiency","follow_through_quality"],"note":null},
         overall_percentile: 71,
         percentile_basis: 'benchmark',
         percentile_library_dims: 0,
         lead_leg_block: { lead_leg_block_deg: 19.4, lead_side: 'l', lead_knee_peak_flex_deg: 46.1, lead_knee_flex_at_contact_deg: 26.7 },
         phases: {
-            balance: { label: 'Balance & Head Movement', icon: '', avg_stars: 4.0, badge: 'satisfactory', dimensions: [
-                { key: 'head_movement', label: 'Head Movement', value: '6.4', unit: 'cm', stars: 4, badge: 'satisfactory', description: 'How far the head moves from foot plant to contact, measured at the base of the head (neck marker). A quiet head means steady eyes and no lunge.' },
-                { key: 'com_over_base', label: 'Weight Over Base at Contact', value: '12.0', unit: '% of base', stars: 5, badge: 'excellent', description: 'Where your weight sits at contact: 0 = centred between the feet, + toward the front foot, - toward the back foot, ±50 = over a foot. Past that is lunging or hanging back.' },
-                { key: 'finish_balance', label: 'Finish Balance', value: '7.5', unit: 'cm', stars: 3, badge: 'satisfactory', description: 'How far your body is still moving while you hold the finish (0.4-0.7 s after contact). Low = a controlled, balanced finish.' },
+            balance_load: { label: 'Balance & Head Movement', icon: '', avg_stars: 4.3, badge: 'satisfactory', dimensions: [
+                { key: 'head_movement', label: 'Head Movement', value: '9.4', unit: 'cm', stars: 4, percentile: 70, badge: 'satisfactory', description: 'How far the head travels from stance to contact. Coaches want a quiet head: the body turns under it. Estimated from the upper trunk (no head markers in the capture). Forward +7.8 cm, drop +2.1 cm.' },
+                { key: 'com_balance', label: 'Center of Mass at Contact', value: '3.5', unit: '% off centre', stars: 5, percentile: 90, badge: 'excellent', description: "Where the body's centre of mass sits between the feet at contact. Coaches look for roughly centred (40-65 % of the way to the front foot). This swing: 56 % of the way to the front foot." },
+                { key: 'finish_balance', label: 'Finish Balance', value: '7.8', unit: 'cm drift', stars: 3, percentile: 50, badge: 'satisfactory', description: 'How much the body is still moving after contact (centre of mass travel 0.3-0.8 s later), and whether the front foot steps out to catch it.' },
             ]},
             stride: { label: 'Stride', icon: '', avg_stars: 4.0, badge: 'satisfactory', dimensions: [
-                { key: 'stride_length', label: 'Stride Length', value: '0.74', unit: 'x Ht', stars: 5, percentile: 92, badge: 'excellent', description: 'Good stride length relative to height.' },
-                { key: 'forward_move', label: 'Forward Move', value: '94', unit: '%', stars: 4, percentile: 73, badge: 'satisfactory', description: 'Efficient forward momentum.' },
                 { key: 'negative_move', label: 'Negative Move', value: '0.06', unit: 'm', stars: 4, percentile: 74, badge: 'satisfactory', description: 'Good backward weight shift before stride.' },
                 { key: 'torso_coil_at_plant', label: 'Torso Coil at Plant', value: '12.0', unit: '°', stars: 4, percentile: 72, badge: 'satisfactory', description: 'Shoulders stay closed to the hips as the front foot lands. Skilled hitters: about 13-14° (Escamilla 2009).' },
+                { key: 'stride_length', label: 'Stride Length', value: '0.74', unit: 'x Ht', stars: 5, percentile: 92, badge: 'excellent', description: 'Good stride length relative to height.' },
+                { key: 'forward_move', label: 'Forward Move', value: '94', unit: '%', stars: 4, percentile: 73, badge: 'satisfactory', description: 'Efficient forward momentum.' },
             ]},
             power_move: { label: 'Power Move', icon: '', avg_stars: 4.3, badge: 'excellent', dimensions: [
                 { key: 'max_hip_shoulder_separation', label: 'Max Hip-Shoulder Separation', value: '44.1', unit: '°', stars: 5, percentile: 88, badge: 'excellent', description: 'Elite X-Factor separation.' },
@@ -287,7 +287,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
         let dimsHtml = '';
-        ['balance', 'stride', 'power_move', 'contact'].forEach(k => {
+        ['balance_load', 'stride', 'power_move', 'contact'].forEach(k => {
             const ph = rep.phases && rep.phases[k];
             if (!ph) return;
             dimsHtml += `<tr class="phase-row"><td colspan="5">${esc(ph.label)}</td></tr>`;
@@ -1093,6 +1093,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Drill / Cue Tags per dimension
     // -----------------------------------------
     const DIM_CUES = {
+        'head_movement':                    ['Quiet-head tee work', 'Stride-and-hold'],
+        'com_balance':                      ['Stride to a balance hold', 'Swing from the hold'],
+        'finish_balance':                   ['Finish-and-freeze swings', '2-second hold'],
         'negative_move':                    ['Hip hinge load drill', 'Toe tap rhythm'],
         'torso_coil_at_plant':              ['Shoulder coil drill', 'Show-the-number at plant'],
         'pelvis_speed':                     ['Rear-hip med-ball scoop toss', 'Step-behind rotational throw'],
@@ -1108,9 +1111,6 @@ document.addEventListener('DOMContentLoaded', () => {
         'sequence_quality':                 ['Sequence timing drill', 'Pelvis-first cue'],
         'hand_speed':                       ['Bat speed overload/underload', 'Wrist snap drill'],
         'follow_through_quality':           ['Full finish drill', 'High hands follow-through'],
-        'head_movement':                    ['Quiet-head tee work', 'Hand-in-front-of-head drill'],
-        'com_over_base':                    ['Stride-and-hold', 'Stay between the feet'],
-        'finish_balance':                   ['Two-second held finish', 'Balance-beam finish'],
     };
 
     // -----------------------------------------
@@ -1388,7 +1388,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // -----------------------------------------
     // 4-Phase Report Renderer
     // -----------------------------------------
-    const PHASE_ORDER = ['balance', 'stride', 'power_move', 'contact'];
+    const PHASE_ORDER = ['balance_load', 'stride', 'power_move', 'contact'];
 
     function renderPhaseReport(report) {
         const grid = document.getElementById('phase-cards-grid');
@@ -1404,7 +1404,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Map each body region (in body.svg) to the dimensions that load it.
     const REGION_DIMS = {
-        'region-pelvis':   ['pelvis_speed', 'pelvis_rotation_range', 'pelvis_direction_at_contact', 'negative_move', 'com_over_base'],
+        'region-head':     ['head_movement'],
+        'region-neck':     ['head_movement'],
+        'region-pelvis':   ['pelvis_speed', 'pelvis_rotation_range', 'pelvis_direction_at_contact', 'negative_move', 'com_balance'],
         'region-torso':    ['torso_speed', 'torso_coil_at_plant', 'upper_torso_rotation_range', 'upper_torso_direction_at_contact', 'max_hip_shoulder_separation'],
         'region-shoulders':['max_hip_shoulder_separation', 'upper_torso_rotation_range', 'sequence_quality'],
         'region-arm-r':    ['kinetic_chain_efficiency', 'hand_speed'],
@@ -1417,10 +1419,8 @@ document.addEventListener('DOMContentLoaded', () => {
         'region-thigh-l':  ['stride_length', 'forward_move'],
         'region-shin-r':   ['forward_move', 'follow_through_quality'],
         'region-shin-l':   ['forward_move', 'follow_through_quality'],
-        'region-foot-r':   ['stride_length', 'com_over_base', 'finish_balance'],
-        'region-foot-l':   ['stride_length', 'com_over_base', 'finish_balance'],
-        'region-head':     ['head_movement'],
-        'region-neck':     ['head_movement'],
+        'region-foot-r':   ['stride_length', 'finish_balance', 'com_balance'],
+        'region-foot-l':   ['stride_length', 'finish_balance', 'com_balance'],
     };
 
     let _bodySvgCache = null;
@@ -1493,7 +1493,10 @@ document.addEventListener('DOMContentLoaded', () => {
         card.className = 'phase-card';
         card.style.animationDelay = `${0.05 + index * 0.08}s`;
 
-        const phaseStars = renderStars(Math.round(phase.avg_stars));
+        // A phase with nothing measured (e.g. balance without the .trc) shows no stars.
+        const phaseStars = phase.avg_stars == null
+            ? '<span class="dim-unavailable-why">needs the .trc file</span>'
+            : renderStars(Math.round(phase.avg_stars));
         const badgeClass = badgeCssClass(phase.badge);
         
         card.innerHTML = `
@@ -1517,7 +1520,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Shown in the report but not in the Swing Score: no published batting values
     // to score them against (backend/swing_score.py INFORMATIONAL).
     const UNSCORED_DIMS = new Set(['negative_move', 'forward_move', 'kinetic_chain_efficiency', 'follow_through_quality',
-                                   'head_movement', 'com_over_base', 'finish_balance']);
+                                   'head_movement', 'com_balance', 'finish_balance']);
 
     function buildDimTile(dim) {
         const tile = document.createElement('div');
@@ -1827,6 +1830,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // Pelvis open to pitcher, lead arm extended forward, back arm bent, slight squat
     // Bones to highlight per metric key
     const METRIC_HIGHLIGHTS = {
+        'head_movement':                    { bones: [['Neck','midHip'],['Neck','RShoulder'],['Neck','LShoulder']], seg: 'torso', desc: 'Head & upper trunk — how far the head travels from stance to contact.' },
+        'com_balance':                      { bones: [['midHip','RHip'],['midHip','LHip'],['RHip','RKnee'],['RKnee','RAnkle'],['LHip','LKnee'],['LKnee','LAnkle']], seg: 'pelvis', desc: 'Whole body over the feet — where the centre of mass sits between them at contact.' },
+        'finish_balance':                   { bones: [['LHip','LKnee'],['LKnee','LAnkle'],['RHip','RKnee'],['RKnee','RAnkle'],['Neck','midHip']], seg: 'pelvis', desc: 'Base and trunk — whether the body holds the finish or keeps moving.' },
         'pelvis_speed':                     { bones: [['midHip','RHip'],['midHip','LHip']], seg: 'pelvis', desc: 'Pelvis — fastest hip rotation in the swing.' },
         'negative_move':                    { bones: [['midHip','RHip'],['midHip','LHip'],['RHip','RKnee'],['LHip','LKnee']], seg: 'pelvis', desc: 'Pelvis & legs — backward weight shift before stride.' },
         'torso_coil_at_plant':              { bones: [['Neck','RShoulder'],['Neck','LShoulder'],['midHip','RHip'],['midHip','LHip']], seg: 'torso', desc: 'Shoulders vs hips — how closed the shoulders stay as the front foot lands.' },
@@ -1842,9 +1848,6 @@ document.addEventListener('DOMContentLoaded', () => {
         'sequence_quality':                 { bones: [['midHip','RHip'],['midHip','LHip'],['Neck','midHip'],['RShoulder','RElbow']], seg: 'arm', desc: 'Proximal-to-distal sequence: pelvis → torso → arm.' },
         'hand_speed':                       { bones: [['RShoulder','RElbow'],['RElbow','RWrist'],['LShoulder','LElbow'],['LElbow','LWrist']], seg: 'hands', desc: 'Hands & forearms — peak bat/hand speed at contact.' },
         'follow_through_quality':           { bones: [['midHip','RHip'],['midHip','LHip'],['Neck','midHip']], seg: 'torso', desc: 'Pelvis & torso — deceleration arc after contact.' },
-        'head_movement':                    { bones: [['Neck','RShoulder'],['Neck','LShoulder']], seg: 'torso', desc: 'Head and neck — how far the head drifts from foot plant to contact.' },
-        'com_over_base':                    { bones: [['midHip','RHip'],['midHip','LHip'],['LKnee','LAnkle'],['RKnee','RAnkle']], seg: 'pelvis', desc: 'Body weight over the base — where the centre of mass sits between the feet at contact.' },
-        'finish_balance':                   { bones: [['midHip','RHip'],['midHip','LHip'],['LKnee','LAnkle'],['RKnee','RAnkle'],['Neck','midHip']], seg: 'pelvis', desc: 'Whole body — how still you are while holding the finish.' },
     };
     // A highlighted region takes its body segment's colour, the same one the
     // kinematic-sequence chart uses, so the 3-D view and the chart read alike.

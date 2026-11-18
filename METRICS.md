@@ -17,19 +17,17 @@ A plain-English explanation of every number in your swing report. No biomechanic
 
 ## The 4 phases (your 12‑dimension breakdown)
 
-### Phase 1 — Balance & Head Movement (staying in control)
-What coaches mean by balance: a quiet head, weight kept over the base, and a finish you can hold. All three need the `.trc` markers. None has published batting values yet, so they are shown with provisional stars but **not counted in the Swing Score**.
-- **Head Movement** — How far your head moves from foot plant to contact, in cm. OpenCap has no marker on the head itself, so it is measured at the base of the head (the neck point), which carries the head's drift. Small = steady eyes, no lunge.
-- **Weight Over Base at Contact** — Where your centre of mass sits between your feet at contact, as % of your stance: 0 = centred, + toward the front foot, − toward the back foot, ±50 = right over a foot. Beyond that you're lunging or hanging back.
-- **Finish Balance** — How far your body is still moving while you hold the finish (0.4–0.7 s after contact), in cm. A controlled hitter can hold the finish still.
+### Phase 1 — Balance & Head Movement (staying under control)
+Balance the way coaches mean it: a quiet head, your weight kept between your feet, and a finish you can hold. All three need **marker data** (a `.trc` file); without it the phase says *Not measured*. There's no published research grading these by level yet, so they're **relative benchmarks** shown in the report but kept out of the Swing Score. The cut-offs were set from the spread of our own swing library and are provisional.
+- **Head Movement** — How far your head travels from your stance (1 second before contact) to contact, in cm, with the forward and drop parts shown separately. Less is better: the body should turn *under* a still head. The capture has no head markers (OpenCap fixes the head to the trunk), so the head is placed on the line of your upper back above the base of the neck. Leaning moves it, but a head turn on its own doesn't.
+- **Center of Mass at Contact** — Where your body's center of mass sits between your feet when you hit the ball, as a % of the way from your back foot to your front foot. Coaches look for roughly centered, about 40–65%. Further forward is a lunge (no base to rotate on); further back is hanging back. The tile shows how far you are from the middle of your stance.
+- **Finish Balance** — How much your body is still moving 0.3–0.8 seconds after contact (center‑of‑mass travel, in cm), and whether your front foot steps out to catch you. A balanced hitter can hold the finish. A catch step with the front foot caps this at 2 stars. The back foot pivoting or dragging is normal and isn't counted.
 
-The stars are coaching bands set above OpenCap's tracking wobble (about 2–3 cm), not research norms; treat them as a guide until there is level-stratified data.
-
-### Phase 2 — Stride (moving toward the pitch)
+### Phase 2 — Stride (loading up and moving toward the pitch)
 - **Negative Move** — A small, controlled shift of weight *back* before you stride forward, like a hitter "gathering." Too little = no load; too much = drift.
-- **Torso Coil at Plant\*** — How far your shoulders stay closed relative to your hips as the front foot lands: the real "load". Skilled hitters land with about 13–14° of coil (Escamilla 2009).
 - **Stride Length\*** — How wide your base is at contact: the horizontal distance between your two ankles at ball contact, relative to your height (so it's fair across body sizes). It needs **foot markers** (a `.trc` file) — without them the report says *Not measured* rather than guessing.
 - **Forward Move** — How efficiently your body's weight moves forward into the swing (momentum toward the ball).
+- **Torso Coil at Plant\*** — How far your shoulders stay closed relative to your hips as the front foot lands: the real "load". Skilled hitters land with about 13–14° of coil (Escamilla 2009).
 
 ### Phase 3 — Power Move (the turn)
 - **Peak Pelvis Speed\*** — The fastest your hips turn. Skilled hitters reach about 630–715°/s; beyond that it barely separates levels, so treat it as a base to reach.
