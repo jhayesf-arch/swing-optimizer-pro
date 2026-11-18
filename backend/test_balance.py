@@ -122,3 +122,10 @@ def test_phase_layout_and_score_weight():
     assert SWING_PHASES['balance_load']['dimensions'] == ['head_movement', 'com_balance', 'finish_balance']
     assert 'torso_coil_at_plant' in SWING_PHASES['stride']['dimensions']
     assert {'head_movement', 'com_balance', 'finish_balance'} <= set(INFORMATIONAL)
+
+
+if __name__ == '__main__':
+    for name, fn in list(globals().items()):
+        if name.startswith('test_'):
+            fn()
+            print('✓', name)
