@@ -17,17 +17,23 @@ A plain-English explanation of every number in your swing report. No biomechanic
 
 ## The 4 phases (your 12‑dimension breakdown)
 
-### Phase 1 — Balance & Load (getting loaded up)
-- **Negative Move** — A small, controlled shift of weight *back* before you stride forward, like a hitter "gathering." Too little = no load; too much = drift.
-- **Torso Coil at Plant\*** — How far your shoulders stay closed relative to your hips as the front foot lands: the real "load". Skilled hitters land with about 13–14° of coil (Escamilla 2009).
-- **Peak Pelvis Speed\*** — The fastest your hips turn. Skilled hitters reach about 630–715°/s; beyond that it barely separates levels, so treat it as a base to reach.
-- **Peak Torso Speed\*** — The fastest your chest turns. This one does separate levels: about 717°/s in skilled youth vs 857°/s in adults (Escamilla 2009).
+### Phase 1 — Balance & Head Movement (staying in control)
+What coaches mean by balance: a quiet head, weight kept over the base, and a finish you can hold. All three need the `.trc` markers. None has published batting values yet, so they are shown with provisional stars but **not counted in the Swing Score**.
+- **Head Movement** — How far your head moves from foot plant to contact, in cm. OpenCap has no marker on the head itself, so it is measured at the base of the head (the neck point), which carries the head's drift. Small = steady eyes, no lunge.
+- **Weight Over Base at Contact** — Where your centre of mass sits between your feet at contact, as % of your stance: 0 = centred, + toward the front foot, − toward the back foot, ±50 = right over a foot. Beyond that you're lunging or hanging back.
+- **Finish Balance** — How far your body is still moving while you hold the finish (0.4–0.7 s after contact), in cm. A controlled hitter can hold the finish still.
+
+The stars are coaching bands set above OpenCap's tracking wobble (about 2–3 cm), not research norms; treat them as a guide until there is level-stratified data.
 
 ### Phase 2 — Stride (moving toward the pitch)
+- **Negative Move** — A small, controlled shift of weight *back* before you stride forward, like a hitter "gathering." Too little = no load; too much = drift.
+- **Torso Coil at Plant\*** — How far your shoulders stay closed relative to your hips as the front foot lands: the real "load". Skilled hitters land with about 13–14° of coil (Escamilla 2009).
 - **Stride Length\*** — How wide your base is at contact: the horizontal distance between your two ankles at ball contact, relative to your height (so it's fair across body sizes). It needs **foot markers** (a `.trc` file) — without them the report says *Not measured* rather than guessing.
 - **Forward Move** — How efficiently your body's weight moves forward into the swing (momentum toward the ball).
 
 ### Phase 3 — Power Move (the turn)
+- **Peak Pelvis Speed\*** — The fastest your hips turn. Skilled hitters reach about 630–715°/s; beyond that it barely separates levels, so treat it as a base to reach.
+- **Peak Torso Speed\*** — The fastest your chest turns. This one does separate levels: about 717°/s in skilled youth vs 857°/s in adults (Escamilla 2009).
 - **Max Hip‑Shoulder Separation\*** — How much your hips lead your shoulders (the "X‑factor" stretch). The more your hips open while your shoulders stay back, the more whip you create.
 - **Pelvis Total Rotation Range\*** — How far your hips rotate from load to contact.
 - **Upper Torso Total Rotation Range\*** — How far your shoulders/upper body rotate from load to contact.

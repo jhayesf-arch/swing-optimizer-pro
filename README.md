@@ -10,7 +10,7 @@ Swing Optimizer Pro processes OpenSim `.mot` kinematics files from [OpenCap](htt
 
 ### Key Features
 
-- **12-Dimension Report** — Balance & Load, Stride, Power Move, Contact & Follow-Through phases with 1–5 star ratings and color-coded badges (Excellent / Good / Off Target)
+- **Phase Report** — Balance & Head Movement, Stride, Power Move, Contact & Follow-Through phases with 1–5 star ratings and color-coded badges (Excellent / Good / Off Target)
 - **Skill-Level Calibrated Thresholds** — Youth, High School, College, Professional corridors for every metric
 - **Swing Score (0–100)** — Research-weighted score over the dimensions with published batting values (see `backend/swing_score.py`)
 - **Advanced Physics Engine** — Energy transfer ratios, kinetic chain efficiency, proximal-to-distal sequencing (Driveline-inspired), Butterworth + Savitzky-Golay signal filtering
@@ -54,8 +54,8 @@ This tool's analysis structure mirrors the 4-phase / 12-dimension evaluation fra
 
 | Phase | Dimensions |
 |---|---|
-| ⚖️ Balance & Load | Torso Coil at Plant |
-| 👣 Stride | Negative Move, Stride Length, Forward Move |
+| ⚖️ Balance & Head Movement | Head Movement, Weight Over Base at Contact, Finish Balance (shown, not in the Swing Score) |
+| 👣 Stride | Negative Move, Stride Length, Forward Move, Torso Coil at Plant |
 | 💥 Power Move | Max Hip-Shoulder Separation, Peak Pelvis Speed, Peak Torso Speed, Pelvis Rotation Range, Upper Torso Rotation Range |
 | 🎯 Contact & Follow-Through | Pelvis Direction at Contact, Upper Torso Direction at Contact, Kinetic Chain Efficiency, Sequence Quality |
 

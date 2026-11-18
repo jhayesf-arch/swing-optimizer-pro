@@ -262,6 +262,38 @@ DIMENSION_THRESHOLDS = {
         'college':      [(0,1),(15,2),(30,3),(44,4),(59,5)],
         'professional': [(0,1),(15,2),(30,3),(44,4),(59,5)],
     },
+    # PHASE 1 — BALANCE & HEAD MOVEMENT (shown, not in the Swing Score)
+    # No published batting values exist for these, so they carry weight 0 and
+    # the stars are provisional coaching bands, set above the tracking noise
+    # floor measured on OpenCap capture 1001 (marker wobble ~2-3 cm RMS).
+    # Lower is better for all three. Same bands at every level until there is
+    # level-stratified data.
+    'head_movement': {
+        # cm the base of the head (OpenCap neck marker) moves from foot plant to
+        # contact. Coaching standard: the head stays quiet while the body turns.
+        'youth':        [(100,1),(18,2),(12,3),(8,4),(5,5)],
+        'high_school':  [(100,1),(18,2),(12,3),(8,4),(5,5)],
+        'college':      [(100,1),(18,2),(12,3),(8,4),(5,5)],
+        'professional': [(100,1),(18,2),(12,3),(8,4),(5,5)],
+    },
+    'com_over_base': {
+        # |centre of mass offset from the middle of the stance| at contact, as %
+        # of the ankle-to-ankle base; 50% = directly over a foot, more = outside
+        # the base (lunging forward or hanging back).
+        'youth':        [(1000,1),(50,2),(35,3),(25,4),(15,5)],
+        'high_school':  [(1000,1),(50,2),(35,3),(25,4),(15,5)],
+        'college':      [(1000,1),(50,2),(35,3),(25,4),(15,5)],
+        'professional': [(1000,1),(50,2),(35,3),(25,4),(15,5)],
+    },
+    'finish_balance': {
+        # cm the centre of mass still travels in the 0.3 s hold that starts 0.4 s
+        # after contact. A balanced hitter holds the finish; a stumble or step-out
+        # keeps the body moving.
+        'youth':        [(1000,1),(15,2),(10,3),(6,4),(3,5)],
+        'high_school':  [(1000,1),(15,2),(10,3),(6,4),(3,5)],
+        'college':      [(1000,1),(15,2),(10,3),(6,4),(3,5)],
+        'professional': [(1000,1),(15,2),(10,3),(6,4),(3,5)],
+    },
 }
 
 # Percentile anchors for each of the 5 star-boundary thresholds (per dimension).
@@ -314,18 +346,22 @@ DIMENSION_LABELS = {
     'hand_speed': 'Hand / Bat Speed',
     'follow_through_quality': 'Follow-Through Quality',
     'lead_leg_block': 'Lead-Leg Block',
+    'head_movement': 'Head Movement',
+    'com_over_base': 'Weight Over Base at Contact',
+    'finish_balance': 'Finish Balance',
 }
 
 SWING_PHASES = {
-    'balance_load': {
-        'label': 'Balance & Load',
+    'balance': {
+        'label': 'Balance & Head Movement',
         'icon': '',
-        'dimensions': ['torso_coil_at_plant'],
+        'dimensions': ['head_movement', 'com_over_base', 'finish_balance'],
     },
     'stride': {
         'label': 'Stride',
         'icon': '',
-        'dimensions': ['negative_move', 'stride_length', 'forward_move'],
+        # Torso coil is read at foot plant, the end of the stride.
+        'dimensions': ['negative_move', 'stride_length', 'forward_move', 'torso_coil_at_plant'],
     },
     'power_move': {
         'label': 'Power Move',
@@ -340,11 +376,31 @@ SWING_PHASES = {
 }
 
 # Dimensions where a LOWER value is better (deviation-from-square metrics).
-INVERT_DIMS = {'pelvis_direction_at_contact', 'upper_torso_direction_at_contact'}
+INVERT_DIMS = {'pelvis_direction_at_contact', 'upper_torso_direction_at_contact',
+               'head_movement', 'com_over_base', 'finish_balance'}
+
+# Dimensions with no published hitter distribution: a percentile would imply a
+# comparison with other hitters that does not exist, so none is shown.
+NO_PERCENTILE_DIMS = {'head_movement', 'com_over_base', 'finish_balance'}
 
 # Prescription library — each weak dimension maps to a concrete cue + drill + rationale.
 # Modeled on Driveline's "constraint → intent → drill" coaching structure.
 DRILL_LIBRARY = {
+    'head_movement': {
+        'cue': 'Keep the head still from foot plant to contact',
+        'drill': 'Tee work with a partner holding a hand just in front of the hitter\'s head: turn without touching it.',
+        'why': 'A head that drifts forward or drops moves the eyes during the swing and is the usual sign of lunging.',
+    },
+    'com_over_base': {
+        'cue': 'Stay between your feet at contact',
+        'drill': 'Stride-and-hold: stride, freeze at foot plant, then swing without the back foot sliding or the chest drifting past the front knee.',
+        'why': 'Weight that drifts past the front foot (lunging) or stays on the back foot (hanging back) loses the stable base the turn needs.',
+    },
+    'finish_balance': {
+        'cue': 'Hold your finish for two seconds',
+        'drill': 'Every swing ends in a 2-second held finish on the front leg; any step or stumble repeats the rep.',
+        'why': 'Being able to hold the finish shows the body stayed in control through the swing.',
+    },
     'negative_move': {
         'cue': 'Gather back before you go forward',
         'drill': 'Slow "load-and-hold" reps: coil into the rear hip, pause 1s, then stride. Builds a repeatable rearward load.',
@@ -1883,6 +1939,85 @@ class RefinedHittingOptimizer:
             'contact_frame': int(contact_frame),
         }
         
+    def calculate_balance(self, trc_data: Optional[pd.DataFrame], data: pd.DataFrame,
+                          rotation: Optional[Dict], stride: Optional[Dict]) -> Dict:
+        """Balance in the coaching sense, from the .trc markers.
+
+        head_movement_cm    neck-marker travel from foot plant to contact (OpenCap
+                            has no head marker; its neck point is the base of the
+                            skull and neck, which carries the head's drift).
+        com_offset_pct      signed offset of the whole-body centre of mass from
+                            the middle of the stance at contact, as % of the
+                            ankle-to-ankle base (+ toward the lead foot).
+        finish_travel_cm    centre-of-mass travel in the 0.3 s hold starting
+                            0.4 s after contact.
+
+        Positions are low-pass filtered (4 Hz; 2 Hz for the finish) so marker
+        wobble (~2-3 cm RMS on OpenCap) is not read as movement. Returns {} when
+        markers or contact are missing; individual entries are omitted when
+        their window falls outside the recording.
+        """
+        out = {}
+        try:
+            if trc_data is None or not rotation or 'contact_frame' not in rotation:
+                return out
+            cols = trc_data.columns
+            if not all(f'{m}_X' in cols for m in ('Neck', 'LAnkle', 'RAnkle')):
+                return out
+            tt = trc_data['Time'].values.astype(float)
+            fs = 1.0 / float(np.mean(np.diff(tt)))
+            mot_t = data['time'].values.astype(float)
+            c_mot = min(int(rotation['contact_frame']), len(mot_t) - 1)
+            ic = self._trc_index_at(trc_data, float(mot_t[c_mot]))
+
+            def track(name, cutoff):
+                arr = np.column_stack([trc_data[f'{name}_{a}'].values.astype(float) for a in 'XYZ'])
+                if HAS_SCIPY and len(arr) > 15:
+                    arr = np.column_stack([butter_lowpass_filter(arr[:, i], cutoff, fs) for i in range(3)])
+                return arr
+
+            neck = track('Neck', 4.0)
+            vert = max(range(3), key=lambda i: float(np.mean(neck[:, i])
+                                                    - np.mean(trc_data[f'LAnkle_{"XYZ"[i]}'].values)))
+            horiz = [i for i in range(3) if i != vert]
+
+            if stride and stride.get('plant_frame') is not None:
+                ip = self._trc_index_at(trc_data, float(mot_t[min(int(stride['plant_frame']), len(mot_t) - 1)]))
+                if ip < ic:
+                    out['head_movement_cm'] = float(100.0 * np.linalg.norm(neck[ic] - neck[ip]))
+                    out['head_forward_cm'] = float(100.0 * np.linalg.norm(neck[ic][horiz] - neck[ip][horiz]))
+                    out['head_drop_cm'] = float(100.0 * (neck[ip][vert] - neck[ic][vert]))
+
+            from grf_estimation import compute_com
+            com_raw = compute_com(trc_data)
+            com = (np.column_stack([butter_lowpass_filter(com_raw[:, i], 4.0, fs) for i in range(3)])
+                   if HAS_SCIPY and len(com_raw) > 15 else com_raw)
+            la, ra = track('LAnkle', 4.0), track('RAnkle', 4.0)
+            if self.handedness == 'left':
+                lead, rear = ra, la
+            elif self.handedness == 'right':
+                lead, rear = la, ra
+            else:   # the lead foot is the one that travelled more before contact
+                travel = lambda f: float(sum(np.ptp(f[:ic + 1, h]) for h in horiz))
+                lead, rear = (la, ra) if travel(la) >= travel(ra) else (ra, la)
+            base = lead[ic][horiz] - rear[ic][horiz]
+            width = float(np.linalg.norm(base))
+            if width > 0.15:
+                frac = float(np.dot(com[ic][horiz] - rear[ic][horiz], base) / width ** 2)
+                out['com_offset_pct'] = 100.0 * frac - 50.0
+                out['base_width_m'] = width
+
+            com_slow = (np.column_stack([butter_lowpass_filter(com_raw[:, i], 2.0, fs) for i in range(3)])
+                        if HAS_SCIPY and len(com_raw) > 15 else com_raw)
+            a = int(np.searchsorted(tt, tt[ic] + 0.4))
+            b = int(np.searchsorted(tt, tt[ic] + 0.7))
+            if b < len(tt) and b > a:
+                seg = com_slow[a:b + 1][:, horiz]
+                out['finish_travel_cm'] = float(100.0 * np.sum(np.linalg.norm(np.diff(seg, axis=0), axis=1)))
+        except Exception:
+            return {}
+        return out
+
     @staticmethod
     def _trc_index_at(trc_data: pd.DataFrame, t: float) -> int:
         """TRC row closest to time t (s). The .trc and .mot can run at different
@@ -2782,7 +2917,9 @@ class RefinedHittingOptimizer:
             for finding in findings:
                 print(f"   {finding}")
 
-        phase_report = self.build_phase_report(rotation, stride, trc_metrics, lower_body)
+        balance = self.calculate_balance(trc_data, kinematics, rotation, stride)
+        phase_report = self.build_phase_report(rotation, stride, trc_metrics, lower_body,
+                                               balance=balance)
 
         # Score the capture itself, separately from the swing, so a check swing or
         # a mistracked trial can be held out of multi-swing averages with a reason.
@@ -2974,6 +3111,8 @@ class RefinedHittingOptimizer:
     def _percentile_for(self, key: str, value: float) -> Optional[float]:
         """Translate a raw dimension value into an approximate cohort percentile (1-99)
         by interpolating the value across the level's 5 star-boundary thresholds."""
+        if key == 'com_over_base':
+            value = abs(float(value))   # signed for display, rated by distance from centre
         norm = PUBLISHED_NORMS.get(key, {}).get(self.skill_level)
         if norm:
             mean, sd = norm
@@ -3012,7 +3151,8 @@ class RefinedHittingOptimizer:
                 return round(ys[i] + frac * (ys[i + 1] - ys[i]), 0)
         return 50.0
 
-    def build_phase_report(self, rotation: Dict, stride: Dict, trc_metrics: Dict, lower_body: Dict = None) -> Dict:
+    def build_phase_report(self, rotation: Dict, stride: Dict, trc_metrics: Dict, lower_body: Dict = None,
+                           balance: Optional[Dict] = None) -> Dict:
         """Build a 12-dimension report from computed physics outputs.
         Returns a structured dict with phases, dimension detail, and an aggregate Swing Score."""
         dims = {}
@@ -3237,6 +3377,33 @@ class RefinedHittingOptimizer:
                 'value': round(dev, 1), 'unit': '° off-square', 'description': desc,
             }
 
+        # Balance & head movement (weight 0: no published batting values).
+        bal = balance or {}
+        for key, val_key, unit, desc, why_missing in (
+            ('head_movement', 'head_movement_cm', 'cm',
+             'How far the head moves from foot plant to contact, measured at the base of the '
+             'head (neck marker). A quiet head means steady eyes and no lunge.',
+             'Needs the .trc markers and a detected foot plant.'),
+            ('com_over_base', 'com_offset_pct', '% of base',
+             'Where your weight sits at contact: 0 = centred between the feet, + toward the '
+             'front foot, - toward the back foot, ±50 = over a foot. Past that is lunging or hanging back.',
+             'Needs the .trc foot markers at contact.'),
+            ('finish_balance', 'finish_travel_cm', 'cm',
+             'How far your body is still moving while you hold the finish (0.4-0.7 s after '
+             'contact). Low = a controlled, balanced finish.',
+             'The recording ends before the finish.'),
+        ):
+            v = bal.get(val_key)
+            if v is None:
+                dims[key] = {'label': DIMENSION_LABELS[key], 'stars': None, 'badge': 'unavailable',
+                             'value': None, 'unit': unit, 'description': desc,
+                             'available': False, 'unavailable_reason': why_missing}
+                continue
+            st = self._rate_dimension(key, abs(float(v)), invert=True)
+            dims[key] = {'label': DIMENSION_LABELS[key], 'stars': st,
+                         'badge': self._rating_to_badge(st), 'value': round(float(v), 1),
+                         'unit': unit, 'description': desc}
+
         # Lead-Leg Block — front-knee extension from plant to contact (OBP bat-speed correlate)
         llb = self.calculate_lead_leg_block(lower_body or {}, rotation, stride)
         llb_desc = ('Lead (front) knee straightening from foot plant to contact. A firm, '
@@ -3384,6 +3551,8 @@ class RefinedHittingOptimizer:
             total_weight += weight
 
             val = dims[dim_key]['value']
+            if dim_key in NO_PERCENTILE_DIMS:
+                continue   # no hitter data to rank against: show the value and stars only
             # Research-guided benchmark percentile — always computed; it is the prior.
             bench_pct = self._percentile_for(dim_key, val)
             if bench_pct is None:
