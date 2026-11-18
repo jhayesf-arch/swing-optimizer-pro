@@ -45,10 +45,14 @@ def body(shift=lambda t: 0.0, head=lambda t: 0.0, lead_step=lambda t: 0.0, drop=
     return pd.DataFrame(cols)
 
 
-def run(trc):
+PLANT = 80         # foot plant at 0.8 s, 0.2 s before contact
+
+
+def run(trc, plant=PLANT):
     opt = RefinedHittingOptimizer(80, H, 'college', handedness='right')
     kin = pd.DataFrame({'time': np.arange(N) / FS})
-    return opt, opt.calculate_balance(trc, kin, {'contact_frame': CONTACT}, {})
+    stride = {} if plant is None else {'plant_frame': plant}
+    return opt, opt.calculate_balance(trc, kin, {'contact_frame': CONTACT}, stride)
 
 
 def test_a_still_centred_hitter_scores_well():
@@ -57,7 +61,8 @@ def test_a_still_centred_hitter_scores_well():
     assert b['finish_drift_cm'] < 1 and b['finish_stepped'] is False
     dims = {}
     opt._balance_dims(dims, b)
-    assert all(dims[k]['stars'] == 5 for k in ('head_movement', 'com_balance', 'finish_balance')), dims
+    assert all(dims[k]['stars'] == 5 for k in ('head_movement_load', 'head_movement_swing',
+                                                'com_balance', 'finish_balance')), dims
 
 
 def test_head_drifting_forward_is_measured_along_the_stride():
@@ -105,7 +110,8 @@ def test_short_capture_reports_finish_as_not_measured():
     assert 'finish_drift_cm' not in b and b['finish_reason']
     dims = {}
     opt._balance_dims(dims, b)
-    assert dims['finish_balance']['available'] is False and dims['head_movement'].get('available') is not False
+    assert dims['finish_balance']['available'] is False
+    assert dims['head_movement_swing'].get('available') is False   # no foot plant passed
 
 
 def test_without_markers_the_phase_is_not_measured_and_not_failed():
@@ -114,14 +120,49 @@ def test_without_markers_the_phase_is_not_measured_and_not_failed():
     dims = {}
     opt._balance_dims(dims, {})
     assert all(dims[k]['available'] is False and dims[k]['stars'] is None
-               for k in ('head_movement', 'com_balance', 'finish_balance'))
+               for k in ('head_movement_load', 'head_movement_swing', 'com_balance', 'finish_balance'))
 
 
 def test_phase_layout_and_score_weight():
     assert SWING_PHASES['balance_load']['label'] == 'Balance & Head Movement'
-    assert SWING_PHASES['balance_load']['dimensions'] == ['head_movement', 'com_balance', 'finish_balance']
+    assert SWING_PHASES['balance_load']['dimensions'] == ['head_movement_load', 'head_movement_swing',
+                                                          'com_balance', 'finish_balance']
     assert 'torso_coil_at_plant' in SWING_PHASES['stride']['dimensions']
-    assert {'head_movement', 'com_balance', 'finish_balance'} <= set(INFORMATIONAL)
+    assert {'head_movement_load', 'head_movement_swing', 'com_balance', 'finish_balance'} <= set(INFORMATIONAL)
+
+
+def _ramp(t0, t1, d):
+    """0 before t0, d after t1, smooth (cosine) in between."""
+    return lambda t: d * 0.5 * (1 - np.cos(np.clip((t - t0) / (t1 - t0), 0, 1) * np.pi))
+
+
+def test_head_travel_during_the_stride_lands_in_the_load_part():
+    # Upper body (and head) drifts 12 cm forward, upright, between 0.2 and 0.7 s (plant at 0.8 s).
+    opt, b = run(body(shift=_ramp(0.2, 0.7, 0.12)))
+    assert 11 < b['head_load_movement_cm'] < 15, b['head_load_movement_cm']
+    assert b['head_swing_movement_cm'] < 1.0, b['head_swing_movement_cm']
+    dims = {}
+    opt._balance_dims(dims, b)
+    assert dims['head_movement_swing']['stars'] == 5 and dims['head_movement_load']['stars'] < 5
+
+
+def test_head_travel_after_plant_lands_in_the_swing_part():
+    # Upper body (and head) lunges 10 cm forward between plant (0.8 s) and contact (1.0 s).
+    opt, b = run(body(shift=_ramp(0.82, 0.98, 0.10)))
+    assert b['head_load_movement_cm'] < 1.0, b['head_load_movement_cm']
+    assert 9 < b['head_swing_movement_cm'] < 13, b['head_swing_movement_cm']
+    dims = {}
+    opt._balance_dims(dims, b)
+    assert dims['head_movement_load']['stars'] == 5 and dims['head_movement_swing']['stars'] <= 3
+
+
+def test_without_foot_plant_both_head_parts_are_not_measured():
+    opt, b = run(body(head=_ramp(0.2, 0.7, 0.12)), plant=None)
+    assert 'head_movement_cm' in b and b['head_split_reason']
+    dims = {}
+    opt._balance_dims(dims, b)
+    for k in ('head_movement_load', 'head_movement_swing'):
+        assert dims[k]['available'] is False and 'Foot plant' in dims[k]['unavailable_reason']
 
 
 if __name__ == '__main__':

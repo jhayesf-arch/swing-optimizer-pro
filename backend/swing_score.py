@@ -54,7 +54,8 @@ MAX_TORSO_PELVIS_RATIO = 2.0
 INFORMATIONAL = ('negative_move', 'forward_move', 'kinetic_chain_efficiency',
                  'follow_through_quality',
                  # balance as coaches use the word: coaching consensus, needs the .trc
-                 'head_movement', 'com_balance', 'finish_balance')
+                 'head_movement_load', 'head_movement_swing', 'com_balance',
+                 'finish_balance')
 
 
 def _unreliable(evidence: Dict, keys) -> str:

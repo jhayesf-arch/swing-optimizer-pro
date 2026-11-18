@@ -54,7 +54,7 @@ This tool's analysis structure mirrors the 4-phase / 12-dimension evaluation fra
 
 | Phase | Dimensions |
 |---|---|
-| ⚖️ Balance & Head Movement | Head Movement, Center of Mass at Contact, Finish Balance (need the .trc; not in the Swing Score) |
+| ⚖️ Balance & Head Movement | Head Movement (load & stride, and swing), Center of Mass at Contact, Finish Balance (need the .trc; not in the Swing Score) |
 | 👣 Stride | Negative Move, Stride Length, Forward Move, Torso Coil at Plant |
 | 💥 Power Move | Max Hip-Shoulder Separation, Peak Pelvis Speed, Peak Torso Speed, Pelvis Rotation Range, Upper Torso Rotation Range |
 | 🎯 Contact & Follow-Through | Pelvis Direction at Contact, Upper Torso Direction at Contact, Kinetic Chain Efficiency, Sequence Quality |

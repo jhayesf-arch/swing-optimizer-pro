@@ -71,13 +71,25 @@ DIMENSION_THRESHOLDS = {
     # The numbers were set against the spread of our own library (66 marker swings,
     # HS + college, 2026-11): typical head movement 7-18 cm, centre of mass 45-63 %
     # of the way to the lead foot at contact, finish drift 2-12 cm.
-    'head_movement': {
-        # Estimated head travel from stance (1 s before contact) to contact (cm, 3-D).
-        # Lower is better.
+    'head_movement_load': {
+        # Estimated head travel from stance (1 s before contact) to foot plant (cm,
+        # 3-D): the load and stride. Lower is better. These are the corridors first
+        # set on the whole stance-to-contact window; most of that travel happens
+        # here, so they carry over until the library is re-banded per part.
         'youth':        [(1e9,1),(24,2),(17,3),(12,4),(8,5)],
         'high_school':  [(1e9,1),(22,2),(16,3),(11,4),(7,5)],
         'college':      [(1e9,1),(21,2),(15,3),(10,4),(6,5)],
         'professional': [(1e9,1),(20,2),(14,3),(9,4),(5,5)],
+    },
+    'head_movement_swing': {
+        # Estimated head travel from foot plant to contact (cm, 3-D): the turn, when
+        # the head should be close to still. Lower is better. Provisional bands set
+        # just above OpenCap's marker wobble (~2-3 cm RMS on capture 1001), not yet
+        # fitted to the library.
+        'youth':        [(1e9,1),(15,2),(10,3),(7,4),(4,5)],
+        'high_school':  [(1e9,1),(15,2),(10,3),(7,4),(4,5)],
+        'college':      [(1e9,1),(15,2),(10,3),(7,4),(4,5)],
+        'professional': [(1e9,1),(15,2),(10,3),(7,4),(4,5)],
     },
     'com_balance': {
         # Centre of mass at contact, distance from the middle of the stance (52.5 % of
@@ -330,7 +342,8 @@ DIMENSION_WEIGHTS = {**{k: w for k, (w, _) in _SWING_WEIGHTS.items()},
 # NOTE: weights need not sum to 1.0 — build_phase_report normalises by total weight.
 
 DIMENSION_LABELS = {
-    'head_movement': 'Head Movement',
+    'head_movement_load': 'Head Movement: Load & Stride',
+    'head_movement_swing': 'Head Movement: Swing',
     'com_balance': 'Center of Mass at Contact',
     'finish_balance': 'Finish Balance',
     'negative_move': 'Negative Move',
@@ -356,7 +369,7 @@ SWING_PHASES = {
     'balance_load': {
         'label': 'Balance & Head Movement',
         'icon': '',
-        'dimensions': ['head_movement', 'com_balance', 'finish_balance'],
+        'dimensions': ['head_movement_load', 'head_movement_swing', 'com_balance', 'finish_balance'],
     },
     'stride': {
         'label': 'Stride',
@@ -378,17 +391,22 @@ SWING_PHASES = {
 
 # Dimensions where a LOWER value is better (deviation-from-square metrics).
 INVERT_DIMS = {'pelvis_direction_at_contact', 'upper_torso_direction_at_contact',
-               'head_movement', 'com_balance', 'finish_balance'}
+               'head_movement_load', 'head_movement_swing', 'com_balance', 'finish_balance'}
 
 # Balance dimensions: coaching-consensus only (weight 0 in the Swing Score) but coaches
 # still want a drill for them, so they are prescribed after the research-backed ones.
-BALANCE_DIMS = ('head_movement', 'com_balance', 'finish_balance')
+BALANCE_DIMS = ('head_movement_load', 'head_movement_swing', 'com_balance', 'finish_balance')
 BALANCE_PRESCRIPTION_WEIGHT = 0.01
 
 # Prescription library — each weak dimension maps to a concrete cue + drill + rationale.
 # Modeled on Driveline's "constraint → intent → drill" coaching structure.
 DRILL_LIBRARY = {
-    'head_movement': {
+    'head_movement_load': {
+        'cue': 'Stride without the head drifting: keep it over the back hip into foot plant',
+        'drill': 'Stride-to-hold: load, stride and freeze at foot plant with the head still over the back hip; a partner checks it against a fixed line behind the hitter.',
+        'why': 'A head that travels forward with the stride starts the swing already lunging, and moves the eyes before the pitch is read.',
+    },
+    'head_movement_swing': {
         'cue': 'Keep the head quiet: let the body turn under it',
         'drill': 'Stride-and-hold reps with a partner\'s hand resting on the cap, then tee work watching the ball off a fixed spot with the head still at contact.',
         'why': 'Every inch the head drifts forward or drops moves the eyes off the ball and usually means the body is lunging rather than rotating.',
@@ -2425,11 +2443,27 @@ class RefinedHittingOptimizer:
                 up = c7 - hip
                 up /= np.linalg.norm(up, axis=1, keepdims=True)
                 head = smooth(c7 + up * (self.HEAD_ABOVE_C7_FRAC * self.body_height_m))
-                d = head[ci] - head[si]
-                out['head_forward_cm'] = round(float(np.dot(d[hz], fwd)) * 100, 1)
-                out['head_drop_cm'] = round(float(-d[vi]) * 100, 1)
-                out['head_movement_cm'] = round(float(np.linalg.norm(d)) * 100, 1)
+
+                def travel(i0, i1, prefix):
+                    d = head[i1] - head[i0]
+                    out[f'{prefix}_forward_cm'] = round(float(np.dot(d[hz], fwd)) * 100, 1)
+                    out[f'{prefix}_drop_cm'] = round(float(-d[vi]) * 100, 1)
+                    out[f'{prefix}_movement_cm'] = round(float(np.linalg.norm(d)) * 100, 1)
+
+                travel(si, ci, 'head')          # whole window, kept for context
                 out['head_source'] = 'C7_study' if mk('C7_study') is not None else 'Neck'
+                # Split at foot plant: the load and stride, then the turn.
+                plant = (stride or {}).get('plant_frame')
+                if plant is not None:
+                    pi = self._trc_index_at(trc_data, float(mot_t[min(int(plant), len(mot_t) - 1)]))
+                    if si < pi < ci:
+                        travel(si, pi, 'head_load')
+                        travel(pi, ci, 'head_swing')
+                        out['plant_s_before_contact'] = round(float(tt[ci] - tt[pi]), 3)
+                    else:
+                        out['head_split_reason'] = 'foot plant is not between the stance reference and contact'
+                else:
+                    out['head_split_reason'] = 'foot plant was not detected'
 
             # ── Centre of mass between the feet at contact ─────────────────
             trc_c = trc_data
@@ -3048,19 +3082,31 @@ class RefinedHittingOptimizer:
             dims[key] = {'label': DIMENSION_LABELS[key], 'stars': None, 'badge': 'unavailable', 'value': None,
                          'unit': unit, 'description': desc, 'available': False, 'unavailable_reason': reason}
 
-        head_desc = ('How far the head travels from stance to contact. Coaches want a quiet head: the body turns '
-                     'under it. Estimated from the upper trunk (no head markers in the capture).')
-        if 'head_movement_cm' in b:
-            v = float(b['head_movement_cm'])
-            st = self._rate_dimension('head_movement', v, invert=True)
-            dims['head_movement'] = {
-                'label': DIMENSION_LABELS['head_movement'], 'stars': st, 'badge': self._rating_to_badge(st),
-                'value': round(v, 1), 'unit': 'cm',
-                'description': head_desc + f" Forward {b.get('head_forward_cm', 0):+.1f} cm, drop {b.get('head_drop_cm', 0):+.1f} cm.",
-                'detail': {k: b.get(k) for k in ('head_forward_cm', 'head_drop_cm', 'head_source')},
+        est = ' Estimated from the upper trunk (no head markers in the capture).'
+        for key, prefix, desc in (
+            ('head_movement_load', 'head_load',
+             'How far the head travels during the load and stride, from stance to foot plant. Some travel '
+             'comes with the stride; coaches want the head to stay over the back hip rather than drift '
+             'forward with it.'),
+            ('head_movement_swing', 'head_swing',
+             'How far the head travels during the swing, from foot plant to contact. Coaches want a quiet '
+             'head here: the body turns under it.'),
+        ):
+            v = b.get(f'{prefix}_movement_cm')
+            if v is None:
+                unavailable(key, 'cm', desc + est,
+                            why if 'head_movement_cm' not in b
+                            else 'Foot plant not detected, so the load and the swing cannot be separated.')
+                continue
+            st = self._rate_dimension(key, float(v), invert=True)
+            dims[key] = {
+                'label': DIMENSION_LABELS[key], 'stars': st, 'badge': self._rating_to_badge(st),
+                'value': round(float(v), 1), 'unit': 'cm',
+                'description': desc + est + f" Forward {b.get(prefix + '_forward_cm', 0):+.1f} cm, "
+                                            f"drop {b.get(prefix + '_drop_cm', 0):+.1f} cm.",
+                'detail': {k: b.get(k) for k in (f'{prefix}_forward_cm', f'{prefix}_drop_cm', 'head_source',
+                                                 'head_movement_cm', 'plant_s_before_contact')},
             }
-        else:
-            unavailable('head_movement', 'cm', head_desc, why)
 
         com_desc = ('Where the body\'s centre of mass sits between the feet at contact. Coaches look for roughly '
                     'centred (40-65 % of the way to the front foot); further forward is a lunge, further back is '
