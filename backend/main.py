@@ -292,8 +292,11 @@ def _hand_peak_time(trc_df):
         return None
     tt = trc_df[tcol].values.astype(float)
     b, a = butter(4, min(12.0 / (0.5 / float(np.median(np.diff(tt)))), 0.99), btype='low')
-    speed = np.mean([np.linalg.norm(np.gradient(
-        filtfilt(b, a, trc_df[[f'{w}_{x}' for x in 'XYZ']].values.astype(float), axis=0),
+    from analyzer import despike_marker
+    # Both hands hold the bat: the swing is where the slower wrist is fastest,
+    # so a tracking burst on one wrist cannot move the crop.
+    speed = np.min([np.linalg.norm(np.gradient(
+        filtfilt(b, a, despike_marker(trc_df[[f'{w}_{x}' for x in 'XYZ']].values.astype(float), tt)[0], axis=0),
         tt, axis=0), axis=1) for w in wrists], axis=0)
     return float(tt[int(np.argmax(speed))])
 

@@ -30,6 +30,35 @@ def butter_lowpass_filter(data, cutoff, fs, order=4):
     y = filtfilt(b, a, data)
     return y
 
+# Fastest a wrist can actually move. Wrist speeds in batting peak around
+# 9-13 m/s (20-30 mph); the barrel, not the wrist, reaches 30+ m/s. A single
+# frame implying more than this is a tracking jump (typically the lead wrist
+# wrapping behind the body in the follow-through), not motion.
+MAX_WRIST_SPEED_MPS = 22.0
+
+
+def despike_marker(xyz: np.ndarray, t: np.ndarray, max_speed: float = MAX_WRIST_SPEED_MPS,
+                   passes: int = 3) -> Tuple[np.ndarray, int]:
+    """Replace frames a marker reaches by an impossible one-frame jump with
+    values interpolated from the surrounding frames. Returns (xyz, frames fixed)."""
+    x = np.array(xyz, dtype=float, copy=True)
+    t = np.asarray(t, dtype=float)
+    fixed = 0
+    for _ in range(passes):
+        step = np.linalg.norm(np.diff(x, axis=0), axis=1) / np.maximum(np.diff(t), 1e-9)
+        bad = np.zeros(len(x), bool)
+        bad[1:] |= step > max_speed
+        if not bad.any():
+            break
+        good = ~bad
+        if good.sum() < 2:
+            break
+        for k in range(3):
+            x[bad, k] = np.interp(t[bad], t[good], x[good, k])
+        fixed += int(bad.sum())
+    return x, fixed
+
+
 def savgol_smooth_and_diff(data, window=11, polyorder=3, deriv=0, dt=1.0):
     if not HAS_SCIPY:
         if deriv == 0:
@@ -1099,77 +1128,78 @@ class RefinedHittingOptimizer:
         contact_time = 0.0
         contact_impulse = 0.0
         contact_force = 0.0
-        # Find whichever wrist is moving faster (proxy for bat speed)
-        wrist_markers = ['r_mwrist_study', 'L_mwrist_study', 'r_lwrist_study', 'L_lwrist_study',
-                         'r_wrist_radius', 'l_wrist_radius', 'r_wrist_ulna', 'l_wrist_ulna',
-                         'RWrist', 'LWrist', 'RWRA', 'RWRB', 'LWRA', 'LWRB', 'RFIN', 'LFIN']
-
-        for wrist in wrist_markers:
-            if f'{wrist}_X' in trc_data.columns:
-                wx = trc_data[f'{wrist}_X'].values
-                wy = trc_data[f'{wrist}_Y'].values
-                wz = trc_data[f'{wrist}_Z'].values
-                
+        times = trc_data['Time'].values.astype(float)
+        # Hand speed from both wrists (both hands hold the bat): each marker is
+        # despiked, the swing moment is found from the two wrists together (see
+        # below), and hand speed is the fastest wrist within 30 ms of it, so a
+        # tracking jump or follow-through burst on one wrist cannot become
+        # "hand speed". Previously the fastest marker anywhere in the clip was
+        # taken, and a lead-wrist burst in the follow-through read 40+ mph.
+        # Previously the single fastest marker anywhere in the clip was taken, and
+        # a lead-wrist jump in the follow-through read 40+ mph.
+        sides = {'R': ['RWrist', 'r_lwrist_study', 'r_mwrist_study', 'r_wrist_radius', 'r_wrist_ulna', 'RWRA', 'RWRB'],
+                 'L': ['LWrist', 'L_lwrist_study', 'L_mwrist_study', 'l_wrist_radius', 'l_wrist_ulna', 'LWRA', 'LWRB']}
+        marker_speed = {}
+        n_fixed = 0
+        for sd, names in sides.items():
+            for wrist in names:
+                if f'{wrist}_X' not in trc_data.columns:
+                    continue
+                xyz = trc_data[[f'{wrist}_{a}' for a in 'XYZ']].values.astype(float)
+                xyz, k = despike_marker(xyz, times)
+                n_fixed += k
                 if HAS_SCIPY:
-                    wx = butter_lowpass_filter(wx, 15.0, fs)
-                    wy = butter_lowpass_filter(wy, 15.0, fs)
-                    wz = butter_lowpass_filter(wz, 15.0, fs)
-                    
-                vx = np.gradient(wx, dt)
-                vy = np.gradient(wy, dt)
-                vz = np.gradient(wz, dt)
-                speed = np.sqrt(vx**2 + vy**2 + vz**2)
-                
-                cur_max = np.max(speed)
-                if cur_max > max_hand_speed:
-                    max_hand_speed = cur_max
-                    times = trc_data['Time'].values
-                    pk = int(np.argmax(speed))
-                    peak_time = float(times[pk])
+                    xyz = np.column_stack([butter_lowpass_filter(xyz[:, i], 15.0, fs) for i in range(3)])
+                marker_speed[(sd, wrist)] = np.linalg.norm(np.gradient(xyz, dt, axis=0), axis=1)
+        side_speed = {}
+        for sd, names in sides.items():
+            # Timing per side from its first (primary) marker present.
+            for wrist in names:
+                if (sd, wrist) in marker_speed:
+                    side_speed[sd] = marker_speed[(sd, wrist)]
+                    break
+        if side_speed:
+            # When is the swing? Both hands hold one bat, so their speed peaks
+            # coincide. When the two wrists disagree, the later peak is the
+            # follow-through: OpenCap often loses the lead arm as it wraps behind
+            # the body, reading 35-40 mph for ~0.1 s. So the swing is the shared
+            # peak when the wrists agree (within 0.15 s), else the earlier peak.
+            peaks = {sd: int(np.argmax(v)) for sd, v in side_speed.items()}
+            pk_list = sorted(peaks.values())
+            if len(pk_list) == 2 and abs(times[pk_list[1]] - times[pk_list[0]]) <= 0.15:
+                both = np.mean(list(side_speed.values()), axis=0)
+                pk0 = pk_list[0] + int(np.argmax(both[pk_list[0]:pk_list[1] + 1]))
+            else:
+                pk0 = pk_list[0]
+            # Hand speed: the fastest wrist marker within 30 ms of that moment.
+            w0, w1 = max(0, pk0 - int(0.03 * fs)), min(len(times), pk0 + int(0.03 * fs) + 1)
+            best = max(marker_speed.values(), key=lambda v: float(np.max(v[w0:w1])))
+            pk = w0 + int(np.argmax(best[w0:w1]))
+            max_hand_speed = float(best[pk])
+            peak_time = float(times[pk])
+            speed = best
 
-                    # Contact is the sharpest DECELERATION after the speed peak, not
-                    # the peak itself. The wrists top out while the barrel is still
-                    # whipping past them, so wrist peak speed leads bat-ball contact
-                    # by a few frames; the hands then get braked as the barrel meets
-                    # the ball. This is the hand force-feedback signal, read from
-                    # kinematics.
-                    #
-                    # Validated on Emilio_1_10 against video: peak speed 0.667s,
-                    # deceleration 0.717s, visible contact ~0.730s. The speed peak is
-                    # 4 frames early and costs 17 deg of pelvis rotation at the ~265
-                    # deg/s the pelvis is turning there; the deceleration is inside
-                    # one frame.
-                    contact_time = peak_time
-                    hi = min(len(speed), pk + int(0.15 * fs) + 1)
-                    if hi - pk >= 3:
-                        acc = np.gradient(speed, dt)
-                        _decel_frame = int(np.argmin(acc[pk:hi])) + pk
-                        contact_time = float(times[_decel_frame])
-
-                        # Contact-force estimate. Treat the hand+bat system as one
-                        # rigid body being braked by the ball impulse:
-                        #     J = m_effective · Δv_hand    (impulse-momentum)
-                        #     F_peak ≈ |m_effective · min(acc)|   (Newton at the
-                        #                                          brake spike)
-                        #
-                        # m_effective is the mass the hands are moving into the
-                        # ball — both forearms plus the bat. Not exact, but close
-                        # enough to compare between swings: heavier bat or harder
-                        # brake both push the number up as they should.
-                        #
-                        # At 60 Hz with a 15 Hz filter a real ~1 ms impact
-                        # transient is largely smoothed away, so treat this as
-                        # order-of-magnitude — real peak contact forces in
-                        # baseball are ~4-9 kN and this will read lower.
-                        _m_forearm = self.body_mass_kg * SEGMENT_PARAMS['forearm']['mass_pct']
-                        m_eff = 2.0 * _m_forearm + getattr(self, 'bat_mass_kg', 0.85)
-                        # Δv over the 3-frame window centred on the brake peak
-                        _lo = max(0, _decel_frame - 1)
-                        _hi = min(len(speed) - 1, _decel_frame + 1)
-                        dv = float(speed[_lo] - speed[_hi])   # positive: braking
-                        dt_win = float(times[_hi] - times[_lo]) or dt
-                        contact_impulse = float(m_eff * max(0.0, dv))
-                        contact_force = float(m_eff * abs(np.min(acc[pk:hi])))
+            # Contact is the sharpest DECELERATION after the speed peak, not
+            # the peak itself. The wrists top out while the barrel is still
+            # whipping past them, so wrist peak speed leads bat-ball contact
+            # by a few frames; the hands then get braked as the barrel meets
+            # the ball. Validated on Emilio_1_10 against video: peak speed
+            # 0.667s, deceleration 0.717s, visible contact ~0.730s.
+            contact_time = peak_time
+            hi = min(len(speed), pk + int(0.15 * fs) + 1)
+            if hi - pk >= 3:
+                acc = np.gradient(speed, dt)
+                _decel_frame = int(np.argmin(acc[pk:hi])) + pk
+                contact_time = float(times[_decel_frame])
+                # Contact-force estimate (order of magnitude): hand+bat braked by
+                # the ball, F ~ m_effective * peak deceleration, J = m * dv.
+                _m_forearm = self.body_mass_kg * SEGMENT_PARAMS['forearm']['mass_pct']
+                m_eff = 2.0 * _m_forearm + getattr(self, 'bat_mass_kg', 0.85)
+                _lo = max(0, _decel_frame - 1)
+                _hi = min(len(speed) - 1, _decel_frame + 1)
+                dv = float(speed[_lo] - speed[_hi])
+                contact_impulse = float(m_eff * max(0.0, dv))
+                contact_force = float(m_eff * abs(np.min(acc[pk:hi])))
 
         metrics = {
             'max_hand_speed_mps': float(max_hand_speed),
@@ -1178,6 +1208,7 @@ class RefinedHittingOptimizer:
             'hand_contact_time_s': contact_time,
             'contact_impulse_Ns': contact_impulse,
             'peak_contact_force_N': contact_force,
+            'wrist_frames_despiked': n_fixed,
         }
         return metrics
         

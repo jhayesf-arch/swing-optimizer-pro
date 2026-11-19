@@ -219,6 +219,34 @@ def test_joint_loads_withheld_when_the_implied_ground_force_is_impossible():
     assert o._grf_plausibility({'grf_total': late}, trc, mot, rot)['withheld'] is False
 
 
+def test_follow_through_wrist_burst_does_not_become_hand_speed():
+    # Both wrists swing to ~10 m/s at 1.0 s; then the lead wrist alone shows a
+    # 0.1 s tracking burst to ~18 m/s at 1.5 s (OpenCap losing the lead arm).
+    fs, n = 120.0, 300
+    t = np.arange(n) / fs
+    def path(peak_t, v, width=0.08):
+        # position whose speed is a bump of height v centred on peak_t
+        sp = v * np.exp(-0.5 * ((t - peak_t) / width) ** 2)
+        return np.cumsum(sp) / fs
+    cols = {'Frame': np.arange(1, n + 1), 'Time': t}
+    r = path(1.0, 10.0)
+    l = path(1.0, 9.0) + path(1.5, 18.0, 0.04)
+    for name, x in (('RWrist', r), ('LWrist', l)):
+        cols[f'{name}_X'] = x; cols[f'{name}_Y'] = np.full(n, 1.0); cols[f'{name}_Z'] = np.zeros(n)
+    o = RefinedHittingOptimizer(81, 1.83)
+    m = o.calculate_trc_metrics(pd.DataFrame(cols))
+    assert abs(m['hand_speed_peak_time_s'] - 1.0) < 0.05, m['hand_speed_peak_time_s']
+    assert 9.0 < m['max_hand_speed_mps'] < 11.0, m['max_hand_speed_mps']
+
+
+def test_one_frame_wrist_jump_is_removed():
+    from analyzer import despike_marker
+    t = np.arange(100) / 120.0
+    x = np.zeros((100, 3)); x[50] = [0.5, 0, 0]           # 60 m/s one-frame jump
+    y, k = despike_marker(x, t)
+    assert k >= 1 and np.allclose(y[50], 0.0)
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):
