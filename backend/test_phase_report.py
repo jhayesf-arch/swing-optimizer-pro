@@ -183,6 +183,42 @@ def test_com_drops_missing_segments_and_refuses_without_trunk():
         pass
 
 
+def test_findings_built_on_unreliable_measures_are_dropped_and_named():
+    from analyzer import _gate_findings
+    findings = ['Optimal Proximal-to-Distal Kinetic Chain demonstrated.', 'Elite X-Factor (40.0).',
+                'Efficient Stride Mechanics.']
+    recs = ['seq rec', 'stride rec']
+    blocks = [(0, 0, 'sequencing', ('sequence_timing_ms', 'proper_sequence')),
+              (1, 1, 'hip-shoulder separation', ('max_separation_deg',)),
+              (2, 1, 'stride', ('stride_ratio',))]
+    ev = {'sequence_timing_ms': {'reliable': False}, 'max_separation_deg': {'reliable': True}}
+    f, r = _gate_findings(findings, recs, blocks, ev)
+    assert f[0].startswith('Not assessed on this capture') and 'sequencing' in f[0]
+    assert 'Optimal Proximal-to-Distal Kinetic Chain demonstrated.' not in f
+    assert 'Elite X-Factor (40.0).' in f and 'Efficient Stride Mechanics.' in f
+    assert r == ['stride rec']      # the sequencing rec went with its finding
+    # Nothing unreliable: untouched.
+    assert _gate_findings(findings, recs, blocks, {}) == (findings, recs)
+
+
+def test_joint_loads_withheld_when_the_implied_ground_force_is_impossible():
+    o = RefinedHittingOptimizer(80, 1.83, skill_level='college')
+    n = 120
+    t = np.arange(n) / 120.0
+    trc = pd.DataFrame({'Time': t})
+    mot = pd.DataFrame({'time': t})
+    rot = {'swing_start_frame': 10, 'contact_frame': 90}
+    W = 80 * 9.81
+    ok = np.tile([0.0, W, 0.0], (n, 1))
+    assert o._grf_plausibility({'grf_total': ok}, trc, mot, rot)['withheld'] is False
+    bad = ok.copy(); bad[50, 2] = 2.5 * W          # 2.5 BW sideways mid-swing
+    out = o._grf_plausibility({'grf_total': bad}, trc, mot, rot)
+    assert out['withheld'] is True and 'sideways' in out['reason']
+    # Outside the swing window it does not count.
+    late = ok.copy(); late[115, 2] = 2.5 * W
+    assert o._grf_plausibility({'grf_total': late}, trc, mot, rot)['withheld'] is False
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):

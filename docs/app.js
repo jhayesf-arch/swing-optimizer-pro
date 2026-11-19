@@ -429,7 +429,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 mlHtml = `<p class="pr-note">${esc(ml.status === 'failed' ? 'Muscle loads could not be computed for this capture (' + (ml.reason || 'unknown error') + ').' : (ml.reason || 'Muscle loads withheld for this capture.'))}</p>`;
             }
         }
-        const dynHtml = (idTiles ? `<div class="pr-adv">${idTiles}</div>` : '') + (osNote ? `<p class="pr-note">${osNote}</p>` : '') + cmpTable;
+        const jlNote = (diagnosis.joint_loads_status || {}).withheld ? `<p class="pr-note">${esc(diagnosis.joint_loads_status.reason || 'Joint loads withheld for this capture.')}</p>` : '';
+        const dynHtml = (idTiles ? `<div class="pr-adv">${idTiles}</div>` : '') + jlNote + (osNote && osNote !== jlNote ? `<p class="pr-note">${osNote}</p>` : '') + cmpTable;
 
         // ── Findings, recommendations, advanced physics ───────────────────
         const list = arr => (arr || []).map(x => `<li>${esc(x)}</li>`).join('') || '<li>—</li>';
@@ -840,6 +841,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     dynamics_comparison: s.dynamics_comparison || null,
                     dynamics_reference_error: s.dynamics_reference_error || null,
                     opensim_id_status: s.opensim_id_status || null,
+                    joint_loads_status: s.joint_loads_status || null,
                     muscle_loads: s.muscle_loads || null,
                 },
             });
@@ -1106,8 +1108,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const idEl = document.getElementById('id-metrics');
         const idHeader = document.getElementById('id-heading');
         const idHasData = m.peak_hip_moment_id_l_Nm > 0 || m.peak_hip_moment_id_r_Nm > 0;
+        const jl = diagnosis.joint_loads_status || {};
         if (idEl) {
-            if (idHasData) {
+            if (jl.withheld) {
+                // The motion implies an impossible ground force: say why instead
+                // of showing joint moments built on it.
+                if (idHeader) idHeader.style.display = '';
+                idEl.style.display = '';
+                idEl.innerHTML = '';
+                const p = document.createElement('p');
+                p.className = 'small text-muted';
+                p.textContent = jl.reason || 'Joint loads withheld for this capture.';
+                idEl.appendChild(p);
+            } else if (idHasData) {
                 if (idHeader) idHeader.style.display = '';
                 idEl.style.display = '';
                 idEl.innerHTML = `

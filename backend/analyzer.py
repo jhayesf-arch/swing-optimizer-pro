@@ -772,6 +772,39 @@ class RefinedSwingMetrics:
     peak_grf_vert_l_N: float = 0.0
     peak_grf_vert_r_N: float = 0.0
 
+class _WithheldLoads(Exception):
+    """Internal signal: joint loads withheld for an implausible ground force."""
+
+
+def _gate_findings(findings: List[str], recommendations: List[str], blocks: list,
+                   evidence: dict):
+    """Drop findings and recommendations built on a measure flagged unreliable.
+
+    blocks: (findings_start, recommendations_start, label, metric_keys) in order;
+    each block runs until the next one starts. Dropped blocks are replaced by one
+    line naming what could not be assessed, so the reader knows why.
+    """
+    bad = {k for k, v in (evidence or {}).items() if isinstance(v, dict) and v.get('reliable') is False}
+    if not bad or not blocks:
+        return findings, recommendations
+    ends = blocks[1:] + [(len(findings), len(recommendations), None, ())]
+    keep_f, keep_r, dropped = [], [], []
+    for (f0, r0, label, keys), (f1, r1, _, _) in zip(blocks, ends):
+        if keys and bad & set(keys):
+            if f1 > f0 or r1 > r0:
+                dropped.append(label)
+            continue
+        keep_f += findings[f0:f1]
+        keep_r += recommendations[r0:r1]
+    # anything appended before the first block
+    keep_f = findings[:blocks[0][0]] + keep_f
+    keep_r = recommendations[:blocks[0][1]] + keep_r
+    if dropped:
+        keep_f.insert(0, 'Not assessed on this capture (tracking was not reliable enough): '
+                      + ', '.join(dropped) + '.')
+    return keep_f, keep_r
+
+
 def _metric_evidence_block(metrics: dict, rotation_ctx: dict) -> dict:
     """Per-metric evidence tier + per-capture reliability. Degrades to {} if the
     registry is unavailable, so a missing module cannot break an analysis."""
@@ -2368,6 +2401,31 @@ class RefinedHittingOptimizer:
     FINISH_WINDOW_S = (0.30, 0.80)  # after contact: from the end of the follow-through on
     FINISH_STEP_M = 0.15            # lead foot moving this far after contact = a catch step
 
+    def _grf_plausibility(self, grf: Dict, trc_data: pd.DataFrame, kinematics: pd.DataFrame,
+                          rotation: Optional[Dict]) -> Dict:
+        """Check the marker-estimated ground force over the swing (swing start to
+        0.15 s after contact) against the limits OpenSim ID uses."""
+        try:
+            from opensim_id import check_required_grf
+            tt = trc_data['Time'].values.astype(float)
+            mt = kinematics['time'].values.astype(float)
+            t0 = mt[min(int((rotation or {}).get('swing_start_frame') or 0), len(mt) - 1)]
+            c = (rotation or {}).get('contact_frame')
+            t1 = (mt[min(int(c), len(mt) - 1)] + 0.15) if c is not None else mt[-1]
+            w = (tt >= t0) & (tt <= t1)
+            if w.sum() < 5:
+                return {}
+            chk = check_required_grf(np.asarray(grf['grf_total'])[w], self.body_mass_kg * 9.81)
+            if chk['plausible']:
+                return {'withheld': False, 'grf_check': chk}
+            return {'withheld': True, 'grf_check': chk,
+                    'reason': ('Joint loads withheld: the tracked motion implies an impossible ground force ('
+                               + '; '.join(chk['reasons']) + '), usually from noisy trunk or arm tracking, '
+                               'so the joint moments built on it are not reliable.')}
+        except Exception as _e:
+            print(f"[id] plausibility check failed: {type(_e).__name__}: {_e}")
+            return {}
+
     def calculate_balance(self, trc_data: Optional[pd.DataFrame], data: pd.DataFrame,
                           rotation: Dict, stride: Dict) -> Dict:
         """Balance as coaches use the word: a quiet head, the body's centre of mass
@@ -2627,6 +2685,7 @@ class RefinedHittingOptimizer:
         # anything else so the rest of the analysis still runs; failure reason
         # printed for the same "no silent bugs" reason.
         id_data = {}
+        joint_loads_status = {}
         # Athlete-specific leg segments from the scaled model when one is given,
         # otherwise the de Leva population table.
         seg_params = None
@@ -2649,6 +2708,12 @@ class RefinedHittingOptimizer:
                 from grf_estimation import estimate_grf
                 _grf = estimate_grf(trc_data, body_mass_kg=self.body_mass_kg)
                 _ss = int((rotation or {}).get('swing_start_frame') or 0)
+                # Same plausibility limits OpenSim ID uses: if the ground force the
+                # tracked motion implies is impossible for a swing, the joint
+                # moments built on it are noise, so they are withheld, not shown.
+                joint_loads_status = self._grf_plausibility(_grf, trc_data, kinematics, rotation)
+                if joint_loads_status.get('withheld'):
+                    raise _WithheldLoads()
                 id_data = bottom_up_lower_body(
                     trc_data, kinematics,
                     grf_ts=_grf['grf_total'],
@@ -2658,15 +2723,25 @@ class RefinedHittingOptimizer:
                     swing_start_frame=_ss,
                     seg_params=seg_params,
                 )
+            except _WithheldLoads:
+                id_data = {}
             except Exception as _e:
                 print(f"[id] bottom-up ID failed: {type(_e).__name__}: {_e}")
         
         findings = []
         recommendations = []
         efficiency_score = 100
-        
+        # Each finding is tagged with the measures it rests on, so findings built on
+        # a measure the reliability checks later flag can be dropped (see
+        # _gate_findings) instead of praising or faulting tracking noise.
+        _finding_blocks = []
+
+        def _mark(label, *keys):
+            _finding_blocks.append((len(findings), len(recommendations), label, keys))
+
         if rotation:
             # === KINEMATIC SEQUENCING (Proximal-To-Distal) ===
+            _mark('sequencing', 'sequence_timing_ms', 'proper_sequence')
             if not rotation['proper_sequence']:
                 findings.append("Kinematic Sequence Reversal: Distal segments firing prior to proximal.")
                 recommendations.append("URGENT: Initiate swing from the ground up. The gold standard sequence requires Pelvis → Torso → Arms to maximize energy transfer (Welch 1995; Escamilla 2009).")
@@ -2679,6 +2754,7 @@ class RefinedHittingOptimizer:
                 findings.append("Optimal Proximal-to-Distal Kinetic Chain demonstrated.")
                 
             # === X-FACTOR SEPARATION ===
+            _mark('hip-shoulder separation', 'max_separation_deg')
             sep = rotation['max_separation_deg']
             if sep < 30:
                 findings.append(f"Restricted X-Factor Stretch ({sep:.1f}°).")
@@ -2692,6 +2768,7 @@ class RefinedHittingOptimizer:
                 findings.append(f"Elite X-Factor Separation Stretch ({sep:.1f}°).")
                 
             # === ROTATIONAL POWER ===
+            _mark('pelvis power', 'peak_pelvis_omega_3d_deg_s', 'hip_power_per_kg', 'peak_hip_power_W')
             if rotation['hip_power_per_kg'] < 12:
                 findings.append("Sub-optimal Pelvic Rotational Power.")
                 recommendations.append("Engage lower-half ground reaction forces more aggressively. Driveline research shows GRF lead/rear ratio is a key predictor of velocity.")
@@ -2706,6 +2783,7 @@ class RefinedHittingOptimizer:
             torso_pelvis_rot = rotation.get('torso_to_pelvis_rot_ratio', 0.0)
             
             # Chain Efficiency Analysis
+            _mark('energy transfer', 'energy_transfer_proxy_pct')
             if chain_eff < 15:
                 findings.append(f"Low Kinetic Chain Transfer Efficiency ({chain_eff:.1f}%).")
                 recommendations.append("Energy is trapped in the proximal segments (pelvis/torso) and not reaching the hands. Focus on sequential acceleration: let the pelvis decelerate as the torso fires, creating a 'whip' effect that amplifies distal segment speed.")
@@ -2717,6 +2795,7 @@ class RefinedHittingOptimizer:
                 recommendations.append("Good foundation. To push toward elite: focus on violent hip deceleration at front foot plant to 'whip' stored energy into the torso and arms.")
                 
             # Torso-to-Pelvis Rotational Velocity Ratio (Driveline top feature)
+            _mark('torso/pelvis speed ratio', 'torso_to_pelvis_rot_ratio')
             if torso_pelvis_rot < 0.8:
                 findings.append(f"Low Torso-to-Pelvis Rotational Velocity Ratio ({torso_pelvis_rot:.2f}).")
                 recommendations.append("Your torso is not rotating faster than your pelvis. In elite swings, the torso must rotationally 'catch up' and surpass the pelvis to create the proximal-to-distal velocity amplification.")
@@ -2727,6 +2806,7 @@ class RefinedHittingOptimizer:
                 findings.append(f"Adequate Torso-to-Pelvis Ratio ({torso_pelvis_rot:.2f}).")
             
             # Total Energy (absolute output scaled by demographics)
+            _mark('total chain energy', 'total_energy_transfer_J')
             total_ke = rotation.get('total_energy_transfer_J', 0.0)
             ke_per_kg = total_ke / self.body_mass_kg if self.body_mass_kg > 0 else 0.0
             if ke_per_kg > 5.0:
@@ -2738,6 +2818,7 @@ class RefinedHittingOptimizer:
                 recommendations.append("Overall rotational energy production is low. Address with explosive rotational training (med ball throws, cable rotations) and improved sequencing.")
                 
         if stride:
+            _mark('stride', 'stride_ratio', 'stride_efficiency_pct')
             eff = stride['stride_efficiency_pct']
             if eff < 60:
                 findings.append("Restricted Stride Length / Insufficient Linear Momentum.")
@@ -2750,6 +2831,8 @@ class RefinedHittingOptimizer:
             else:
                 findings.append("Efficient Stride Mechanics & Center of Mass Control.")
                 
+        _measured_hands = bool(trc_metrics and trc_metrics.get('max_hand_speed_mps', 0) > 0)
+        _mark('hand speed', 'max_hand_speed_mph' if _measured_hands else 'estimated_hand_speed_mph')
         hand_spd_mph = hand_speed['estimated_hand_speed_mph'] if hand_speed else 0.0
         benchmarks = SKILL_LEVEL_BENCHMARKS.get(self.skill_level, {})
         hs_lo, hs_hi = benchmarks.get('max_hand_speed_mph', (35, 55))
@@ -2763,11 +2846,14 @@ class RefinedHittingOptimizer:
                 findings.append(f"Adequate Hand Speed ({hand_spd_mph:.1f} mph; target {hs_lo}–{hs_hi} mph).")
 
         # High speed / low efficiency discrepancy
+        _mark('speed vs efficiency', 'max_hand_speed_mph' if _measured_hands else 'estimated_hand_speed_mph',
+              'energy_transfer_proxy_pct')
         if hand_spd_mph > 0 and hand_spd_mph > hs_hi * 1.1 and efficiency_score < 75:
             findings.append("⚠️ High Hand Speed / Low Efficiency Discrepancy (Brute Force Mode).")
             recommendations.append("You are generating high hand speed with raw strength rather than mechanical efficiency. Improving kinetic chain transfer would unlock more speed with less effort and lower injury risk.")
 
         # === LOWER-BODY KINEMATICS ===
+        _mark('lower body')
         if lower_body:
             knee_asym = lower_body.get('knee_asymmetry_deg', 0.0)
             hip_asym  = lower_body.get('hip_flex_asymmetry_deg', 0.0)
@@ -2791,6 +2877,7 @@ class RefinedHittingOptimizer:
                 efficiency_score -= 5
 
         # === LINEAR INVERSE DYNAMICS (Pelvis Joint Reaction Forces) ===
+        _mark('pelvis forces', 'peak_pelvis_force_resultant_N')
         if linear_id:
             F_res = linear_id.get('peak_pelvis_force_resultant_N', 0.0)
             F_lat = linear_id.get('peak_pelvis_force_lat_N', 0.0)
@@ -2803,6 +2890,7 @@ class RefinedHittingOptimizer:
                 efficiency_score -= 8
 
         # === WEIGHT SHIFT / LATERAL BALANCE ===
+        _mark('lateral sway', 'lateral_sway_range_m')
         if weight_shift:
             sway = weight_shift.get('lateral_sway_range_m', 0.0)
             sway_at_plant = weight_shift.get('lateral_sway_at_plant_m', 0.0)
@@ -2818,6 +2906,7 @@ class RefinedHittingOptimizer:
                 recommendations.append("Pelvis should return near center by front foot plant. Excessive lateral displacement at contact reduces rotational power.")
                 efficiency_score -= 5
 
+        _mark('other')
         # === TIME TO PEAK PELVIS ANGULAR VELOCITY, RELATIVE TO FOOT PLANT ===
         # Welch et al. (1995) report this interval from front-foot plant, not from
         # swing start, and elite hitters cluster around 50–100 ms. It is computed
@@ -3022,6 +3111,7 @@ class RefinedHittingOptimizer:
              'torso_signal_unstable': bool(rotation.get('torso_signal_unstable')) if rotation else False,
              'torso_peak_at_edge': bool(rotation.get('torso_peak_at_edge')) if rotation else False,
              'lead_arm_side': rotation.get('lead_arm_side', 'l') if rotation else 'l'})
+        findings, recommendations = _gate_findings(findings, recommendations, _finding_blocks, _evidence)
         try:
             _mech = compute_mechanics_score(asdict(metrics), (phase_report or {}).get('dimensions', {}),
                                             _evidence, self.skill_level, SKILL_LEVEL_BENCHMARKS,
@@ -3046,6 +3136,7 @@ class RefinedHittingOptimizer:
             # Per-foot GRF + CoP time series for OpenSim external loads. numpy —
             # callers MUST pop it before JSON serialisation, like _rotation.
             "_foot_loads": id_data.pop('_foot_loads', None) if isinstance(id_data, dict) else None,
+            "joint_loads_status": joint_loads_status,
             "capture_quality": capture_quality,
             "metrics": asdict(metrics),
             "findings": findings,

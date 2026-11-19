@@ -94,6 +94,7 @@ def _run_id(file_path, model_path, bat_mass_kg, bat_length_m, diagnosis,
                 'OpenSim ID ran, but the tracked motion implies an impossible ground '
                 'force (' + '; '.join(check['reasons']) + '), usually from noisy trunk '
                 'or arm tracking. Joint moments are withheld for this capture.'))
+            _withhold_bottom_up(diagnosis, status['reason'])
             return None
     status['reliable'] = True
     diagnosis['opensim_id'] = summarize_id_results(id_result)
@@ -105,6 +106,22 @@ def _run_id(file_path, model_path, bat_mass_kg, bat_length_m, diagnosis,
                             'session — upload this athlete\'s scaled .osim for '
                             'correct segment masses.')
     return mags
+
+
+_BOTTOM_UP_KEYS = ('peak_ankle_moment_id_l_Nm', 'peak_ankle_moment_id_r_Nm', 'peak_knee_moment_id_l_Nm',
+                   'peak_knee_moment_id_r_Nm', 'peak_hip_moment_id_l_Nm', 'peak_hip_moment_id_r_Nm',
+                   'peak_ankle_force_id_l_N', 'peak_ankle_force_id_r_N', 'peak_knee_force_id_l_N',
+                   'peak_knee_force_id_r_N', 'peak_hip_force_id_l_N', 'peak_hip_force_id_r_N')
+
+
+def _withhold_bottom_up(diagnosis, reason):
+    """OpenSim found the motion's implied ground force impossible. The simpler
+    bottom-up estimate rests on the same motion, so it is withheld with it."""
+    m = diagnosis.get('metrics') or {}
+    for k in _BOTTOM_UP_KEYS:
+        if k in m:
+            m[k] = 0.0
+    diagnosis['joint_loads_status'] = {'withheld': True, 'reason': reason}
 
 
 def _muscle_loads(mot_path, model_path, id_result, handedness):
@@ -749,6 +766,7 @@ async def analyze_batch(
                     "dynamics_reference_error": diag.get("dynamics_reference_error"),
                     "opensim_id_status": diag.get("opensim_id_status"),
                     "muscle_loads": diag.get("muscle_loads"),
+                    "joint_loads_status": diag.get("joint_loads_status"),
                     **extras,
                 })
             except Exception as e:
