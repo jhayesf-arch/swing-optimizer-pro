@@ -772,10 +772,6 @@ class RefinedSwingMetrics:
     peak_grf_vert_l_N: float = 0.0
     peak_grf_vert_r_N: float = 0.0
 
-class _WithheldLoads(Exception):
-    """Internal signal: joint loads withheld for an implausible ground force."""
-
-
 def _gate_findings(findings: List[str], recommendations: List[str], blocks: list,
                    evidence: dict):
     """Drop findings and recommendations built on a measure flagged unreliable.
@@ -2712,8 +2708,6 @@ class RefinedHittingOptimizer:
                 # tracked motion implies is impossible for a swing, the joint
                 # moments built on it are noise, so they are withheld, not shown.
                 joint_loads_status = self._grf_plausibility(_grf, trc_data, kinematics, rotation)
-                if joint_loads_status.get('withheld'):
-                    raise _WithheldLoads()
                 id_data = bottom_up_lower_body(
                     trc_data, kinematics,
                     grf_ts=_grf['grf_total'],
@@ -2723,10 +2717,13 @@ class RefinedHittingOptimizer:
                     swing_start_frame=_ss,
                     seg_params=seg_params,
                 )
-            except _WithheldLoads:
-                id_data = {}
             except Exception as _e:
                 print(f"[id] bottom-up ID failed: {type(_e).__name__}: {_e}")
+            # Withheld: drop the moments and forces, but keep the per-foot ground
+            # force split, which OpenSim needs (it rebuilds the total from the
+            # model and runs its own plausibility check).
+            if joint_loads_status.get('withheld') and isinstance(id_data, dict):
+                id_data = {k: v for k, v in id_data.items() if k == '_foot_loads'}
         
         findings = []
         recommendations = []

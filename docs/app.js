@@ -401,6 +401,8 @@ document.addEventListener('DOMContentLoaded', () => {
         ]);
 
         // ── Joint loads, OpenSim dynamics, leg muscle loads ───────────────
+        const osRows = openSimMomentRows(diagnosis);
+        const osTilesPdf = osRows ? `<div class="pr-adv">${tiles(osRows)}</div><p class="pr-note">From OpenSim inverse dynamics on the athlete's scaled model, with model-consistent ground forces.</p>` : '';
         const idTiles = (m.peak_hip_moment_id_l_Nm > 0 || m.peak_hip_moment_id_r_Nm > 0) ? tiles([
             ['Lead Hip Moment', num(m.peak_hip_moment_id_l_Nm, 0), 'N·m'], ['Trail Hip Moment', num(m.peak_hip_moment_id_r_Nm, 0), 'N·m'],
             ['Lead Knee Moment', num(m.peak_knee_moment_id_l_Nm, 0), 'N·m'], ['Trail Knee Moment', num(m.peak_knee_moment_id_r_Nm, 0), 'N·m'],
@@ -430,7 +432,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         const jlNote = (diagnosis.joint_loads_status || {}).withheld ? `<p class="pr-note">${esc(diagnosis.joint_loads_status.reason || 'Joint loads withheld for this capture.')}</p>` : '';
-        const dynHtml = (idTiles ? `<div class="pr-adv">${idTiles}</div>` : '') + jlNote + (osNote && osNote !== jlNote ? `<p class="pr-note">${osNote}</p>` : '') + cmpTable;
+        const jlReason = (diagnosis.joint_loads_status || {}).reason;
+        const sameReason = jlReason && st && st.reason && jlReason === st.reason;
+        const dynHtml = (idTiles ? `<div class="pr-adv">${idTiles}</div>` : '') + osTilesPdf + jlNote + (osNote && !sameReason ? `<p class="pr-note">${osNote}</p>` : '') + cmpTable;
 
         // ── Findings, recommendations, advanced physics ───────────────────
         const list = arr => (arr || []).map(x => `<li>${esc(x)}</li>`).join('') || '<li>—</li>';
@@ -842,6 +846,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     dynamics_reference_error: s.dynamics_reference_error || null,
                     opensim_id_status: s.opensim_id_status || null,
                     joint_loads_status: s.joint_loads_status || null,
+                    opensim_id_magnitudes: s.opensim_id_magnitudes || null,
                     muscle_loads: s.muscle_loads || null,
                 },
             });
@@ -1109,16 +1114,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const idHeader = document.getElementById('id-heading');
         const idHasData = m.peak_hip_moment_id_l_Nm > 0 || m.peak_hip_moment_id_r_Nm > 0;
         const jl = diagnosis.joint_loads_status || {};
+        const osTiles = openSimMomentRows(diagnosis);
         if (idEl) {
-            if (jl.withheld) {
-                // The motion implies an impossible ground force: say why instead
-                // of showing joint moments built on it.
+            if (jl.withheld || (!idHasData && osTiles)) {
+                // The simpler estimate is withheld (or absent). OpenSim's moments,
+                // when they passed their own ground-force check, stand on their own;
+                // otherwise say why there are no joint loads.
                 if (idHeader) idHeader.style.display = '';
                 idEl.style.display = '';
-                idEl.innerHTML = '';
+                idEl.innerHTML = osTiles ? osTiles.map(([l, v, u]) => createMetric(l, v, u)).join('') : '';
                 const p = document.createElement('p');
                 p.className = 'small text-muted';
-                p.textContent = jl.reason || 'Joint loads withheld for this capture.';
+                p.style.gridColumn = '1 / -1';
+                p.textContent = osTiles
+                    ? 'From OpenSim inverse dynamics on the athlete\'s scaled model, with model-consistent ground forces.'
+                      + (jl.withheld ? ' The simpler estimate is withheld: ' + (jl.reason || '') : '')
+                    : (jl.reason || 'Joint loads withheld for this capture.');
                 idEl.appendChild(p);
             } else if (idHasData) {
                 if (idHeader) idHeader.style.display = '';
@@ -1791,6 +1802,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // Leg muscle loads from static optimization. Withheld runs show only why:
     // muscle numbers built on an unbalanced ground force would look precise
     // and mean nothing.
+    // OpenSim joint moments as [label, value, unit] rows, lead side first, or
+    // null when OpenSim did not run or its moments were withheld.
+    function openSimMomentRows(diagnosis) {
+        const st = diagnosis.opensim_id_status || {};
+        const mg = diagnosis.opensim_id_magnitudes;
+        if (!st.ran || st.reliable === false || !mg || !(mg.hip_moment_l_Nm > 0 || mg.hip_moment_r_Nm > 0)) return null;
+        const leadSide = (diagnosis.phase_report && diagnosis.phase_report.lead_leg_block && diagnosis.phase_report.lead_leg_block.lead_side)
+            || ((document.getElementById('athlete-handedness') || {}).value === 'left' ? 'r' : 'l');
+        const trail = leadSide === 'l' ? 'r' : 'l';
+        const v = k => (mg[k] || mg[k] === 0) ? Math.round(mg[k]).toString() : '—';
+        const rows = [];
+        ['hip', 'knee', 'ankle'].forEach(j => {
+            const J = j.charAt(0).toUpperCase() + j.slice(1);
+            rows.push([`Lead ${J} Moment (OpenSim)`, v(`${j}_moment_${leadSide}_Nm`), 'N·m']);
+            rows.push([`Trail ${J} Moment (OpenSim)`, v(`${j}_moment_${trail}_Nm`), 'N·m']);
+        });
+        if (mg.pelvis_residual_moment_Nm != null) rows.push(['Pelvis Residual Moment', v('pelvis_residual_moment_Nm'), 'N·m']);
+        return rows;
+    }
+
     function renderMuscleLoads(diagnosis) {
         const wrap = document.getElementById('muscle-loads');
         const table = document.getElementById('muscle-table');

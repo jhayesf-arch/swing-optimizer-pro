@@ -83,6 +83,15 @@ def _run_id(file_path, model_path, bat_mass_kg, bat_length_m, diagnosis,
         return None
     status.update(ran=True, external_loads=bool(id_result.get('external_loads_applied')),
                   grf_source=id_result.get('grf_source'))
+    if not id_result.get('external_loads_applied'):
+        # Without a ground force the legs carry nothing in ID and the pelvis
+        # residual absorbs body weight: the moments are not joint loads.
+        status.update(reliable=False, reason=(
+            'OpenSim ID ran without a ground force (no marker file to estimate it '
+            'from), so its joint moments are not reported.'))
+        diagnosis['muscle_loads'] = {'status': 'withheld', 'experimental': True,
+                                     'reason': 'Muscle loads need a ground force; none was available.'}
+        return None
     diagnosis['muscle_loads'] = _muscle_loads(file_path, model_path, id_result, handedness)
     check = id_result.get('grf_check')
     if check:
@@ -767,6 +776,7 @@ async def analyze_batch(
                     "opensim_id_status": diag.get("opensim_id_status"),
                     "muscle_loads": diag.get("muscle_loads"),
                     "joint_loads_status": diag.get("joint_loads_status"),
+                    "opensim_id_magnitudes": diag.get("opensim_id_magnitudes"),
                     **extras,
                 })
             except Exception as e:
