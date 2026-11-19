@@ -117,6 +117,18 @@ def test_torso_peak_on_the_window_edge_voids_sequence():
     assert 'end of the window' in ev['sequence_timing_ms']['caveat']
 
 
+def test_flip_after_the_swing_window_is_not_reported():
+    import numpy as np
+    import pandas as pd
+    from metric_evidence import detect_ik_branch_jumps
+    t = np.arange(240) / 120.0
+    q = np.zeros(240); q[200:] = 60.0                       # 60 deg one-frame flip at 1.67 s
+    df = pd.DataFrame({'time': t, 'lumbar_rotation': q})
+    assert 'lumbar_rotation' in detect_ik_branch_jumps(df, 0)              # whole clip: found
+    assert detect_ik_branch_jumps(df, 0, end_frame=150) == {}             # swing window ends at 1.25 s
+    assert 'lumbar_rotation' in detect_ik_branch_jumps(df, 0, end_frame=230)
+
+
 if __name__ == '__main__':
     tests = [v for k, v in dict(globals()).items() if k.startswith('test_')]
     for fn in tests:

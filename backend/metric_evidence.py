@@ -263,18 +263,20 @@ TRUNK_JUMP_LIMITS_DEG_S = {
 }
 
 
-def detect_ik_branch_jumps(kinematics, start_frame: int = 0) -> dict:
+def detect_ik_branch_jumps(kinematics, start_frame: int = 0, end_frame=None) -> dict:
     """Return {coordinate: [times in s]} for arm and trunk coordinates that
     change faster in one frame than any human joint can.
 
     Runs on the raw (unfiltered) coordinates. The filter used for metrics would
     smear a one-frame jump into a smooth but still impossible spike that no
-    longer looks like a step.
+    longer looks like a step. end_frame bounds the search (exclusive), so
+    follow-through tracking loss does not void measures taken before contact.
     """
     if kinematics is None or 'time' not in getattr(kinematics, 'columns', ()):
         return {}
     import numpy as np
-    t = kinematics['time'].to_numpy(dtype=float)[start_frame:]
+    stop = None if end_frame is None else int(end_frame)
+    t = kinematics['time'].to_numpy(dtype=float)[start_frame:stop]
     if len(t) < 2:
         return {}
     dt = np.diff(t)
@@ -286,7 +288,7 @@ def detect_ik_branch_jumps(kinematics, start_frame: int = 0) -> dict:
     for col, limit in limits.items():
         if col not in kinematics.columns:
             continue
-        q = kinematics[col].to_numpy(dtype=float)[start_frame:]
+        q = kinematics[col].to_numpy(dtype=float)[start_frame:stop]
         rate = np.abs(np.diff(q)) / dt
         hits = np.where(rate > limit)[0]
         if hits.size:

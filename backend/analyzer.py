@@ -1931,6 +1931,13 @@ class RefinedHittingOptimizer:
         # later in comprehensive_diagnosis(), where the plant frame is known.
         time_to_peak_pelvis_ms = float((peak_hip_frac - swing_start) * dt * 1000.0)
 
+        # Plausibility checks look at the swing itself: swing start to 0.15 s after
+        # contact. Tracking often falls apart in the follow-through (the lead arm
+        # wraps behind the body), and that must not void measures taken before
+        # contact. Wild signal during the swing is still caught.
+        _chk_end = min(len(data), contact_frame + int(round(0.15 * fs)) + 1)
+        if separation_source == 'trc_markers' and _chk_end > swing_start:
+            _sep_raw_peak = float(np.max(np.abs(separation_full[swing_start:_chk_end])))
         return {
             'peak_hip_torque_Nm': float(peak_hip_torque),
             'peak_shoulder_torque_Nm': float(peak_shoulder_torque),
@@ -2004,7 +2011,7 @@ class RefinedHittingOptimizer:
             'pelvis_signal_unstable': pelvis_signal_unstable,
             'torso_signal_unstable': torso_signal_unstable,
             'torso_peak_at_edge': torso_peak_at_edge,
-            'ik_branch_jumps': (detect_ik_branch_jumps(data, swing_start)
+            'ik_branch_jumps': (detect_ik_branch_jumps(data, swing_start, end_frame=_chk_end)
                                 if _HAS_EVIDENCE else {}),
             'lead_arm_side': lead_arm_side,
             'torso_arm_sequence_gap_ms': torso_arm_gap_ms,
