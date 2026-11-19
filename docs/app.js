@@ -277,63 +277,178 @@ document.addEventListener('DOMContentLoaded', () => {
         const skill = skillLabels[rep.skill_level || selectedSkillLevel] || (rep.skill_level || '—');
         const val = id => { const e = document.getElementById(id); return e ? e.value : ''; };
         const num = (x, d) => (x || x === 0) ? Number(x).toFixed(d) : '—';
-
-        const score = (diagnosis.swing_score != null) ? Math.round(diagnosis.swing_score) : '—';
-        const eff = (diagnosis.mechanics_score && diagnosis.mechanics_score.score != null) ? diagnosis.mechanics_score.score : '—';
-        const hand = num(m.estimated_hand_speed_mph, 1);
-        const pelvis = m.peak_pelvis_omega_3d_deg_s ? Math.round(m.peak_pelvis_omega_3d_deg_s) : '—';
-        const date = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+        const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
         const stars = n => '★'.repeat(n) + '☆'.repeat(Math.max(0, 5 - n)); // taste-skill-ignore: printed report rating
-        const badgeColor = b => b === 'excellent' ? '#0a7d4d' : b === 'off-target' ? '#c02626' : '#b6791b';
-        const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+        const badgeColor = b => b === 'excellent' ? '#0a7d4d' : (b === 'off-target' || b === 'off_target') ? '#c02626' : '#b6791b';
+        const date = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+        const section = (title, body, note) => body ? `<section class="pr-section"><h3 class="pr-h3">${title}</h3>${note ? `<p class="pr-note">${note}</p>` : ''}${body}</section>` : '';
 
+        // ── Header and score summary (mirrors the hero) ──────────────────
+        const detail = rep.swing_score_detail || null;
+        const score = (diagnosis.swing_score != null) ? Math.round(diagnosis.swing_score) : '—';
+        const scoreNote = diagnosis.swing_score == null
+            ? esc((detail && detail.note) || 'Not enough reliable measurements to score this swing.')
+            : (detail ? `Scored on ${detail.parts_scored} of ${detail.parts_total} research-backed parts (${Math.round((detail.coverage || 0) * 100)}% of the weight)` : '');
+        const measuredHand = m.max_hand_speed_mph > 0;
+        const hand = num(measuredHand ? m.max_hand_speed_mph : m.estimated_hand_speed_mph, 1);
+        const mech = diagnosis.mechanics_score || null;
+        const mechScore = (mech && mech.score != null) ? mech.score : '—';
+        const pelvis = m.peak_pelvis_omega_3d_deg_s ? Math.round(m.peak_pelvis_omega_3d_deg_s) : '—';
+        const pct = (typeof rep.overall_percentile === 'number') ? rep.overall_percentile + 'th' : '—';
+        const pctBasis = rep.percentile_basis === 'blended' ? 'Overall percentile (library + research)' : 'Overall percentile (vs research)';
+        const handed = val('athlete-handedness');
+        const avgLine = rep.is_average
+            ? `<p class="pr-note">Averaged across <b>${esc(rep.n_swings)} swings</b>${rep.swing_score_range ? ` (scores ${esc(rep.swing_score_range[0])}–${esc(rep.swing_score_range[1])})` : ''}${rep.overall_consistency != null ? ` · ${esc(rep.overall_consistency)}/100 consistency` : ''}; outlier trials excluded.</p>`
+            : '';
+
+        // ── Swing Score breakdown ──────────────────────────────────────────
+        const fmtVal = (v, u) => (v == null || v === '') ? '—' : `${typeof v === 'number' ? Math.round(v * 100) / 100 : esc(v)}${u ? ' ' + esc(u) : ''}`;
+        const scoreRows = detail && detail.components ? detail.components.map(c => {
+            const scored = c.status === 'scored';
+            return `<tr class="${scored ? '' : 'pr-skip'}"><td>${esc(c.label)}</td><td class="r">${Math.round(c.weight * 1000) / 10}%</td>`
+                + `<td class="r">${fmtVal(c.value, c.unit)}</td>`
+                + `<td class="r">${scored ? Math.round(c.score) : 'Skipped'}</td>`
+                + `<td class="pr-why">${scored ? '' : esc(c.reason)}</td></tr>`;
+        }).join('') : '';
+        const scoreTable = scoreRows ? `<table class="pr-table pr-fixed"><colgroup><col style="width:24%"><col style="width:9%"><col style="width:16%"><col style="width:9%"><col></colgroup><thead><tr><th>Part</th><th class="r">Weight</th><th class="r">This swing</th><th class="r">Score</th><th>Note</th></tr></thead><tbody>${scoreRows}</tbody></table>`
+            + (detail.informational && detail.informational.length ? `<p class="pr-note">Shown in the report but not in the score (no published batting values): ${detail.informational.map(k => esc((k || '').replace(/_/g, ' '))).join(', ')}.</p>` : '') : '';
+
+        // ── Mechanics score parts ─────────────────────────────────────────
+        const mFmt = (v, unit) => v == null ? '—' : unit === 'm' ? `${(v * 100).toFixed(1)} cm` : unit === '× height' ? `${(+v).toFixed(2)} × height` : `${Math.round(v * 10) / 10}${unit === '°' ? '°' : ' ' + (unit || '')}`;
+        const mechRows = mech && mech.components ? mech.components.map(c => {
+            const scored = c.status === 'scored';
+            return `<tr class="${scored ? '' : 'pr-skip'}"><td>${esc(c.label)}</td><td class="r">${Math.round(c.weight * 100)}%</td>`
+                + `<td class="r">${scored ? Math.round(c.score) : 'Skipped'}</td>`
+                + `<td class="pr-why">${scored ? `This swing: <b>${esc(mFmt(c.value, c.unit))}</b>. Reference: ${esc(c.reference)}.` : esc(c.reason)}`
+                + `${c.source ? `<br><span class="pr-src">${esc(c.source)} <span class="pr-tier">${esc(c.tier || '')}</span></span>` : ''}</td></tr>`;
+        }).join('') : '';
+        const mechNote = mech ? (mech.score == null ? esc(mech.note || 'Not enough reliable measurements to give a mechanics score.')
+            : `Based on ${mech.parts_scored} of ${mech.parts_total} parts (${Math.round((mech.coverage || 0) * 100)}% of the weight). Ranges for ${esc(String(mech.skill_level || '').replace('_', ' '))}.`) : '';
+        const mechTable = mechRows ? `<table class="pr-table pr-fixed"><colgroup><col style="width:22%"><col style="width:9%"><col style="width:9%"><col></colgroup><thead><tr><th>Part</th><th class="r">Weight</th><th class="r">Score</th><th>Detail</th></tr></thead><tbody>${mechRows}</tbody></table>` : '';
+
+        // ── Coaching focus: body map + top priorities ─────────────────────
+        const bodyMap = (document.getElementById('body-heatmap') || {}).innerHTML || '';
+        const rx = (rep.prescriptions || []).slice(0, 4);
+        const rxHtml = rx.length ? rx.map(p => `<li><div class="pr-rx-title"><span class="pr-rank">${esc(p.priority)}</span>${esc(p.label)}${typeof p.percentile === 'number' ? ` <span class="pr-pct">${esc(p.percentile)}th pct</span>` : ''}</div>`
+            + `<div>${esc(p.cue)}</div><div><b>Drill:</b> ${esc(p.drill)}</div>${p.why ? `<div class="pr-why">${esc(p.why)}</div>` : ''}</li>`).join('')
+            : '<li>No major weaknesses flagged: every scored dimension is on target.</li>';
+        const focusHtml = `<div class="pr-focus">${bodyMap ? `<div class="pr-body">${bodyMap}</div>` : ''}<ol class="pr-rx">${rxHtml}</ol></div>`;
+
+        // ── Phase report (every dimension, as the cards show them) ────────
+        // Parts the Swing Score skipped as unreliable on this capture (not just unmeasured).
+        const skippedBy = {};
+        ((detail && detail.components) || []).forEach(c => { if (c.status === 'skipped' && c.reason && c.reason !== 'not measured') skippedBy[c.key] = c.reason; });
         let dimsHtml = '';
-        ['balance_load', 'stride', 'power_move', 'contact'].forEach(k => {
+        ['balance_load', 'balance', 'stride', 'power_move', 'contact'].forEach(k => {
             const ph = rep.phases && rep.phases[k];
             if (!ph) return;
-            dimsHtml += `<tr class="phase-row"><td colspan="5">${esc(ph.label)}</td></tr>`;
+            const avg = ph.avg_stars == null ? 'needs the .trc file' : stars(Math.round(ph.avg_stars));
+            dimsHtml += `<tr class="phase-row"><td colspan="4">${esc(ph.label)}</td><td class="pr-stars">${avg}</td></tr>`;
             (ph.dimensions || []).forEach(d => {
+                const unscored = UNSCORED_DIMS.has(d.key) ? ' <span class="pr-tag">not in Swing Score</span>'
+                    : skippedBy[d.key] ? ' <span class="pr-tag pr-tag-warn">unreliable here, not scored</span>' : '';
+                if (d.available === false) {
+                    dimsHtml += `<tr class="pr-skip"><td>${esc(d.label)}${unscored}</td><td class="r">—</td><td class="r">—</td><td colspan="2" class="pr-why">Not measured: ${esc(d.unavailable_reason || 'unavailable in this capture')}</td></tr>`;
+                    return;
+                }
                 const pctTxt = (typeof d.percentile === 'number') ? d.percentile + 'th' : '—';
-                dimsHtml += `<tr><td>${esc(d.label)}</td>`
-                    + `<td style="text-align:right;white-space:nowrap;">${esc(d.value)} ${esc(d.unit || '')}</td>`
-                    + `<td style="text-align:right;white-space:nowrap;">${pctTxt}</td>`
-                    + `<td style="color:#e0a800;letter-spacing:1px;white-space:nowrap;">${stars(d.stars || 0)}</td>`
-                    + `<td style="color:${badgeColor(d.badge)};text-transform:capitalize;">${esc((d.badge || '').replace('-', ' '))}</td></tr>`;
+                dimsHtml += `<tr><td>${esc(d.label)}${unscored}</td>`
+                    + `<td class="r nw">${esc(d.value)} ${esc(d.unit || '')}</td>`
+                    + `<td class="r">${pctTxt}</td>`
+                    + `<td class="pr-stars">${stars(d.stars || 0)}</td>`
+                    + `<td style="color:${badgeColor(d.badge)};text-transform:capitalize;">${esc((d.badge || '').replace(/[-_]/g, ' '))}</td></tr>`;
             });
         });
+        const phaseTable = dimsHtml ? `<table class="pr-table"><thead><tr><th>Dimension</th><th class="r">Value</th><th class="r">Pct</th><th>Rating</th><th>Status</th></tr></thead><tbody>${dimsHtml}</tbody></table>` : '';
+
+        // ── Kinematic sequence (SVG redraw of the on-screen chart) ────────
+        const seq = diagnosis.kinematic_sequence || lastKineSeq;
+        const PR_KINE = { 'Pelvis': '#2456d6', 'Torso': '#d95926', 'Lead Arm': '#199e70', 'Hands/Bat': '#c98500' };
+        let seqHtml = '';
+        if (seq && seq.series && seq.time_ms && seq.time_ms.length) {
+            const W = 640, H = 170, P = 30, tms = seq.time_ms;
+            const present = KINE_ORDER.filter(k => Array.isArray(seq.series[k]));
+            const ymax = Math.max(1, ...present.flatMap(k => seq.series[k].filter(v => v != null)));
+            const x = i => P + (W - P - 8) * (tms[i] - tms[0]) / Math.max(1, tms[tms.length - 1] - tms[0]);
+            const y = v => H - 18 - (H - 30) * v / ymax;
+            const lines = present.map(k => `<polyline fill="none" stroke="${PR_KINE[k] || '#888'}" stroke-width="2" points="${seq.series[k].map((v, i) => v == null ? '' : `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')}"/>`).join('');
+            const contact = seq.contact_ms != null ? (() => { const cx = P + (W - P - 8) * (seq.contact_ms - tms[0]) / Math.max(1, tms[tms.length - 1] - tms[0]); return `<line x1="${cx}" x2="${cx}" y1="8" y2="${H - 18}" stroke="#8a887f" stroke-dasharray="3 3"/><text x="${cx + 3}" y="16" font-size="9" fill="#5f5d55">contact</text>`; })() : '';
+            const axis = `<line x1="${P}" x2="${W - 8}" y1="${H - 18}" y2="${H - 18}" stroke="#c9c8c2"/><text x="${P}" y="${H - 4}" font-size="9" fill="#5f5d55">${Math.round(tms[0])} ms</text><text x="${W - 8}" y="${H - 4}" font-size="9" fill="#5f5d55" text-anchor="end">${Math.round(tms[tms.length - 1])} ms</text><text x="2" y="${y(ymax) + 3}" font-size="9" fill="#5f5d55">${Math.round(ymax)}°/s</text>`;
+            const legend = present.map(k => { const pk = seq.peaks && seq.peaks[k]; return `<span class="pr-chip"><i style="background:${PR_KINE[k] || '#888'}"></i>${esc(k)}${pk ? ` · ${Math.round(pk.value)}°/s @ ${Math.round(pk.t_ms)} ms` : ''}</span>`; }).join('');
+            const pk = seq.peaks || {};
+            const lag = (pk['Pelvis'] && pk['Torso']) ? (pk['Torso'].t_ms - pk['Pelvis'].t_ms) : null;
+            const verdict = seq.warning ? `<b>Sequence not measured reliably.</b> ${esc(seq.warning)}`
+                : lag == null ? 'Sequence timing could not be resolved for this capture.'
+                : lag > 0 ? `<b>Proper sequence:</b> hips peak ${Math.round(lag)} ms before the torso.`
+                : `<b>Sequence flag:</b> the torso peaks ${Math.abs(Math.round(lag))} ms before the hips.`;
+            seqHtml = `<svg class="pr-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Kinematic sequence">${axis}${contact}${lines}</svg><div class="pr-legend">${legend}</div><p class="pr-note">${verdict} Arm and hand timing is indicative only.</p>`;
+        }
+
+        // ── Pelvis & lower half (same tiles, same gating as the screen) ───
+        const tiles = rows => rows.filter(Boolean).map(([l, v, u]) => `<div class="pr-adv-item"><span>${esc(l)}</span><b>${esc(v)}${u ? ' ' + esc(u) : ''}</b></div>`).join('');
+        const plantMs = m.time_to_peak_pelvis_from_plant_ms;
+        const pelvisTiles = tiles([
+            m.peak_pelvis_omega_3d_deg_s > 0 && ['Peak Pelvis Speed', m.peak_pelvis_omega_3d_deg_s.toFixed(0), '°/s'],
+            (plantMs !== undefined && plantMs !== 0) ? ['Pelvis Peak (from plant)', plantMs.toFixed(0), 'ms'] : (m.time_to_peak_pelvis_ms > 0 && ['Pelvis Peak (from start)', m.time_to_peak_pelvis_ms.toFixed(0), 'ms']),
+            m.pelvis_rotation_at_contact_deg > 0 && ['Pelvis Open at Contact', m.pelvis_rotation_at_contact_deg.toFixed(0), '°'],
+            m.pelvis_rotation_excursion_deg > 0 && ['Pelvis Rotation Swept', m.pelvis_rotation_excursion_deg.toFixed(0), '°'],
+            m.x_factor_stretch_deg > 0 && ['X-Factor Stretch', m.x_factor_stretch_deg.toFixed(1), '°'],
+            m.torso_arm_sequence_gap_ms && ['Torso→Arm Gap', m.torso_arm_sequence_gap_ms.toFixed(0), 'ms'],
+            m.pelvis_decel_rate_deg_s2 > 0 && ['Pelvis Decel Rate', (m.pelvis_decel_rate_deg_s2 / 1000).toFixed(1), 'k°/s²'],
+            m.peak_lead_hip_ir_torque_Nm > 0 && ['Lead Hip IR Torque', m.peak_lead_hip_ir_torque_Nm.toFixed(1), 'N·m'],
+            m.peak_grf_vert_BW > 0 && ['Peak Vertical GRF', (m.peak_grf_vert_BW * 100).toFixed(0), '% BW'],
+            m.peak_contact_force_N > 0 && ['Contact Force (est)', m.peak_contact_force_N.toFixed(0), 'N'],
+        ]);
+
+        // ── Joint loads, OpenSim dynamics, leg muscle loads ───────────────
+        const idTiles = (m.peak_hip_moment_id_l_Nm > 0 || m.peak_hip_moment_id_r_Nm > 0) ? tiles([
+            ['Lead Hip Moment', num(m.peak_hip_moment_id_l_Nm, 0), 'N·m'], ['Trail Hip Moment', num(m.peak_hip_moment_id_r_Nm, 0), 'N·m'],
+            ['Lead Knee Moment', num(m.peak_knee_moment_id_l_Nm, 0), 'N·m'], ['Trail Knee Moment', num(m.peak_knee_moment_id_r_Nm, 0), 'N·m'],
+            ['Lead Ankle Moment', num(m.peak_ankle_moment_id_l_Nm, 0), 'N·m'], ['Trail Ankle Moment', num(m.peak_ankle_moment_id_r_Nm, 0), 'N·m'],
+            ['Lead Hip Force', num(m.peak_hip_force_id_l_N, 0), 'N'], ['Lead Knee Force', num(m.peak_knee_force_id_l_N, 0), 'N'],
+        ]) : '';
+        const st = diagnosis.opensim_id_status;
+        const osNote = st ? (st.ran ? (st.reliable === false ? `OpenSim inverse dynamics ran but its moments are withheld: ${esc(st.reason || '')}`
+                                                            : `OpenSim inverse dynamics ran${st.grf_source === 'model_consistent' ? ' with model-consistent ground forces' : ''}.${st.reason ? ' ' + esc(st.reason) : ''}`)
+                                   : `OpenSim inverse dynamics did not run: ${esc(st.reason || '')}`) : '';
+        const cmp = diagnosis.dynamics_comparison;
+        const cmpTable = (cmp && cmp.rows && cmp.rows.length) ? `<table class="pr-table"><thead><tr><th>Quantity</th>${cmp.sources.map(s => `<th class="r">${esc(s.label)}</th>`).join('')}<th class="r">Δ ours</th></tr></thead><tbody>`
+            + cmp.rows.map(r => `<tr><td>${esc(r.quantity)} <span class="pr-src">${esc(r.unit)}</span></td>${cmp.sources.map(s => `<td class="r">${r.values[s.key] == null ? '—' : Math.round(r.values[s.key])}</td>`).join('')}<td class="r">${r.delta_pct == null ? '—' : (r.delta_pct > 0 ? '+' : '') + r.delta_pct.toFixed(0) + '%'}</td></tr>`).join('')
+            + '</tbody></table>' : '';
+        const ml = diagnosis.muscle_loads;
+        let mlHtml = '';
+        if (ml) {
+            if (ml.status === 'ok' && ml.groups) {
+                const rows = {};
+                Object.entries(ml.groups).forEach(([name, g]) => { const side = name.split(' ')[0]; const grp = name.slice(side.length + 1); (rows[grp] = rows[grp] || {})[side] = g; });
+                const sides = Object.keys(ml.groups).some(k => k.startsWith('Lead')) ? ['Lead', 'Trail'] : ['Left', 'Right'];
+                const cell = g => g ? `${Math.round(g.peak_activation * 100)}% · ${Math.round(g.peak_force_N)} N` : '—';
+                mlHtml = `<table class="pr-table"><thead><tr><th>Muscle group</th>${sides.map(s => `<th class="r">${s} leg</th>`).join('')}</tr></thead><tbody>`
+                    + Object.keys(rows).sort().map(g => `<tr><td>${esc(g.charAt(0).toUpperCase() + g.slice(1))}</td>${sides.map(s => `<td class="r">${cell(rows[g][s])}</td>`).join('')}</tr>`).join('') + '</tbody></table>';
+            } else {
+                mlHtml = `<p class="pr-note">${esc(ml.status === 'failed' ? 'Muscle loads could not be computed for this capture (' + (ml.reason || 'unknown error') + ').' : (ml.reason || 'Muscle loads withheld for this capture.'))}</p>`;
+            }
+        }
+        const dynHtml = (idTiles ? `<div class="pr-adv">${idTiles}</div>` : '') + (osNote ? `<p class="pr-note">${osNote}</p>` : '') + cmpTable;
+
+        // ── Findings, recommendations, advanced physics ───────────────────
         const list = arr => (arr || []).map(x => `<li>${esc(x)}</li>`).join('') || '<li>—</li>';
-
-        // Structured prescriptions from the prescription engine (fall back to free-text recs).
-        const rxHtml = (rep.prescriptions && rep.prescriptions.length)
-            ? rep.prescriptions.map(p => `<li><b>${esc(p.label)}</b> <span style="color:#b6791b;">(${esc(p.percentile)}th pct)</span> — ${esc(p.cue)}. <i>Drill:</i> ${esc(p.drill)}</li>`).join('')
-            : list(diagnosis.recommendations);
-
-        // Advanced Physics — mirror the on-screen advanced panel.
         const grf = diagnosis.grf_estimation || {};
-        const advRows = [
-            ['Max Hip-Shoulder Separation', num(m.max_separation_deg, 1), '°'],
-            ['Peak Hip Power', num(m.peak_hip_power_W, 0), 'W'],
-            ['Relative Hip Power', num(m.hip_power_per_kg, 1), 'W/kg'],
+        const advHtml = tiles([
+            ['Max Separation', num(m.max_separation_deg, 1), '°'],
+            m.max_hand_speed_mph > 0 && ['Max Hand Speed', num(m.max_hand_speed_mph, 1), 'mph'],
             ['Sequence Timing', num(m.sequence_timing_ms, 0), 'ms'],
+            ['Torso/Pelvis Ratio', num(m.torso_to_pelvis_rot_ratio, 2), ''],
             ['Energy Transfer (proxy)', num(m.energy_transfer_proxy_pct, 1), '%'],
-            ['Torso / Pelvis Ratio', num(m.torso_to_pelvis_rot_ratio, 2), ''],
-            ['Total Chain Energy', num(m.total_energy_transfer_J, 0), 'J'],
-            ['Time to Contact', m.time_to_contact_s ? (m.time_to_contact_s * 1000).toFixed(0) : '—', 'ms'],
-            ['Rotational Accel', m.rotational_acceleration_deg_s2 ? (m.rotational_acceleration_deg_s2 / 1000).toFixed(1) : '—', 'k°/s²'],
-            ['Pelvis Rotation Share', num(m.pelvis_torso_contribution_pct, 1), '%'],
+            ['Stride Ratio', num(m.stride_ratio, 2), '× Ht'],
             ['Stride Efficiency', num(m.stride_efficiency_pct, 0), '%'],
-            ['Stride Ratio', num(m.stride_ratio, 2), 'x Ht'],
             ['Proper Sequence', m.proper_sequence ? 'Yes' : 'No', ''],
-            ['Pelvis KE', num(m.pelvis_ke_J, 1), 'J'],
-            ['Torso KE', num(m.torso_ke_J, 1), 'J'],
-            ['Arm KE', num(m.arm_ke_J, 1), 'J'],
-            ['Bat KE', num(m.bat_ke_J, 1), 'J'],
-        ];
-        if (grf.peak_grf_vert_BW) advRows.push(['Peak GRF Vertical', (grf.peak_grf_vert_BW * 100).toFixed(0), '% BW']);
-        if (grf.peak_grf_ap_N) advRows.push(['Peak GRF Ant-Post', num(grf.peak_grf_ap_N, 0), 'N']);
-        const advHtml = advRows
-            .map(([l, v, u]) => `<div class="pr-adv-item"><span>${esc(l)}</span><b>${esc(v)}${u ? (' ' + esc(u)) : ''}</b></div>`)
-            .join('');
+            m.time_to_contact_s > 0 && ['Time to Contact', (m.time_to_contact_s * 1000).toFixed(0), 'ms'],
+            ['Peak Hip Power (rough)', num(m.peak_hip_power_W, 0), 'W'],
+            ['Total Chain KE (rough)', num(m.total_energy_transfer_J, 0), 'J'],
+            grf.peak_grf_vert_BW && ['Peak GRF Vertical', (grf.peak_grf_vert_BW * 100).toFixed(0), '% BW'],
+            grf.peak_grf_ap_N && ['Peak GRF Ant-Post', num(grf.peak_grf_ap_N, 0), 'N'],
+        ]);
 
         const html = `
           <div class="pr-page">
@@ -349,23 +464,32 @@ document.addEventListener('DOMContentLoaded', () => {
               <span><b>Height:</b> ${esc(val('height-ft'))}'${esc(val('height-in'))}"</span>
               <span><b>Weight:</b> ${esc(val('weight-lbs'))} lb</span>
               <span><b>Age:</b> ${esc(val('athlete-age'))}</span>
+              ${handed ? `<span><b>Bats:</b> ${esc(handed.charAt(0).toUpperCase() + handed.slice(1))}</span>` : ''}
               <span><b>Bat:</b> ${esc(val('bat-weight-oz'))} oz / ${esc(val('bat-length-in'))}"</span>
             </div>
             <div class="pr-scores">
               <div class="pr-score-main"><div class="pr-score-num">${score}</div><div class="pr-score-lbl">Swing Score / 100</div></div>
-              <div class="pr-stat"><div>${hand}</div><span>Hand Speed (mph)</span></div>
-              <div class="pr-stat"><div>${eff}</div><span>Mechanics score</span></div>
-              <div class="pr-stat"><div>${pelvis}</div><span>Pelvis Vel (°/s)</span></div>
+              <div class="pr-stat"><div>${hand}</div><span>${measuredHand ? 'Hand speed (mph)' : 'Est. hand speed (mph)'}</span></div>
+              <div class="pr-stat"><div>${mechScore}</div><span>Mechanics score</span></div>
+              <div class="pr-stat"><div>${pct}</div><span>${pctBasis}</span></div>
+              <div class="pr-stat"><div>${pelvis}</div><span>Peak pelvis speed (°/s)</span></div>
             </div>
-            <h3 class="pr-h3">12-Dimension Breakdown</h3>
-            <table class="pr-table"><thead><tr><th>Dimension</th><th style="text-align:right;">Value</th><th style="text-align:right;">Pct</th><th>Rating</th><th>Status</th></tr></thead><tbody>${dimsHtml}</tbody></table>
-            <h3 class="pr-h3">Advanced Physics</h3>
-            <div class="pr-adv">${advHtml}</div>
-            <div class="pr-cols">
+            ${scoreNote ? `<p class="pr-note">${scoreNote}</p>` : ''}${avgLine}
+            ${section('Swing Score Breakdown', scoreTable)}
+            ${section('Mechanics Score', mechTable, mechNote)}
+            ${section('Coaching Focus', focusHtml)}
+            ${section('Phase Report', phaseTable)}
+            ${section('Kinematic Sequence', seqHtml)}
+            ${section('Pelvis &amp; Lower Half', pelvisTiles ? `<div class="pr-adv">${pelvisTiles}</div>` : '')}
+            ${section('Joint Loads &amp; Dynamics', dynHtml)}
+            ${section('Leg Muscle Loads <span class="pr-tag">experimental</span>', mlHtml)}
+            <section class="pr-section"><div class="pr-cols">
               <div><h3 class="pr-h3">Mechanical Findings</h3><ul>${list(diagnosis.findings)}</ul></div>
-              <div><h3 class="pr-h3">Prescriptions</h3><ul>${rxHtml}</ul></div>
-            </div>
-            <div class="pr-foot">Generated by Swing Optimizer Pro · For performance training use only — not a medical diagnosis.</div>
+              <div><h3 class="pr-h3">Recommendations</h3><ul>${list(diagnosis.recommendations)}</ul></div>
+            </div></section>
+            ${section('Advanced Physics', advHtml ? `<div class="pr-adv">${advHtml}</div>` : '')}
+            <p class="pr-note pr-legend-note"><b>Evidence tiers:</b> A research-backed · B published, weaker link · C coaching consensus. Measurements the capture cannot support are shown as "not measured" or "withheld" rather than scored.</p>
+            <div class="pr-foot">Generated by Swing Optimizer Pro · For performance training use only, not a medical diagnosis.</div>
           </div>`;
 
         const host = document.getElementById('print-report');

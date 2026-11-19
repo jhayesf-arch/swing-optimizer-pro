@@ -673,6 +673,31 @@ label.btn { cursor: pointer; }
 .pr-cols ul { margin: 0; padding-left: 16px; font-size: 11.5px; line-height: 1.5; }
 .pr-cols li { margin-bottom: 5px; }
 /* taste-skill-ignore: printed report */
+.pr-table .r { text-align: right; }
+.pr-table .nw { white-space: nowrap; }
+.pr-table tr.pr-skip td { color: #8a887f; }
+.pr-why { font-size: 10px; color: #5f5d55; line-height: 1.35; }
+.pr-src { font-size: 9.5px; color: #8a887f; }
+.pr-tier { display: inline-block; border: 1px solid #c9c8c2; padding: 0 4px; font-size: 8.5px; color: #5f5d55; }
+.pr-tag { display: inline-block; font-size: 8.5px; color: #5f5d55; border: 1px solid #c9c8c2; padding: 0 4px; margin-left: 4px; font-weight: 400; vertical-align: 1px; }
+.pr-fixed { table-layout: fixed; }
+.pr-tag-warn { color: #b6791b; border-color: #e3c58e; }
+.pr-stars { color: #e0a800; letter-spacing: 1px; white-space: nowrap; }
+.pr-note { font-size: 10.5px; color: #5f5d55; line-height: 1.45; margin: 4px 0 8px; }
+.pr-section { break-inside: avoid-page; page-break-inside: avoid; }
+.pr-section .pr-table { break-inside: auto; }
+.pr-focus { display: flex; gap: 18px; align-items: flex-start; }
+.pr-body { flex: 0 0 120px; }
+.pr-body svg { width: 120px; height: auto; }
+.pr-rx { flex: 1; margin: 0; padding-left: 0; list-style: none; font-size: 11px; line-height: 1.45; }
+.pr-rx li { margin-bottom: 8px; }
+.pr-rx-title { font-weight: 500; color: #1d1c17; }
+.pr-rank { display: inline-block; width: 16px; height: 16px; line-height: 16px; text-align: center; background: #2456d6; color: #fff; font-size: 10px; margin-right: 6px; }
+.pr-pct { color: #b6791b; font-weight: 400; font-size: 10px; }
+.pr-chart { width: 100%; height: auto; display: block; }
+.pr-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 10px; color: #5f5d55; margin: 4px 0; }
+.pr-chip i { display: inline-block; width: 9px; height: 9px; margin-right: 4px; vertical-align: -1px; }
+.pr-legend-note { margin-top: 14px; }
 .pr-foot { margin-top: 18px; padding-top: 10px; border-top: 1px solid #e6e5e1; font-size: 9.5px; color: #8a887f; text-align: center; } /* taste-skill-ignore */
 
 /* ════════════════════════════════════════════════════════════════════
