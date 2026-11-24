@@ -2,9 +2,9 @@
 
 usage: python -m worker.video <trial.trc> <cam0_sync.mp4> <cam1_sync.mp4> <out.mp4> <title>
 
-OpenCap's *_sync.mp4 videos have one frame per .trc frame (both 120 fps), so
-frame i of each camera and skeleton frame i show the same instant. Output plays
-at 30 fps: quarter speed.
+OpenCap's *_sync.mp4 videos have one frame per .trc frame, so frame i of each
+camera and skeleton frame i show the same instant. Every frame is shown, at 30 fps:
+a 120 fps capture plays at 1/4 speed, a 240 fps capture at 1/8.
 """
 import os
 import subprocess
@@ -40,8 +40,14 @@ def side(a, b):
     return COLOR[s] if not (a in ('Neck', 'midHip') and b in ('Neck', 'midHip')) else COLOR['C']
 
 
+def capture_fps(trc):
+    t, _ = read_trc(trc)
+    return float(round(1.0 / np.median(np.diff(t))))
+
+
 def render_skeleton(trc, frames_dir, title, n_frames):
     t, P = read_trc(trc)
+    slow = capture_fps(trc) / 30.0
     n = min(len(t), n_frames)
     # OpenCap: Y up. Plot (X, -Z) horizontal, Y vertical: a rotation, not a mirror.
     pts = np.concatenate([P[m][:n] for a, b in BONES for m in (a, b)])
@@ -73,7 +79,7 @@ def render_skeleton(trc, frames_dir, title, n_frames):
         ax.set_axis_off()
         fig.texts.clear()
         fig.text(0.5, 0.965, title, ha='center', fontsize=10, weight='bold')
-        fig.text(0.5, 0.935, f'3-D skeleton   t = {t[i] - t[0]:.3f} s   (1/4 speed)', ha='center', fontsize=8, color='#5f5d55')
+        fig.text(0.5, 0.935, f'3-D skeleton   t = {t[i] - t[0]:.3f} s   (1/{slow:g} speed)', ha='center', fontsize=8, color='#5f5d55')
         fig.text(0.5, 0.02, 'orange = right side   blue = left side', ha='center', fontsize=7, color='#5f5d55')
         fig.savefig(os.path.join(frames_dir, f'{i:05d}.png'), facecolor='white')
     plt.close(fig)
@@ -89,8 +95,9 @@ def main(trc, cam0, cam1, out, title):
     n = min(nframes(cam0), nframes(cam1))
     with tempfile.TemporaryDirectory() as tmp:
         n = render_skeleton(trc, tmp, title, n)
-        fc = ('[0:v]setpts=4*PTS,scale=360:640,setsar=1[a];'
-              '[1:v]setpts=4*PTS,scale=360:640,setsar=1[b];'
+        slow = capture_fps(trc) / 30.0      # stretch the camera clips to one frame per 1/30 s
+        fc = (f'[0:v]setpts={slow:g}*PTS,scale=360:640,setsar=1[a];'
+              f'[1:v]setpts={slow:g}*PTS,scale=360:640,setsar=1[b];'
               '[2:v]scale=360:640,setsar=1[c];[a][b][c]hstack=inputs=3[v]')
         cmd = ['ffmpeg', '-v', 'error', '-y', '-i', cam0, '-i', cam1,
                '-framerate', '30', '-i', os.path.join(tmp, '%05d.png'),
