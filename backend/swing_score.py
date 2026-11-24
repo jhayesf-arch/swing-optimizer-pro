@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
-from mechanics_score import _ramp, _stars_to_points
+from mechanics_score import PLAUSIBLE_SD, _ramp, _stars_to_points, level_plausible_max
 
 VERSION = 'swing_v2'
 MIN_COVERAGE = 0.5
@@ -50,6 +50,16 @@ WEIGHTS = {
 PLAUSIBLE_MAX = {'torso_speed': 1300.0, 'pelvis_speed': 1200.0}
 MAX_TORSO_PELVIS_RATIO = 2.0
 
+
+def plausible_max(key: str, skill_level: Optional[str] = None) -> Optional[float]:
+    """Largest believable value of key: the absolute cap, tightened per level."""
+    cap = PLAUSIBLE_MAX.get(key)
+    level_cap = level_plausible_max(key, skill_level)
+    if level_cap is not None:
+        cap = level_cap if cap is None else min(cap, level_cap)
+    return cap
+
+
 # In the report, not in the score: no published batting values to score against.
 INFORMATIONAL = ('negative_move', 'forward_move', 'kinetic_chain_efficiency',
                  'follow_through_quality',
@@ -66,21 +76,27 @@ def _unreliable(evidence: Dict, keys) -> str:
     return ''
 
 
-def _implausible(key: str, dims: Dict) -> str:
+def _implausible(key: str, dims: Dict, skill_level: Optional[str] = None) -> str:
     def val(k):
         try:
             return float(((dims or {}).get(k) or {}).get('value'))
         except (TypeError, ValueError):
             return None
     v = val(key)
-    lim = PLAUSIBLE_MAX.get(key)
-    if v is not None and lim is not None and v > lim:
-        return f'{v:.0f} is beyond any published value ({lim:.0f}); likely a capture artifact'
+    # The torso/pelvis ratio names the cause, so it is reported ahead of the caps.
     if key == 'torso_speed':
         p = val('pelvis_speed')
         if v and p and v > MAX_TORSO_PELVIS_RATIO * p:
             return (f'torso {v:.0f} vs pelvis {p:.0f} deg/s is over {MAX_TORSO_PELVIS_RATIO:g}x; '
                     'batters show 1.1-1.6x, so the trunk signal is likely corrupted')
+    lim = plausible_max(key, skill_level)
+    if v is not None and lim is not None and v > lim:
+        if lim < PLAUSIBLE_MAX.get(key, float('inf')):
+            level = (skill_level or '').replace('_', ' ')
+            return (f'{v:.0f} is far above the published range for {level} hitters '
+                    f'(over {PLAUSIBLE_SD:g} SD above the mean, cap {lim:.0f}); likely a '
+                    'capture artifact, so it is not scored. Check this swing\'s video.')
+        return f'{v:.0f} is beyond any published value ({lim:.0f}); likely a capture artifact'
     return ''
 
 
@@ -115,7 +131,7 @@ def compute_swing_score(dims: Dict, evidence: Dict, mechanics: Optional[Dict],
         elif dim.get('available') is False:
             skip = dim.get('unavailable_reason') or 'not measured on this capture'
         else:
-            skip = _unreliable(evidence, ev_keys) or _implausible(key, dims)
+            skip = _unreliable(evidence, ev_keys) or _implausible(key, dims, skill_level)
         score = None
         if not skip:
             table = (thresholds.get(key) or {}).get(skill_level)

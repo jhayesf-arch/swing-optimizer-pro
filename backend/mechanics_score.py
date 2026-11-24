@@ -62,12 +62,40 @@ PLAUSIBLE = {
 }
 
 
-def _implausible(key: str, value: Optional[float]) -> str:
+# Per level, a value more than PLAUSIBLE_SD standard deviations above the published
+# mean for that level is far likelier to be capture noise than the athlete (about a
+# 1-in-30,000 swing). Means and SDs as in the analyzer's PUBLISHED_NORMS (Escamilla
+# et al. 2009; high school interpolated). This matters most for young hitters: their
+# hips and shoulders are narrower, so the same keypoint error is a larger angle
+# error, and differentiating to a speed amplifies it.
+PLAUSIBLE_SD = 4.0
+LEVEL_NORMS = {
+    'pelvis_speed': {'youth': (632, 117), 'high_school': (655, 102),
+                     'college': (678, 87), 'professional': (714, 87)},
+    'torso_speed':  {'youth': (717, 86), 'high_school': (787, 70),
+                     'college': (857, 53), 'professional': (897, 53)},
+}
+LEVEL_NORMS['peak_pelvis_omega_3d_deg_s'] = LEVEL_NORMS['pelvis_speed']
+
+
+def level_plausible_max(key: str, skill_level: Optional[str] = None) -> Optional[float]:
+    """mean + PLAUSIBLE_SD * SD for this level, or None when the key has no norm."""
+    norm = LEVEL_NORMS.get(key, {}).get(skill_level or '')
+    return None if not norm else norm[0] + PLAUSIBLE_SD * norm[1]
+
+
+def _implausible(key: str, value: Optional[float], skill_level: Optional[str] = None) -> str:
     lim = PLAUSIBLE.get(key)
+    level_lim = level_plausible_max(key, skill_level)
+    if level_lim is not None and (lim is None or level_lim < lim):
+        if value is not None and abs(value) > level_lim:
+            level = (skill_level or '').replace('_', ' ')
+            return (f'{value:.0f} is far above the published range for {level} hitters '
+                    f'(over {PLAUSIBLE_SD:g} SD above the mean, cap {level_lim:.0f}); likely a '
+                    'capture artifact, so it is not scored')
     if value is None or lim is None or abs(value) <= lim:
         return ''
     return f'{value:g} is outside the plausible range for one swing (limit {lim:g}); likely a capture artifact'
-
 
 
 def _ramp(x: float, pts: Iterable[Tuple[float, float]]) -> float:
@@ -157,8 +185,8 @@ def compute_mechanics_score(metrics: Dict, dims: Dict, evidence: Dict, skill_lev
     pts = PELVIS_SPEED[level]
     ref = f'{pts[1][0]}-{pts[-1][0]}°/s peak; peak 70-140 ms after plant'
     sub = []
-    if w and ok_w and _implausible('peak_pelvis_omega_3d_deg_s', w):
-        ok_w, why_w = False, _implausible('peak_pelvis_omega_3d_deg_s', w)
+    if w and ok_w and _implausible('peak_pelvis_omega_3d_deg_s', w, level):
+        ok_w, why_w = False, _implausible('peak_pelvis_omega_3d_deg_s', w, level)
     if w and ok_w:
         sub.append((0.7, _ramp(w, pts)))
     if t not in (None, 0.0):

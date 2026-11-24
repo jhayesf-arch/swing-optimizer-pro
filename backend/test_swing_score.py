@@ -82,3 +82,27 @@ if __name__ == '__main__':
         if name.startswith('test_'):
             fn()
             print('✓', name)
+
+
+def test_youth_rotation_speed_far_above_published_range_is_not_scored():
+    # 1160 deg/s pelvis for a youth hitter is ~4.5 SD above the published youth mean
+    # (632 +/- 117): flagged as a capture artifact, not rewarded.
+    fast = {**GOOD, 'pelvis_speed': {'value': 1160, 'stars': 5}}
+    r = score(fast, level='youth')
+    p = next(c for c in r['components'] if c['key'] == 'pelvis_speed')
+    assert p['status'] == 'skipped' and 'youth' in p['reason'], p
+
+
+def test_same_speed_within_range_for_a_faster_level_is_still_capped_absolutely():
+    # The level cap never loosens the absolute cap: 1250 deg/s is out for everyone.
+    fast = {**GOOD, 'pelvis_speed': {'value': 1250, 'stars': 5}}
+    for level in ('youth', 'college', 'professional'):
+        p = next(c for c in score(fast, level=level)['components'] if c['key'] == 'pelvis_speed')
+        assert p['status'] == 'skipped', (level, p)
+
+
+def test_normal_youth_speeds_are_scored():
+    ok = {**GOOD, 'pelvis_speed': {'value': 700, 'stars': 5}, 'torso_speed': {'value': 800, 'stars': 5}}
+    r = score(ok, level='youth')
+    assert all(c['status'] == 'scored' for c in r['components']
+               if c['key'] in ('pelvis_speed', 'torso_speed')), r
