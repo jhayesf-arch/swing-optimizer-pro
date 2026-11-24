@@ -1,0 +1,6 @@
+# Worker extras, on top of backend/requirements.txt.
+# Keep playwright pinned to the version of the Docker base image (Dockerfile.worker).
+playwright==1.49.1
+google-api-python-client
+google-auth
+PyYAML

@@ -7,3 +7,28 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
+
+  # Watches a Google Drive folder and turns each new OpenCap session into reports,
+  # videos and a written summary. Setup: worker/README.md.
+  - type: worker
+    name: swing-optimizer-worker
+    runtime: docker
+    dockerfilePath: ./Dockerfile.worker
+    plan: standard            # 2 GB: the browser, OpenSim and video rendering need it
+    envVars:
+      - key: INBOX_FOLDER_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_OAUTH_REFRESH_TOKEN
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: DEFAULT_LEVEL
+        value: high_school
+      - key: POLL_SECONDS
+        value: "300"
+      - key: SETTLE_MINUTES
+        value: "10"

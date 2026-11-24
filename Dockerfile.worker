@@ -1,0 +1,15 @@
+# Automated analysis worker: the app, a headless browser for the PDF reports, and ffmpeg for videos.
+# The base image ships Chromium for this exact Playwright version (see worker/requirements.txt).
+FROM mcr.microsoft.com/playwright/python:v1.49.1-noble
+
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY backend/requirements.txt backend/requirements.txt
+COPY worker/requirements.txt worker/requirements.txt
+RUN pip install --no-cache-dir -r backend/requirements.txt -r worker/requirements.txt
+
+COPY . .
+ENV PYTHONUNBUFFERED=1 MPLBACKEND=Agg
+CMD ["python", "-m", "worker.run", "watch"]
