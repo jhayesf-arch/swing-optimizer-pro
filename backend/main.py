@@ -1,6 +1,8 @@
 import os
+import shutil
+import tempfile
 from typing import List
-from fastapi import FastAPI, UploadFile, File, Form, Request
+from fastapi import FastAPI, UploadFile, File, Form, Request, HTTPException
 from fastapi.responses import JSONResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,6 +39,9 @@ async def add_no_cache_header(request: Request, call_next):
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "../docs")
 TMP_DIR = os.path.join(os.path.dirname(__file__), "tmp")
 os.makedirs(TMP_DIR, exist_ok=True)
+# Per-file upload cap (OpenCap .mot/.trc files are a few MB; a scaled model ~1 MB).
+MAX_UPLOAD_BYTES = int(float(os.environ.get("MAX_UPLOAD_MB", "100")) * 1024 * 1024)
+MAX_BATCH_FILES = int(os.environ.get("MAX_BATCH_FILES", "60"))
 
 # Last-resort model when none is uploaded with the trial. OPENSIM_MODEL_PATH
 # wins; the Desktop path keeps an existing local setup working. Either way it is
@@ -148,16 +153,43 @@ def _muscle_loads(mot_path, model_path, id_result, handedness):
         return {'status': 'failed', 'reason': f'{type(e).__name__}: {e}', 'experimental': True}
 
 
-async def _save_upload(upload, allowed_exts):
-    """Write an optional UploadFile to TMP_DIR. Returns the path or None."""
+def _request_dir() -> str:
+    """A private folder for one request's files: two people uploading the same file
+    name (every OpenCap model is LaiUhlrich2022_scaled.osim) never share a path, and
+    the whole folder, including files OpenSim writes beside the inputs, is removed after."""
+    return tempfile.mkdtemp(prefix="req_", dir=TMP_DIR)
+
+
+def _safe_name(filename: str) -> str:
+    """The client's file name with any folder part removed (both / and \\), never empty."""
+    name = os.path.basename((filename or "").replace("\\", "/")).strip()
+    return name if name not in ("", ".", "..") else "upload"
+
+
+async def _write_upload(upload, dest_dir: str) -> str:
+    """Stream an UploadFile into dest_dir under its bare name, enforcing the size cap."""
+    path = os.path.join(dest_dir, _safe_name(upload.filename))
+    size = 0
+    with open(path, "wb") as fh:
+        while True:
+            chunk = await upload.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > MAX_UPLOAD_BYTES:
+                raise HTTPException(status_code=413, detail=(
+                    f"{_safe_name(upload.filename)} is over the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB upload limit"))
+            fh.write(chunk)
+    return path
+
+
+async def _save_upload(upload, allowed_exts, dest_dir: str):
+    """Write an optional UploadFile into dest_dir. Returns the path or None."""
     if not upload or not upload.filename:
         return None
     if os.path.splitext(upload.filename)[1].lower() not in allowed_exts:
         return None
-    path = os.path.join(TMP_DIR, os.path.basename(upload.filename))
-    with open(path, "wb") as fh:
-        fh.write(await upload.read())
-    return path
+    return await _write_upload(upload, dest_dir)
 
 
 def _attach_dynamics(diagnosis, id_mags, reference_path, handedness, body_mass_kg):
@@ -586,17 +618,17 @@ async def analyze_upload(
     if not file.filename.endswith('.mot'):
         return JSONResponse(status_code=400, content={"success": False, "error": "File must be a .mot file"})
 
-    file_path = os.path.join(TMP_DIR, file.filename)
-    with open(file_path, "wb") as f:
-        f.write(await file.read())
-
-    trc_path = None
-    if trc_file and trc_file.filename and trc_file.filename.endswith('.trc'):
-        trc_path = os.path.join(TMP_DIR, trc_file.filename)
-        with open(trc_path, "wb") as f:
-            f.write(await trc_file.read())
-    model_path = await _save_upload(model_file, ('.osim',))
-    ref_path = await _save_upload(reference_file, ('.json', '.sto'))
+    work = _request_dir()
+    try:
+        file_path = await _write_upload(file, work)
+        trc_path = None
+        if trc_file and trc_file.filename and trc_file.filename.endswith('.trc'):
+            trc_path = await _write_upload(trc_file, work)
+        model_path = await _save_upload(model_file, ('.osim',), work)
+        ref_path = await _save_upload(reference_file, ('.json', '.sto'), work)
+    except HTTPException as e:
+        shutil.rmtree(work, ignore_errors=True)
+        return JSONResponse(status_code=e.status_code, content={"success": False, "error": e.detail})
 
     try:
         optimizer = RefinedHittingOptimizer(
@@ -613,7 +645,7 @@ async def analyze_upload(
         kinematics, trc_data = _crop_to_swing(kinematics, trc_data)
         # Only an athlete-specific model feeds our segment masses — never the
         # Desktop fallback, which belongs to a different session.
-        diagnosis = optimizer.comprehensive_diagnosis(kinematics, file.filename, trc_data=trc_data,
+        diagnosis = optimizer.comprehensive_diagnosis(kinematics, _safe_name(file.filename), trc_data=trc_data,
                                                       model_path=model_path or ENV_MODEL)
         if trc_data is not None:
             try:
@@ -637,16 +669,12 @@ async def analyze_upload(
                           time_range=_time_range(kinematics), handedness=handedness)
         _attach_dynamics(diagnosis, id_mags, ref_path, handedness, weight_kg)
         diagnosis.pop('_rotation', None)   # numpy arrays — not JSON-serialisable
-        return JSONResponse(content={"filename": file.filename, "success": True, "data": diagnosis})
+        return JSONResponse(content={"filename": _safe_name(file.filename), "success": True, "data": diagnosis})
     except Exception as e:
         import traceback; traceback.print_exc()
         return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
     finally:
-        if os.path.exists(file_path):
-            os.remove(file_path)
-        for p in (trc_path, model_path, ref_path):
-            if p and os.path.exists(p):
-                os.remove(p)
+        shutil.rmtree(work, ignore_errors=True)
 
 @app.post("/api/analyze/batch")
 async def analyze_batch(
@@ -671,38 +699,33 @@ async def analyze_batch(
     if not mots:
         return JSONResponse(status_code=400, content={"success": False, "error": "No .mot files provided"})
 
+    if len(mots) > MAX_BATCH_FILES:
+        return JSONResponse(status_code=413, content={
+            "success": False, "error": f"At most {MAX_BATCH_FILES} swings per batch"})
+
     # Pair markers to kinematics by filename stem (OpenCap splits them across folders).
     trc_by_stem = {}
-    written = []
+    work = _request_dir()
     try:
         for tf in (trc_files or []):
             if not tf or not tf.filename or not tf.filename.endswith('.trc'):
                 continue
-            path = os.path.join(TMP_DIR, os.path.basename(tf.filename))
-            with open(path, "wb") as fh:
-                fh.write(await tf.read())
-            written.append(path)
+            path = await _write_upload(tf, work)
             trc_by_stem[os.path.splitext(os.path.basename(tf.filename))[0].lower()] = path
 
         # One scaled model per batch (one athlete); references pair by stem.
-        model_path = await _save_upload(model_file, ('.osim',))
-        if model_path:
-            written.append(model_path)
+        model_path = await _save_upload(model_file, ('.osim',), work)
         ref_by_stem = {}
         for rf in (reference_files or []):
-            rp = await _save_upload(rf, ('.json', '.sto'))
+            rp = await _save_upload(rf, ('.json', '.sto'), work)
             if rp:
-                written.append(rp)
                 ref_by_stem[reference_stem(rf.filename)] = rp
 
         swings, errors = [], []
         for uf in mots:
-            name = os.path.basename(uf.filename)
+            name = _safe_name(uf.filename)
             stem = os.path.splitext(name)[0]
-            mot_path = os.path.join(TMP_DIR, name)
-            with open(mot_path, "wb") as fh:
-                fh.write(await uf.read())
-            written.append(mot_path)
+            mot_path = await _write_upload(uf, work)
             try:
                 opt = RefinedHittingOptimizer(
                     body_mass_kg=weight_kg, body_height_m=height_m,
@@ -798,13 +821,13 @@ async def analyze_batch(
             "errors": errors,
             **agg,
         })
+    except HTTPException as e:
+        return JSONResponse(status_code=e.status_code, content={"success": False, "error": e.detail})
     except Exception as e:
         import traceback; traceback.print_exc()
         return JSONResponse(status_code=500, content={"success": False, "error": str(e)})
     finally:
-        for p in written:
-            if os.path.exists(p):
-                os.remove(p)
+        shutil.rmtree(work, ignore_errors=True)
 
 
 @app.post("/api/coach")
