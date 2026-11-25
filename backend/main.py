@@ -242,7 +242,12 @@ def _kinematic_sequence(mot_df, rotation=None, max_points: int = 72) -> dict:
     # Window the chart to the swing itself, anchored on the pelvis peak.
     swing_start = int(rotation.get('swing_start_frame') or 0)
     pelw = raw['Pelvis']
-    peak = int(np.argmax(pelw[swing_start:])) + swing_start
+    # The analyzer's own pelvis peak (tied to the hands, in the swing direction);
+    # the fastest frame after swing start can be a walk-off turn or an unwind.
+    if rotation.get('peak_pelvis_frame') is not None:
+        peak = min(n - 1, max(swing_start, int(round(float(rotation['peak_pelvis_frame'])))))
+    else:
+        peak = int(np.argmax(pelw[swing_start:])) + swing_start
     start = max(0, min(swing_start, peak - int(0.05 / dt)))
     end = min(n - 1, peak + int(0.20 / dt))
     if end - start < 4:

@@ -269,6 +269,19 @@ def test_pelvis_force_peak_is_not_the_crop_edge():
     assert d['metrics']['peak_pelvis_force_resultant_N'] < 100.0, d['metrics']['peak_pelvis_force_resultant_N']
 
 
+def test_sequence_chart_is_drawn_around_the_swing_not_a_later_unwind():
+    import main
+    n = int(3.0 * FS)
+    t = np.arange(n) / FS
+    mot = _mot(70 * _ramp(t, 1.0, 0.25) - 120 * _ramp(t, 1.95, 0.15), 20 * _ramp(t, 1.05, 0.22))
+    r = _opt().calculate_rotational_torques_refined(mot, hand_speed_peak_time_s=1.25)
+    ks = main._kinematic_sequence(mot, r)
+    # The chart runs to 200 ms after the pelvis peak; anchored on the unwind it
+    # ran ~1 s past the swing and squeezed the swing into the first fifth.
+    pel = ks['peaks']['Pelvis']['t_ms']
+    assert 0 <= pel and ks['time_ms'][-1] - pel < 260, (pel, ks['time_ms'][-1])
+
+
 if __name__ == '__main__':
     for _n in sorted(dir()):
         if _n.startswith('test_'):
