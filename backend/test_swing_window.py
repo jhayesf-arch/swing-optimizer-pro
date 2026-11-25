@@ -93,6 +93,21 @@ def test_one_wrist_burst_before_the_swing_is_not_hand_speed():
     assert 9.5 < m['max_hand_speed_mps'] < 10.5, m['max_hand_speed_mps']
 
 
+def test_transition_is_the_last_pelvis_reversal_before_the_peak():
+    # Load: the pelvis turns back 15 deg (0.6-0.95 s), then fires 85 deg.
+    # Top of the backswing = where pelvis omega changes sign, ~0.95 s, which is
+    # BEFORE swing start (a speed threshold, by definition past the top).
+    n = int(2.5 * FS)
+    t = np.arange(n) / FS
+    pelvis = -15 * _ramp(t, 0.6, 0.35) + 85 * _ramp(t, 0.95, 0.30)
+    lumbar = -25 * _ramp(t, 0.97, 0.12) + 25 * _ramp(t, 1.15, 0.20)   # trunk lags: separation grows
+    r = _opt().calculate_rotational_torques_refined(_mot(pelvis, lumbar), hand_speed_peak_time_s=1.30)
+    tr, ss = r['transition_frame'], r['swing_start_frame']
+    assert abs(tr / FS - 0.95) < 0.03, tr / FS
+    assert tr < ss < r['peak_pelvis_frame'], (tr, ss, r['peak_pelvis_frame'])
+    assert r['x_factor_stretch_deg'] > 15.0, r['x_factor_stretch_deg']
+
+
 if __name__ == '__main__':
     for _n in sorted(dir()):
         if _n.startswith('test_'):

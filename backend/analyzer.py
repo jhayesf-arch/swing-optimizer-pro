@@ -1926,17 +1926,21 @@ class RefinedHittingOptimizer:
         contact_before_swing_start = bool(contact_frame < swing_start)
 
         # ── Transition (top of the backswing) ────────────────────────────────────
-        # The instant the pelvis reverses from loading to firing. Found by walking back
-        # from contact to the last sign change in pelvis angular velocity.
+        # The instant the pelvis reverses from loading to firing: the last sign change
+        # in pelvis angular velocity before its peak (METRIC_FORMULAS.md), searched up
+        # to 1 s back.
         #
         # This is a different event from swing_start, which is a speed threshold and is
-        # therefore already past the top by the time it triggers. X-Factor stretch has
-        # to be measured from the true top: measured from swing_start it came out
-        # exactly 0.0 on every real trial, because separation is at its maximum the
-        # moment the threshold trips and only decays afterward.
-        transition_frame = swing_start
-        for i in range(contact_frame - 1, swing_start, -1):
-            if pelvis_omega[i] * pelvis_omega[contact_frame] <= 0:
+        # therefore already past the top by the time it triggers, so swing start must
+        # not bound the search: bounded by it (and walked back from contact, where the
+        # pelvis may already be slowing or reversing) the transition landed on swing
+        # start in 117 of 132 real trials and after the pelvis peak in 14, and X-factor
+        # stretch read exactly 0 on 31.
+        _pk_t = int(min(max(peak_pelvis_frame_global, 0), len(pelvis_omega) - 1))
+        _tr_lo = max(0, _pk_t - int(round(1.0 * fs)))
+        transition_frame = min(swing_start, _pk_t)   # no reversal within 1 s: no clear top
+        for i in range(_pk_t - 1, _tr_lo - 1, -1):
+            if swing_dir * pelvis_omega[i] <= 0:
                 transition_frame = i
                 break
 
