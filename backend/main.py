@@ -67,6 +67,15 @@ def _run_id(file_path, model_path, bat_mass_kg, bat_length_m, diagnosis,
               'model_source': ('uploaded' if model_uploaded else
                                'OPENSIM_MODEL_PATH' if ENV_MODEL else 'default')}
     diagnosis['opensim_id_status'] = status
+    gate = diagnosis.get('joint_loads_status') or {}
+    if gate.get('capture_gate'):
+        # Not a usable full swing (capture quality, or peak pelvis speed under the
+        # analyzer's floor): joint moments would describe the wrong movement, so
+        # ID is not run at all rather than run and shown.
+        status.update(reliable=False, reason=gate.get('reason'))
+        diagnosis['muscle_loads'] = {'status': 'withheld', 'experimental': True,
+                                     'reason': gate.get('reason')}
+        return None
     if not HAS_OPENSIM_ID:
         status['reason'] = ('OpenSim is not installed on this server (the opensim '
                             'wheel needs Python 3.11–3.13; see DYNAMICS_REFERENCE.md).')
@@ -81,6 +90,9 @@ def _run_id(file_path, model_path, bat_mass_kg, bat_length_m, diagnosis,
             file_path, model_path=model_path,
             bat_mass_kg=bat_mass_kg, bat_length_m=bat_length_m,
             external_loads=foot_loads, time_range=time_range,
+            # The analyzer's swing window, shared with the bottom-up estimate so
+            # the comparison table compares the same frames.
+            window=diagnosis.get('dynamics_window_s'),
         )
     except Exception as e:
         status['reason'] = f'OpenSim ID failed: {type(e).__name__}: {e}'
@@ -262,7 +274,12 @@ def _kinematic_sequence(mot_df, rotation=None, max_points: int = 72) -> dict:
     # Window the chart to the swing itself, anchored on the pelvis peak.
     swing_start = int(rotation.get('swing_start_frame') or 0)
     pelw = raw['Pelvis']
-    peak = int(np.argmax(pelw[swing_start:])) + swing_start
+    # The analyzer's own pelvis peak (tied to the hands, in the swing direction);
+    # the fastest frame after swing start can be a walk-off turn or an unwind.
+    if rotation.get('peak_pelvis_frame') is not None:
+        peak = min(n - 1, max(swing_start, int(round(float(rotation['peak_pelvis_frame'])))))
+    else:
+        peak = int(np.argmax(pelw[swing_start:])) + swing_start
     start = max(0, min(swing_start, peak - int(0.05 / dt)))
     end = min(n - 1, peak + int(0.20 / dt))
     if end - start < 4:
@@ -313,24 +330,11 @@ def _kinematic_sequence(mot_df, rotation=None, max_points: int = 72) -> dict:
 
 def _hand_peak_time(trc_df):
     """Time (s) the wrists move fastest, or None without wrist markers. Only the
-    swing itself moves the hands that fast, so it marks the swing reliably."""
-    import numpy as np
-    from scipy.signal import butter, filtfilt
-    if trc_df is None:
-        return None
-    tcol = 'Time' if 'Time' in trc_df.columns else 'time' if 'time' in trc_df.columns else None
-    wrists = [w for w in ('LWrist', 'RWrist') if all(f'{w}_{x}' in trc_df.columns for x in 'XYZ')]
-    if not tcol or not wrists or len(trc_df) < 16:
-        return None
-    tt = trc_df[tcol].values.astype(float)
-    b, a = butter(4, min(12.0 / (0.5 / float(np.median(np.diff(tt)))), 0.99), btype='low')
-    from analyzer import despike_marker
-    # Both hands hold the bat: the swing is where the slower wrist is fastest,
-    # so a tracking burst on one wrist cannot move the crop.
-    speed = np.min([np.linalg.norm(np.gradient(
-        filtfilt(b, a, despike_marker(trc_df[[f'{w}_{x}' for x in 'XYZ']].values.astype(float), tt)[0], axis=0),
-        tt, axis=0), axis=1) for w in wrists], axis=0)
-    return float(tt[int(np.argmax(speed))])
+    swing itself moves the hands that fast, so it marks the swing reliably.
+    The analyzer times its hand speed with the same function, so the crop and
+    the reported hand speed always agree on when the swing was."""
+    from analyzer import hand_peak_time
+    return hand_peak_time(trc_df)
 
 
 def _crop_to_swing(kin, trc_df, before_s: float = 2.0, after_s: float = 1.0):

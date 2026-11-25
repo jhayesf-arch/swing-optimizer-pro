@@ -3,7 +3,7 @@ import os
 import glob
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, fields
 from typing import Dict, List, Tuple, Optional
 
 try:
@@ -36,6 +36,15 @@ def butter_lowpass_filter(data, cutoff, fs, order=4):
 # wrapping behind the body in the follow-through), not motion.
 MAX_WRIST_SPEED_MPS = 22.0
 
+# Time tolerances for the sequence and signal checks. They were frame counts, so
+# the same swing got a different verdict at a different frame rate (Ethan
+# 1003_7: proper sequence at 120 Hz, reversed at 240 Hz). Each is the old frame
+# count at 120 Hz, OpenCap's usual capture rate, expressed in seconds.
+SEQUENCE_TOL_S = 1.0 / 120.0      # peak-order tolerance and "indeterminate" cut-off (~8 ms)
+SURGE_HALF_S = 3.0 / 120.0        # half-width of a local peak in the surge check (25 ms)
+CLIP_MIN_S = 3.0 / 120.0          # a joint-stop clip holds its value at least this long
+LUMBAR_SNAP_DEG_S = 30.0 * 120.0  # lumbar change faster than this is an IK snap (30 deg/frame at 120 Hz)
+
 
 def despike_marker(xyz: np.ndarray, t: np.ndarray, max_speed: float = MAX_WRIST_SPEED_MPS,
                    passes: int = 3) -> Tuple[np.ndarray, int]:
@@ -57,6 +66,53 @@ def despike_marker(xyz: np.ndarray, t: np.ndarray, max_speed: float = MAX_WRIST_
             x[bad, k] = np.interp(t[bad], t[good], x[good, k])
         fixed += int(bad.sum())
     return x, fixed
+
+
+def fill_gaps(df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
+    """Missing samples (NaN) interpolated linearly from their neighbours, with the
+    first/last valid value held at the edges. Every filter downstream (Butterworth,
+    Savitzky-Golay) fails or smears NaN over the whole series otherwise: one NaN in
+    pelvis_rotation raised ValueError (an HTTP 500), one in a wrist made hand speed
+    NaN. Returns the frame unchanged when nothing is missing; attrs are kept."""
+    if df is None or len(df) == 0:
+        return df
+    num = df.select_dtypes(include=[np.number]).columns
+    if not df[num].isna().any().any():
+        return df
+    attrs = dict(df.attrs)
+    out = df.copy()
+    for c in num:
+        if out[c].isna().any() and out[c].notna().any():
+            out[c] = out[c].interpolate(method='linear', limit_direction='both')
+    out.attrs.update(attrs)
+    return out
+
+
+def hand_peak_time(trc_df) -> Optional[float]:
+    """Time (s) the two wrists move fastest together, or None without wrist
+    markers. Both hands hold the bat, so the swing is where the SLOWER wrist is
+    fastest: a tracking burst on one wrist cannot move it. Used both to crop the
+    recording to the swing (main._crop_to_swing) and to time hand speed.
+
+    The speeds are low-passed at 6 Hz for TIMING only. A swing keeps both hands
+    fast for ~0.1 s; follow-through tracking loss is a 30-50 ms burst that can
+    drag the slower wrist along with it. At 12 Hz such a burst out-ranked the
+    swing on Mateo 1010_4 (39 mph, 0.5 s after a 813 deg/s pelvis peak) and
+    Sean 1011; at 6 Hz the swing wins on both. Hand SPEED is still read from the
+    15 Hz signal (calculate_trc_metrics)."""
+    if trc_df is None:
+        return None
+    trc_df = fill_gaps(trc_df)
+    tcol = 'Time' if 'Time' in trc_df.columns else 'time' if 'time' in trc_df.columns else None
+    wrists = [w for w in ('LWrist', 'RWrist') if all(f'{w}_{x}' in trc_df.columns for x in 'XYZ')]
+    if not tcol or not wrists or len(trc_df) < 16 or not HAS_SCIPY:
+        return None
+    tt = trc_df[tcol].values.astype(float)
+    b, a = butter(4, min(6.0 / (0.5 / float(np.median(np.diff(tt)))), 0.99), btype='low')
+    speed = np.min([np.linalg.norm(np.gradient(
+        filtfilt(b, a, despike_marker(trc_df[[f'{w}_{x}' for x in 'XYZ']].values.astype(float), tt)[0], axis=0),
+        tt, axis=0), axis=1) for w in wrists], axis=0)
+    return float(tt[int(np.argmax(speed))])
 
 
 def savgol_smooth_and_diff(data, window=11, polyorder=3, deriv=0, dt=1.0):
@@ -975,16 +1031,27 @@ def assess_capture_quality(rotation: dict, dims: dict, has_markers: bool,
     if rotation is not None and dt:
         pom = rotation.get('pelvis_omega')
         start = rotation.get('swing_start_frame')
-        if pom is not None and start is not None and len(pom):
-            swing_ms = float((int(np.argmax(np.abs(pom))) - int(start)) * dt * 1000.0)
+        pk = rotation.get('peak_pelvis_frame')
+        if pk is None and pom is not None and len(pom):
+            pk = int(np.argmax(np.abs(pom)))
+        if pk is not None and start is not None:
+            swing_ms = float((float(pk) - int(start)) * dt * 1000.0)
             if swing_ms < 60 or swing_ms > 600:
                 score -= 20
                 reasons.append(f"implausible swing window ({swing_ms:.0f} ms) — segmentation may have misfired")
 
+    # The hands reached contact before the pelvis started the swing: whatever
+    # was segmented is not this swing, so nothing measured on it can be used.
+    contact_first = bool((rotation or {}).get('contact_before_swing_start'))
+    if contact_first:
+        score -= 60
+        reasons.append("contact (hand speed) came before the swing started — the swing "
+                       "could not be segmented on this capture")
+
     score = int(max(0, min(100, score)))
     return {
         'score': score,
-        'usable': score >= CAPTURE_QUALITY_MIN,
+        'usable': score >= CAPTURE_QUALITY_MIN and not contact_first,
         'reasons': reasons,
         'peak_pelvis_omega_deg_s': round(peak_dgs, 1),
         'swing_window_ms': round(swing_ms, 1) if swing_ms is not None else None,
@@ -1049,7 +1116,7 @@ class RefinedHittingOptimizer:
             data[rot] = np.degrees(data[rot])
         # Attach event times as metadata via attrs (pandas 1.0+)
         data.attrs.update(event_times)
-        return data
+        return fill_gaps(data)
         
     def load_trc_file(self, filepath: str) -> pd.DataFrame:
         """Parse native .trc file with OpenSim header stripping and flatten columns"""
@@ -1110,7 +1177,7 @@ class RefinedHittingOptimizer:
             df.columns = flat_cols[:len(df.columns)]
             if scale != 1.0:
                 df.iloc[:, 2:] = df.iloc[:, 2:].astype(float) * scale
-            return df
+            return fill_gaps(df)
         except Exception:
             return None
             
@@ -1118,7 +1185,8 @@ class RefinedHittingOptimizer:
         """Extract spatial metrics (e.g. hand speed) from 3D marker coordinates"""
         if trc_data is None or len(trc_data) == 0:
             return {'max_hand_speed_mph': 0.0}
-            
+        trc_data = fill_gaps(trc_data)
+
         dt = trc_data['Time'].diff().mean()
         if dt <= 0 or np.isnan(dt): dt = 1/60.0
         fs = 1.0 / dt
@@ -1159,18 +1227,21 @@ class RefinedHittingOptimizer:
                     side_speed[sd] = marker_speed[(sd, wrist)]
                     break
         if side_speed:
-            # When is the swing? Both hands hold one bat, so their speed peaks
-            # coincide. When the two wrists disagree, the later peak is the
-            # follow-through: OpenCap often loses the lead arm as it wraps behind
-            # the body, reading 35-40 mph for ~0.1 s. So the swing is the shared
-            # peak when the wrists agree (within 0.15 s), else the earlier peak.
-            peaks = {sd: int(np.argmax(v)) for sd, v in side_speed.items()}
-            pk_list = sorted(peaks.values())
-            if len(pk_list) == 2 and abs(times[pk_list[1]] - times[pk_list[0]]) <= 0.15:
-                both = np.mean(list(side_speed.values()), axis=0)
-                pk0 = pk_list[0] + int(np.argmax(both[pk_list[0]:pk_list[1] + 1]))
+            # When is the swing? Both hands hold one bat, so the swing is where
+            # the two wrists move fast TOGETHER: the peak of the slower wrist, the
+            # same timing the crop uses (hand_peak_time). A burst on one wrist alone is
+            # tracking: OpenCap loses the lead arm as it wraps behind the body in
+            # the follow-through (35-40 mph for ~0.1 s), and on Talen 1007 the
+            # right wrist read 26.6 mph ~0.5 s before the swing while the left
+            # read 0.6. Taking "the earlier of two disagreeing peaks" reported
+            # that burst as hand speed on 5 of his 10 trials.
+            _hp = hand_peak_time(trc_data)
+            if _hp is not None:
+                pk0 = int(np.argmin(np.abs(times - _hp)))
+            elif len(side_speed) == 2:
+                pk0 = int(np.argmax(np.min(np.vstack(list(side_speed.values())), axis=0)))
             else:
-                pk0 = pk_list[0]
+                pk0 = int(np.argmax(next(iter(side_speed.values()))))
             # Hand speed: the fastest wrist marker within 30 ms of that moment.
             w0, w1 = max(0, pk0 - int(0.03 * fs)), min(len(times), pk0 + int(0.03 * fs) + 1)
             best = max(marker_speed.values(), key=lambda v: float(np.max(v[w0:w1])))
@@ -1329,6 +1400,7 @@ class RefinedHittingOptimizer:
     def calculate_rotational_torques_refined(self, data: pd.DataFrame, wrist_speed_mps: float = 0.0,
                                              hand_speed_peak_time_s: float = 0.0,
                                              marker_separation: Optional[Dict] = None) -> Dict:
+        data = fill_gaps(data)
         dt = data['time'].diff().mean()
         fs = 1.0 / dt if dt > 0 else 60.0
         
@@ -1353,7 +1425,9 @@ class RefinedHittingOptimizer:
         #  1. Flag frames stuck at the joint limit (|angle| >= 89.5°).
         #  2. Also flag the frame *after* any clamped run (the release/snap frame).
         #  3. Linearly interpolate over all flagged frames.
-        # Secondary check: any single-frame jump > 30° that isn't already flagged is also
+        # Secondary check: any single-frame jump faster than LUMBAR_SNAP_DEG_S (30° per
+        # frame at 120 Hz; a rate, so the rule does not change with the frame rate)
+        # that isn't already flagged is also
         # a discontinuity artifact — extend the mask to cover it.
         limit = 89.5  # deg — just inside the ±90° OpenSim joint limit
         bad = np.abs(lumbar_raw_deg) >= limit
@@ -1361,8 +1435,8 @@ class RefinedHittingOptimizer:
         bad_dilated = bad.copy()
         bad_dilated[1:] |= bad[:-1]
         # Also mask frames with single-frame jumps > 30° that aren't yet masked
-        jumps = np.abs(np.diff(lumbar_raw_deg))
-        jump_frames = np.where(jumps > 30.0)[0] + 1  # frame where the snap appears
+        jumps = np.abs(np.diff(lumbar_raw_deg)) / max(dt, 1e-9)   # deg/s
+        jump_frames = np.where(jumps > LUMBAR_SNAP_DEG_S)[0] + 1  # frame where the snap appears
         for jf in jump_frames:
             bad_dilated[max(0, jf-1):min(len(bad_dilated), jf+2)] = True
         # Interpolate over bad frames using surrounding valid values
@@ -1456,7 +1530,38 @@ class RefinedHittingOptimizer:
         #   - Drill files (upper_first, lower_first): if the preceding drill movement has
         #     already decayed to quiet before the actual swing ramp, the detector finds the
         #     correct quiet gap between them.
-        peak_pelvis_frame_global = int(np.argmax(np.abs(pelvis_omega)))
+        # The pelvis peak is the one that drives the hands. Taken anywhere in the
+        # clip, |omega| let a faster turn while walking off or a reverse unwind
+        # after the finish win (Keller 1002: a -289 deg/s unwind 667 ms after the
+        # swing), and a peak after the hands pushed swing start past contact. With
+        # a hand (marker) contact time, the peak is searched from 0.4 s before it
+        # to 0.1 s after, in the direction the pelvis turned on the way to contact.
+        def _window_peak(sig, lo, hi):
+            # A peak, not the window's edge: a turn still speeding up at the last
+            # frame searched is the next movement (Sean 1011: a burst starting
+            # 100 ms after contact outranked the 364 deg/s swing peak before it).
+            w = np.asarray(sig[lo:hi], dtype=float)
+            if len(w) == 0:
+                return lo
+            inner = [i for i in range(1, len(w) - 1)
+                     if w[i] > 0 and w[i] >= w[i - 1] and w[i] >= w[i + 1]]
+            return lo + (max(inner, key=lambda i: w[i]) if inner else int(np.argmax(w)))
+
+        _n = len(pelvis_omega)
+        _times = data['time'].values.astype(float)
+        hand_frame = None
+        if hand_speed_peak_time_s and hand_speed_peak_time_s > 0:
+            hand_frame = int(np.argmin(np.abs(_times - hand_speed_peak_time_s)))
+        if hand_frame is not None:
+            pk_lo = max(0, hand_frame - int(round(0.40 * fs)))
+            pk_hi = min(_n, hand_frame + int(round(0.10 * fs)) + 1)
+            _turn = float(pelvis_angle[hand_frame] - pelvis_angle[pk_lo])
+            swing_dir = 1.0 if _turn >= 0 else -1.0
+            peak_pelvis_frame_global = _window_peak(swing_dir * pelvis_omega, pk_lo, pk_hi)
+        else:
+            pk_lo, pk_hi = 0, _n
+            peak_pelvis_frame_global = int(np.argmax(np.abs(pelvis_omega)))
+            swing_dir = 1.0 if pelvis_omega[peak_pelvis_frame_global] >= 0 else -1.0
         swing_start = 0
         _max_swing_frames = int(0.60 * fs)   # 600ms hard bound
 
@@ -1600,8 +1705,14 @@ class RefinedHittingOptimizer:
             frac = max(-1.0, min(1.0, frac))   # clamp to ±1 frame
             return float(i) + frac
 
-        # Pelvis peak first — used to constrain the thorax search.
-        peak_hip_frac = _subframe_peak(pelvis_om3d, swing_start)
+        # Pelvis peak first — used to constrain the thorax search. Same window as
+        # the axial peak above (tied to the hands), and only while the pelvis turns
+        # in the swing direction, so a reverse unwind cannot be the "peak".
+        _pel_lo = max(swing_start, pk_lo)
+        _pel_hi = max(_pel_lo + 1, pk_hi)
+        _pel_fwd = np.where(swing_dir * pelvis_omega > 0, pelvis_om3d, 0.0)
+        _ph = _window_peak(_pel_fwd, _pel_lo, _pel_hi)
+        peak_hip_frac = _subframe_peak(_pel_fwd[:_ph + 2], _ph)
         peak_hip_frame = int(round(peak_hip_frac))
 
         # Thorax peak: search only within ±200ms of the pelvis peak.
@@ -1632,7 +1743,9 @@ class RefinedHittingOptimizer:
         # on a 120 Hz capture (1001_120fps) the torso read 785 -> 71 -> 772 -> 219
         # -> 848 deg/s within 250 ms, and the last spike, on the edge of the search
         # window, was reported as the torso, arm and hand peak together.
-        def _surges(sig, lo, hi, high=0.6, low=0.35, half=3):
+        def _surges(sig, lo, hi, high=0.6, low=0.35, half=None):
+            if half is None:
+                half = max(1, int(round(SURGE_HALF_S * fs)))
             s = np.abs(np.asarray(sig[lo:hi], dtype=float))
             if len(s) < 2 * half + 3 or s.max() <= 0:
                 return False
@@ -1641,25 +1754,24 @@ class RefinedHittingOptimizer:
                      if s[i] >= high * top and s[i] == s[i - half:i + half + 1].max()]
             return any(s[a:b + 1].min() < low * top for a, b in zip(peaks, peaks[1:]))
 
-        _win_lo = max(swing_start, peak_hip_frame - _search_half)
-        _win_hi = min(len(pelvis_om3d), peak_hip_frame + _search_half + 1)
-        pelvis_signal_unstable = bool(_surges(pelvis_om3d, _win_lo, _win_hi))
-        torso_signal_unstable = bool(_surges(torso_om3d, _win_lo, _win_hi))
+        # (The surge check itself runs below, once contact is known.)
         # A torso peak on the last frame searched is the window's edge, not a peak.
-        torso_peak_at_edge = bool(peak_shoulder_frame >= thr_hi - 2)
+        _edge = max(1, int(round(SEQUENCE_TOL_S * fs)))
+        torso_peak_at_edge = bool(peak_shoulder_frame >= thr_hi - 1 - _edge)
 
         # Resolution uncertainty flags:
-        # 1. Timing within ±1 frame → cannot distinguish order at 60Hz.
+        # 1. Timing within ±SEQUENCE_TOL_S (~8 ms; was ±1 frame, so it depended on
+        #    the frame rate) → order cannot be distinguished.
         # 2. Peak pelvis omega < 120 deg/s → too weak a movement to sequence-analyze
         #    (check swing, practice move, or noisy capture).
-        _frame_ms = dt * 1000.0
-        _peak_pelvis_dgs = float(np.max(pelvis_om3d[swing_start:])) * 180.0 / np.pi
+        _tol_ms = SEQUENCE_TOL_S * 1000.0
+        _peak_pelvis_dgs = float(_pel_fwd[_ph]) * 180.0 / np.pi
         sequence_indeterminate = bool(
-            abs(sequence_timing_ms) < _frame_ms or
+            abs(sequence_timing_ms) < _tol_ms or
             _peak_pelvis_dgs < 120.0
         )
 
-        frame_tol = 1
+        frame_tol = SEQUENCE_TOL_S * fs   # in frames, for the fractional peak indices
         proper_sequence = bool(
             (peak_hip_frac - frame_tol) <= peak_shoulder_frac and
             peak_shoulder_frac <= (peak_arm_frac + frame_tol)
@@ -1670,7 +1782,8 @@ class RefinedHittingOptimizer:
         # =========================================================================
         eps = 1e-6
 
-        peak_pelvis_w = float(np.max(np.abs(p_omega_sw)))
+        # Axial pelvis speed in the swing direction, inside the hand-tied window.
+        peak_pelvis_w = float(max(0.0, swing_dir * pelvis_omega[peak_pelvis_frame_global]))
 
         # Constrain lumbar (torso) omega search to ±200ms around the pelvis peak.
         # Searching the full post-swing window (swing_start to end) picks up post-impact
@@ -1773,8 +1886,11 @@ class RefinedHittingOptimizer:
         pelvis_omega_3d = np.sqrt(pelvis_omega**2 + pelvis_omega_x**2 + pelvis_omega_z**2)
         torso_omega_x = _omega_1d('lumbar_bending')
         torso_omega_3d = np.sqrt(thorax_abs_omega**2 + torso_omega_x**2)
-        peak_pelvis_omega_3d = float(np.max(pelvis_omega_3d[swing_start:]))
-        peak_torso_omega_3d  = float(np.max(torso_omega_3d[swing_start:]))
+        # Peaks inside the swing: the pelvis in its hand-tied window, the torso in
+        # the window searched for its sequence peak. Taken from swing start to the
+        # end of the clip they caught follow-through and walk-off turns.
+        peak_pelvis_omega_3d = float(_pel_fwd[_ph])
+        peak_torso_omega_3d  = float(np.max(torso_omega_3d[thr_lo:thr_hi])) if thr_hi > thr_lo else 0.0
 
         # =========================================================================
         # PELVIS / LOWER-HALF METRICS  (citations in METRICS.md)
@@ -1836,20 +1952,30 @@ class RefinedHittingOptimizer:
                             contact_frame = sharp
                             contact_method = 'hand_deceleration_impact'
 
-        contact_frame = int(min(max(contact_frame, swing_start), len(pelvis_angle) - 1))
+        contact_frame = int(min(max(contact_frame, 0), len(pelvis_angle) - 1))
+        # Contact before the swing started means the segmentation latched onto the
+        # wrong movement. It used to be clamped up to swing start (16 of 132 real
+        # trials had contact == swing start), which hid the failure and fed a
+        # zero-length swing to every metric. Flag it; capture quality then marks
+        # the capture unusable.
+        contact_before_swing_start = bool(contact_frame < swing_start)
 
         # ── Transition (top of the backswing) ────────────────────────────────────
-        # The instant the pelvis reverses from loading to firing. Found by walking back
-        # from contact to the last sign change in pelvis angular velocity.
+        # The instant the pelvis reverses from loading to firing: the last sign change
+        # in pelvis angular velocity before its peak (METRIC_FORMULAS.md), searched up
+        # to 1 s back.
         #
         # This is a different event from swing_start, which is a speed threshold and is
-        # therefore already past the top by the time it triggers. X-Factor stretch has
-        # to be measured from the true top: measured from swing_start it came out
-        # exactly 0.0 on every real trial, because separation is at its maximum the
-        # moment the threshold trips and only decays afterward.
-        transition_frame = swing_start
-        for i in range(contact_frame - 1, swing_start, -1):
-            if pelvis_omega[i] * pelvis_omega[contact_frame] <= 0:
+        # therefore already past the top by the time it triggers, so swing start must
+        # not bound the search: bounded by it (and walked back from contact, where the
+        # pelvis may already be slowing or reversing) the transition landed on swing
+        # start in 117 of 132 real trials and after the pelvis peak in 14, and X-factor
+        # stretch read exactly 0 on 31.
+        _pk_t = int(min(max(peak_pelvis_frame_global, 0), len(pelvis_omega) - 1))
+        _tr_lo = max(0, _pk_t - int(round(1.0 * fs)))
+        transition_frame = min(swing_start, _pk_t)   # no reversal within 1 s: no clear top
+        for i in range(_pk_t - 1, _tr_lo - 1, -1):
+            if swing_dir * pelvis_omega[i] <= 0:
                 transition_frame = i
                 break
 
@@ -1887,7 +2013,7 @@ class RefinedHittingOptimizer:
             if len(_raw):
                 _pk = float(np.max(_raw))
                 _at_pk = int(np.sum(np.abs(_raw - _pk) < 0.05))
-                _sep_saturated = bool(_pk >= 70.0 and _at_pk >= 3)
+                _sep_saturated = bool(_pk >= 70.0 and _at_pk >= max(3, int(round(CLIP_MIN_S * fs))))
         if _sep_saturated:
             x_factor_stretch = 0.0
 
@@ -1938,6 +2064,14 @@ class RefinedHittingOptimizer:
         _chk_end = min(len(data), contact_frame + int(round(0.15 * fs)) + 1)
         if separation_source == 'trc_markers' and _chk_end > swing_start:
             _sep_raw_peak = float(np.max(np.abs(separation_full[swing_start:_chk_end])))
+        # Surge check over the same swing window, ending at contact + 150 ms. It
+        # used to run to the pelvis peak + 200 ms and fired on 70 of 132 real
+        # trials, mostly on follow-through bursts (Aiden 1009_6: a burst 183 ms
+        # after contact voided a clean 977 deg/s torso peak).
+        _win_lo = max(swing_start, peak_hip_frame - _search_half)
+        _win_hi = min(len(pelvis_om3d), _chk_end)
+        pelvis_signal_unstable = bool(_surges(pelvis_om3d, _win_lo, _win_hi))
+        torso_signal_unstable = bool(_surges(torso_om3d, _win_lo, _win_hi))
         return {
             'peak_hip_torque_Nm': float(peak_hip_torque),
             'peak_shoulder_torque_Nm': float(peak_shoulder_torque),
@@ -2024,6 +2158,7 @@ class RefinedHittingOptimizer:
             # the plant frame, which is not known until stride analysis has run.
             'peak_pelvis_frame': float(peak_hip_frac),
             'contact_frame': int(contact_frame),
+            'contact_before_swing_start': contact_before_swing_start,
         }
         
     @staticmethod
@@ -2359,8 +2494,64 @@ class RefinedHittingOptimizer:
 
         return result
 
-    def calculate_linear_inverse_dynamics(self, data: pd.DataFrame) -> Dict:
-        """Compute pelvis segment joint reaction forces via F = m·a on all 3 translation axes."""
+    def _stance_axes(self, trc_data: Optional[pd.DataFrame], data: pd.DataFrame,
+                     plant_frame: Optional[int], rotation: Optional[Dict]) -> Optional[Dict]:
+        """Horizontal unit vectors (ground X, Z) along the stance line, trail ->
+        lead ankle, and perpendicular to it (toward / away from the plate).
+
+        OpenCap's ground frame is set by the cameras, not the batter's box: on the
+        real captures ground Z runs along the stance line, so pelvis_tz is the
+        stride toward the pitcher, not sideways motion. The stance line is taken
+        from the ankle markers at foot plant (contact if no plant); without
+        markers, from the pelvis's medio-lateral axis before the swing.
+        """
+        mt = data['time'].values.astype(float) if 'time' in data.columns else None
+        rot = rotation or {}
+        u, source = None, None
+        if trc_data is not None and mt is not None and len(mt):
+            lead, trail = (('L', 'R') if (self.handedness or 'right') == 'right' else ('R', 'L'))
+            if all(f'{s}Ankle_{a}' in trc_data.columns for s in 'LR' for a in 'XZ'):
+                for label, f in (('ankles at foot plant', plant_frame), ('ankles at contact', rot.get('contact_frame'))):
+                    if f is None:
+                        continue
+                    i = self._trc_index_at(trc_data, float(mt[min(max(int(f), 0), len(mt) - 1)]))
+                    v = np.array([trc_data[f'{lead}Ankle_{a}'].values[i] - trc_data[f'{trail}Ankle_{a}'].values[i]
+                                  for a in 'XZ'], dtype=float)
+                    if np.all(np.isfinite(v)) and np.linalg.norm(v) > 0.10:
+                        u, source = v / np.linalg.norm(v), label
+                        break
+        if u is None and 'pelvis_rotation' in data.columns and len(data):
+            ss = int(rot.get('swing_start_frame') or 0)
+            th = np.deg2rad(float(np.median(data['pelvis_rotation'].values[:max(ss, 1)])))
+            u, source = np.array([np.sin(th), np.cos(th)]), 'pelvis heading before the swing'
+        if u is None:
+            return None
+        return {'stance': u, 'lateral': np.array([-u[1], u[0]]), 'source': source}
+
+    def _swing_index_window(self, n: int, fs: float, rotation: Optional[Dict], after_s: float = 0.0):
+        """[lo, hi) frames from swing start to contact (+ after_s), kept 0.1 s
+        away from both ends of the clip, where the filters ring."""
+        rot = rotation or {}
+        edge = int(round(0.10 * fs))
+        lo = max(int(rot.get('swing_start_frame') or 0), edge)
+        c = rot.get('contact_frame')
+        hi = (int(c) + int(round(after_s * fs)) + 1) if c is not None else n
+        hi = min(hi, n - edge)
+        if hi - lo < 2:
+            lo, hi = edge, n - edge
+        if hi - lo < 2:
+            lo, hi = 0, n
+        return lo, hi
+
+    def calculate_linear_inverse_dynamics(self, data: pd.DataFrame, rotation: Optional[Dict] = None,
+                                          axes: Optional[Dict] = None) -> Dict:
+        """Compute pelvis segment joint reaction forces via F = m·a on all 3 translation axes.
+
+        With stance axes, the two horizontal components are along the stance line
+        ('ap' key: the stride direction) and perpendicular to it ('lat'); without,
+        ground X and Z as before. Peaks are taken from swing start to 0.15 s after
+        contact and never within 0.1 s of the clip's ends: on the real captures
+        the peak used to land on the crop's last frame, a filter edge."""
         dt = data['time'].diff().mean()
         fs = 1.0 / dt if dt > 0 else 60.0
         required = {'pelvis_tx', 'pelvis_ty', 'pelvis_tz'}
@@ -2378,27 +2569,44 @@ class RefinedHittingOptimizer:
             smooth = smooth_data(raw, 11)
             return np.gradient(np.gradient(smooth, dt), dt)
 
-        ax = _accel('pelvis_tx')  # anterior-posterior
+        ax = _accel('pelvis_tx')
         ay = _accel('pelvis_ty')  # vertical
-        az = _accel('pelvis_tz')  # lateral
+        az = _accel('pelvis_tz')
 
-        Fx = pelvis_mass * ax
+        if axes:
+            su, la = axes['stance'], axes['lateral']
+            Fx = pelvis_mass * (ax * su[0] + az * su[1])   # along the stance line (stride)
+            Fz = pelvis_mass * (ax * la[0] + az * la[1])   # perpendicular: toward / away from the plate
+        else:
+            Fx = pelvis_mass * ax
+            Fz = pelvis_mass * az
         Fy = pelvis_mass * ay
-        Fz = pelvis_mass * az
         F_res = np.sqrt(Fx**2 + Fy**2 + Fz**2)
+        lo, hi = self._swing_index_window(len(F_res), fs, rotation, after_s=0.15) if rotation \
+            else (0, len(F_res))
+        w = slice(lo, hi)
 
         return {
             'pelvis_force_ap':         Fx,
             'pelvis_force_vert':       Fy,
             'pelvis_force_lat':        Fz,
-            'peak_pelvis_force_ap_N':  float(np.max(np.abs(Fx))),
-            'peak_pelvis_force_vert_N':float(np.max(np.abs(Fy))),
-            'peak_pelvis_force_lat_N': float(np.max(np.abs(Fz))),
-            'peak_pelvis_force_resultant_N': float(np.max(F_res)),
+            'peak_pelvis_force_ap_N':  float(np.max(np.abs(Fx[w]))),
+            'peak_pelvis_force_vert_N':float(np.max(np.abs(Fy[w]))),
+            'peak_pelvis_force_lat_N': float(np.max(np.abs(Fz[w]))),
+            'peak_pelvis_force_resultant_N': float(np.max(F_res[w])),
+            'axes_source': axes['source'] if axes else 'ground X / Z',
         }
 
-    def calculate_weight_shift(self, data: pd.DataFrame, plant_frame: int) -> Dict:
-        """Lateral balance and weight-shift metrics from pelvis_list and pelvis_tz."""
+    def calculate_weight_shift(self, data: pd.DataFrame, plant_frame: int,
+                               rotation: Optional[Dict] = None, axes: Optional[Dict] = None) -> Dict:
+        """Lateral balance and weight-shift metrics from pelvis_list and the pelvis
+        translation.
+
+        Lateral = horizontal and perpendicular to the stance line (axes, see
+        _stance_axes), over swing start -> contact, relative to the median before
+        the swing (METRIC_FORMULAS.md §9). Without axes and a swing window it
+        falls back to pelvis_tz over the whole clip, which on OpenCap captures is
+        the stride direction, not sideways."""
         dt = data['time'].diff().mean()
         fs = 1.0 / dt if dt > 0 else 60.0
         result = {}
@@ -2415,7 +2623,23 @@ class RefinedHittingOptimizer:
                 arr = _filt(data[col].values)
                 result[key] = float(np.ptp(arr))  # peak-to-peak range
 
-        if 'pelvis_tz' in data.columns:
+        if 'pelvis_tz' in data.columns and 'pelvis_tx' in data.columns and axes and rotation:
+            tz = _filt(data['pelvis_tz'].values)
+            result['pelvis_tz_range_m'] = float(np.ptp(tz))
+            la = axes['lateral']
+            lat = _filt(data['pelvis_tx'].values) * la[0] + tz * la[1]
+            ss = int(rotation.get('swing_start_frame') or 0)
+            c = int(rotation.get('contact_frame', len(lat) - 1))
+            ss = min(max(ss, 0), len(lat) - 1)
+            seg = lat[ss:max(ss + 1, min(c, len(lat) - 1) + 1)]
+            base = float(np.median(lat[:max(ss, 1)]))
+            result['lateral_sway_range_m'] = float(np.ptp(seg))
+            plant_idx = min(max(int(plant_frame), 0), len(lat) - 1)
+            result['lateral_sway_at_plant_m'] = float(lat[plant_idx] - base)
+            result['weight_shift_timing_pct'] = float(
+                int(np.argmax(np.abs(seg - base))) / max(1, len(seg) - 1) * 100.0)
+            result['lateral_axis_source'] = axes['source']
+        elif 'pelvis_tz' in data.columns:
             tz = _filt(data['pelvis_tz'].values)
             result['pelvis_tz_range_m'] = float(np.ptp(tz))
             result['lateral_sway_range_m'] = float(np.ptp(tz))
@@ -2434,6 +2658,29 @@ class RefinedHittingOptimizer:
     BALANCE_LOOKBACK_S = 1.0      # stance reference: this long before contact (load + stride)
     FINISH_WINDOW_S = (0.30, 0.80)  # after contact: from the end of the follow-through on
     FINISH_STEP_M = 0.15            # lead foot moving this far after contact = a catch step
+
+    # Joint loads are only reported for a real swing. Below this pelvis speed the
+    # capture is a check swing, a practice move or a mistracked turn (a competitive
+    # swing turns the hips at ~500-700 deg/s), and the ground-force check alone let
+    # exactly such a trial through: of 132 real trials the only one shown was a
+    # practice move (Eric 1004_120fps_2, ~34 deg/s, capture unusable).
+    DYNAMICS_MIN_PELVIS_DEG_S = 300.0
+
+    def _dynamics_gate(self, capture_quality: Optional[Dict], rotation: Optional[Dict]) -> Optional[str]:
+        """Reason the joint loads (bottom-up and OpenSim ID) are withheld for this
+        capture whatever the ground force says, or None when they may be shown."""
+        cq = capture_quality or {}
+        if cq.get('usable') is False:
+            why = '; '.join(cq.get('reasons') or [])
+            return ('Joint loads withheld: this capture is not usable as a swing'
+                    + (f' ({why})' if why else '') + ', so joint moments computed from it '
+                    'would describe the wrong movement.')
+        pk = float((rotation or {}).get('peak_pelvis_omega_3d_deg_s') or 0.0)
+        if pk < self.DYNAMICS_MIN_PELVIS_DEG_S:
+            return (f'Joint loads withheld: peak pelvis rotation was {pk:.0f}°/s, under the '
+                    f'{self.DYNAMICS_MIN_PELVIS_DEG_S:.0f}°/s of a full swing, so this looks like a '
+                    'check swing or practice move rather than a swing to load.')
+        return None
 
     def _grf_plausibility(self, grf: Dict, trc_data: pd.DataFrame, kinematics: pd.DataFrame,
                           rotation: Optional[Dict]) -> Dict:
@@ -2667,6 +2914,9 @@ class RefinedHittingOptimizer:
 
     def comprehensive_diagnosis(self, kinematics: pd.DataFrame, filename: str, trc_data: pd.DataFrame = None, verbose: bool = False,
                                 model_path: Optional[str] = None) -> Dict:
+        # Missing samples interpolated once, before any filter sees them.
+        kinematics = fill_gaps(kinematics)
+        trc_data = fill_gaps(trc_data)
         trc_metrics = self.calculate_trc_metrics(trc_data) if trc_data is not None else {'max_hand_speed_mph': 0.0, 'max_hand_speed_mps': 0.0}
         wrist_speed_mps = float(trc_metrics.get('max_hand_speed_mps', 0.0))
         rotation = self.calculate_rotational_torques_refined(
@@ -2676,9 +2926,12 @@ class RefinedHittingOptimizer:
         stride = self.calculate_stride_refined(kinematics, rotation, trc_data=trc_data)
         hand_speed = self.estimate_hand_speed(rotation, trc_metrics)
         lower_body = self.calculate_lower_body_kinematics(kinematics)
-        linear_id  = self.calculate_linear_inverse_dynamics(kinematics)
         plant_frame = stride['plant_frame'] if stride else len(kinematics) // 2
-        weight_shift = self.calculate_weight_shift(kinematics, plant_frame)
+        # "Lateral" is perpendicular to the stance line, not ground Z.
+        stance_axes = self._stance_axes(trc_data, kinematics,
+                                        stride['plant_frame'] if stride else None, rotation)
+        linear_id  = self.calculate_linear_inverse_dynamics(kinematics, rotation, stance_axes)
+        weight_shift = self.calculate_weight_shift(kinematics, plant_frame, rotation, stance_axes)
 
         # Note: the TRC-based sequence timing override was removed. The joint-angle
         # path now uses absolute thorax velocity (pelvis_rotation + lumbar_rotation)
@@ -2720,6 +2973,7 @@ class RefinedHittingOptimizer:
         # printed for the same "no silent bugs" reason.
         id_data = {}
         joint_loads_status = {}
+        dynamics_window = None
         # Athlete-specific leg segments from the scaled model when one is given,
         # otherwise the de Leva population table.
         seg_params = None
@@ -2742,6 +2996,13 @@ class RefinedHittingOptimizer:
                 from grf_estimation import estimate_grf
                 _grf = estimate_grf(trc_data, body_mass_kg=self.body_mass_kg)
                 _ss = int((rotation or {}).get('swing_start_frame') or 0)
+                # The window joint-load peaks are taken over, shared with OpenSim
+                # ID (main._run_id): swing start - 0.1 s to + 0.5 s, the window
+                # ID has always used. Bottom-up used swing start to the end of the
+                # crop (~1 s after contact), so the comparison mixed windows.
+                _mt = kinematics['time'].values.astype(float)
+                _t_ss = float(_mt[min(_ss, len(_mt) - 1)])
+                dynamics_window = (max(float(_mt[0]), _t_ss - 0.1), min(float(_mt[-1]), _t_ss + 0.5))
                 # Same plausibility limits OpenSim ID uses: if the ground force the
                 # tracked motion implies is impossible for a swing, the joint
                 # moments built on it are noise, so they are withheld, not shown.
@@ -2754,6 +3015,7 @@ class RefinedHittingOptimizer:
                     body_height_m=self.body_height_m,
                     swing_start_frame=_ss,
                     seg_params=seg_params,
+                    window_s=dynamics_window,
                 )
             except Exception as _e:
                 print(f"[id] bottom-up ID failed: {type(_e).__name__}: {_e}")
@@ -2937,7 +3199,7 @@ class RefinedHittingOptimizer:
             elif sway > 0:
                 findings.append(f"Controlled Lateral Sway ({sway*100:.1f} cm range).")
             if abs(sway_at_plant) > 0.06:
-                findings.append(f"Pelvis laterally displaced at plant ({sway_at_plant*100:.1f} cm from start).")
+                findings.append(f"Pelvis laterally displaced at plant ({sway_at_plant*100:.1f} cm from its stance position).")
                 recommendations.append("Pelvis should return near center by front foot plant. Excessive lateral displacement at contact reduces rotational power.")
                 efficiency_score -= 5
 
@@ -3135,6 +3397,20 @@ class RefinedHittingOptimizer:
             has_markers=trc_data is not None, dt=_dt,
         )
 
+        # Joint loads only for a usable, full swing. The ground-force check above
+        # cannot tell a practice move from a swing: a slow move implies a perfectly
+        # plausible ground force. main._run_id reads capture_gate and does not run
+        # OpenSim ID either.
+        _gate = self._dynamics_gate(capture_quality, rotation) if trc_data is not None else None
+        if _gate:
+            for _f in fields(metrics):
+                if _f.name.startswith(('peak_ankle_moment_id', 'peak_knee_moment_id', 'peak_hip_moment_id',
+                                       'peak_ankle_force_id', 'peak_knee_force_id', 'peak_hip_force_id',
+                                       'peak_grf_vert_l', 'peak_grf_vert_r')):
+                    setattr(metrics, _f.name, 0.0)
+            joint_loads_status = {**(joint_loads_status or {}), 'withheld': True,
+                                  'capture_gate': True, 'reason': _gate}
+
         # Evidence first: the mechanics score reads its reliability flags.
         _evidence = _metric_evidence_block(
             asdict(metrics),
@@ -3145,7 +3421,8 @@ class RefinedHittingOptimizer:
              'pelvis_signal_unstable': bool(rotation.get('pelvis_signal_unstable')) if rotation else False,
              'torso_signal_unstable': bool(rotation.get('torso_signal_unstable')) if rotation else False,
              'torso_peak_at_edge': bool(rotation.get('torso_peak_at_edge')) if rotation else False,
-             'lead_arm_side': rotation.get('lead_arm_side', 'l') if rotation else 'l'})
+             'lead_arm_side': rotation.get('lead_arm_side', 'l') if rotation else 'l',
+             'sample_rate_hz': rotation.get('sample_rate_hz') if rotation else None})
         findings, recommendations = _gate_findings(findings, recommendations, _finding_blocks, _evidence)
         try:
             _mech = compute_mechanics_score(asdict(metrics), (phase_report or {}).get('dimensions', {}),
@@ -3175,6 +3452,9 @@ class RefinedHittingOptimizer:
             # callers MUST pop it before JSON serialisation, like _rotation.
             "_foot_loads": id_data.pop('_foot_loads', None) if isinstance(id_data, dict) else None,
             "joint_loads_status": joint_loads_status,
+            # (t_start, t_end) s: the frames joint loads are computed over, for
+            # OpenSim ID as well as the bottom-up estimate.
+            "dynamics_window_s": dynamics_window,
             "capture_quality": capture_quality,
             "metrics": asdict(metrics),
             "findings": findings,
@@ -3501,9 +3781,15 @@ class RefinedHittingOptimizer:
         pel_peak = tor_peak = None
         if pel_s is not None and tor_s is not None and len(pel_s):
             s0 = int(rotation.get('swing_start_frame') or 0)
-            pk = s0 + int(np.argmax(pel_s[s0:]))
+            if rotation.get('peak_pelvis_frame') is not None:
+                # The analyzer's own pelvis peak, tied to the hands and the swing
+                # direction (argmax from swing start caught walk-off turns).
+                pk = min(len(pel_s) - 1, max(s0, int(round(rotation['peak_pelvis_frame']))))
+                pel_peak = float(rotation.get('peak_pelvis_omega_3d_deg_s') or pel_s[pk])
+            else:
+                pk = s0 + int(np.argmax(pel_s[s0:]))
+                pel_peak = float(pel_s[pk])
             s1 = min(len(tor_s), pk + int(round(0.3 * fs_r)) + 1)
-            pel_peak = float(pel_s[pk])
             tor_peak = float(np.max(tor_s[s0:s1])) if s1 > s0 else None
         for key, val, desc in (
             ('pelvis_speed', pel_peak,
@@ -3586,7 +3872,8 @@ class RefinedHittingOptimizer:
         if rotation and 'pelvis_angle' in rotation:
             pelvis_ang = rotation['pelvis_angle']
             sw  = rotation.get('swing_start_frame', 0)
-            pk  = int(np.argmax(np.abs(rotation.get('pelvis_omega', np.zeros(len(pelvis_ang))))))
+            pk  = int(round(rotation['peak_pelvis_frame'])) if rotation.get('peak_pelvis_frame') is not None \
+                else int(np.argmax(np.abs(rotation.get('pelvis_omega', np.zeros(len(pelvis_ang))))))
             pelvis_ang_window = pelvis_ang[sw:pk + 1] if pk > sw else pelvis_ang[sw:]
             pelvis_rot_range = float(np.abs(np.max(pelvis_ang_window) - np.min(pelvis_ang_window)) * 180.0 / np.pi)
         else:

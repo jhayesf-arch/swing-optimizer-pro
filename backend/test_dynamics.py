@@ -199,6 +199,103 @@ def test_consistent_loads_sum_to_required_and_follow_estimated_split():
     assert np.allclose(out['grf_l'], req / 2)
 
 
+_DATA = os.environ.get('SWING_DATA', '/tmp/claude-0/-home-user-swing-optimizer-pro/'
+                       '715982cf-832c-5b43-aaf0-1a0a354478dd/scratchpad/cuesta/raw')
+
+
+def test_dynamics_withheld_on_unusable_capture_or_slow_pelvis():
+    from analyzer import RefinedHittingOptimizer
+    o = RefinedHittingOptimizer(80, 1.83, skill_level='college')
+    good = {'usable': True}
+    assert o._dynamics_gate(good, {'peak_pelvis_omega_3d_deg_s': 650.0}) is None
+    r = o._dynamics_gate({'usable': False, 'reasons': ['very little pelvis rotation']},
+                         {'peak_pelvis_omega_3d_deg_s': 650.0})
+    assert r and 'not usable' in r, r
+    r = o._dynamics_gate(good, {'peak_pelvis_omega_3d_deg_s': 240.0})
+    assert r and '240' in r and '300' in r, r
+
+
+def test_opensim_id_is_not_run_when_the_capture_gate_withholds_dynamics():
+    import main
+    called = []
+    saved = main.HAS_OPENSIM_ID, main.run_inverse_dynamics
+    main.HAS_OPENSIM_ID = True
+    main.run_inverse_dynamics = lambda *a, **k: called.append(1) or {}
+    try:
+        reason = 'Joint loads withheld: this capture is not usable as a swing (check swing).'
+        diag = {'metrics': {'peak_hip_moment_id_l_Nm': 0.0},
+                'joint_loads_status': {'withheld': True, 'capture_gate': True, 'reason': reason}}
+        out = main._run_id('x.mot', os.path.abspath(__file__), 0.88, 0.86, diag)
+    finally:
+        main.HAS_OPENSIM_ID, main.run_inverse_dynamics = saved
+    assert out is None and not called
+    st = diag['opensim_id_status']
+    assert st['ran'] is False and st['reliable'] is False and st['reason'] == reason
+    assert 'opensim_id' not in diag and diag['muscle_loads']['status'] == 'withheld'
+
+
+def test_practice_move_gets_no_joint_loads():
+    # Eric 1004_120fps_2 is a practice move (pelvis ~34 deg/s, capture unusable),
+    # and it was the one trial of 132 whose joint loads were shown.
+    mot = os.path.join(_DATA, 'Eric', '1004_120fps_2.mot')
+    if not os.path.exists(mot):
+        print('skip: real trial not available')
+        return
+    import main
+    from analyzer import RefinedHittingOptimizer
+    o = RefinedHittingOptimizer(86, 1.833, skill_level='college', handedness='right')
+    k, t = main._crop_to_swing(o.load_mot_file(mot), o.load_trc_file(mot[:-4] + '.trc'))
+    d = o.comprehensive_diagnosis(k, 'x.mot', trc_data=t,
+                                  model_path=os.path.join(_DATA, 'Eric', 'LaiUhlrich2022_shoulder_scaled.osim'))
+    assert d['capture_quality']['usable'] is False
+    jl = d['joint_loads_status']
+    assert jl.get('withheld') is True and jl.get('capture_gate') is True, jl
+    assert d['metrics']['peak_hip_moment_id_l_Nm'] == 0.0
+
+
+def test_bottom_up_peaks_are_taken_over_the_id_window():
+    # Bottom-up took its peaks from swing start to the end of the crop (~1 s after
+    # contact) while OpenSim ID covers onset - 0.1 s to + 0.5 s, so the comparison
+    # table set mismatched windows side by side (Keller_1 lead hip 644 vs 435 N m).
+    from bottom_up_id import bottom_up_lower_body
+    trc, t = _static_trc()
+    grf = estimate_grf(trc, M)['grf_total'].copy()
+    grf[110:115, 1] *= 3.0                       # a late spike, after the ID window
+    mot = pd.DataFrame({'time': t})
+    win = (t[20], t[90])
+    out = bottom_up_lower_body(trc, mot, grf_ts=grf, grf_time=t, body_mass_kg=M,
+                               body_height_m=H, window_s=win)
+    assert abs(out['peak_grf_vert_l_N'] - M * G / 2) < 5.0, out['peak_grf_vert_l_N']
+    whole = bottom_up_lower_body(trc, mot, grf_ts=grf, grf_time=t, body_mass_kg=M, body_height_m=H)
+    assert whole['peak_grf_vert_l_N'] > 1.4 * M * G / 2          # without a window the spike counts
+
+
+def test_opensim_trim_uses_the_given_window():
+    from opensim_id import _trim_to_swing_window
+    with tempfile.TemporaryDirectory() as d:
+        src, dst = os.path.join(d, 'a.mot'), os.path.join(d, 'b.mot')
+        t = np.arange(240) / 120.0
+        rows = '\n'.join(f'{x:.6f}\t{30 * np.sin(4 * x):.4f}' for x in t)
+        open(src, 'w').write('a\nversion=1\nnRows=240\nnColumns=2\ninDegrees=yes\nendheader\n'
+                             'time\tpelvis_rotation\n' + rows + '\n')
+        t0, t1 = _trim_to_swing_window(src, dst, window=(0.5, 1.1))
+        assert abs(t0 - 0.5) < 1e-6 and abs(t1 - 1.1) < 1e-6, (t0, t1)
+
+
+def test_run_id_hands_the_analyzer_window_to_opensim():
+    import main
+    seen = {}
+    saved = main.HAS_OPENSIM_ID, main.run_inverse_dynamics
+    main.HAS_OPENSIM_ID = True
+    main.run_inverse_dynamics = lambda *a, **k: seen.update(k) or {'external_loads_applied': False}
+    try:
+        diag = {'metrics': {}, 'joint_loads_status': {}, 'dynamics_window_s': (1.2, 1.8)}
+        main._run_id('x.mot', os.path.abspath(__file__), 0.88, 0.86, diag, time_range=(0.0, 3.0))
+    finally:
+        main.HAS_OPENSIM_ID, main.run_inverse_dynamics = saved
+    assert seen.get('window') == (1.2, 1.8), seen
+
+
 if __name__ == '__main__':
     tests = [v for k, v in dict(globals()).items() if k.startswith('test_')]
     for fn in tests:
