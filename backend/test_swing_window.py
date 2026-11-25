@@ -122,6 +122,66 @@ def test_a_trunk_burst_after_contact_does_not_void_the_sequence():
     assert r['torso_signal_unstable'] is False
 
 
+def _upsample(df, tcol, k=2):
+    """The same capture at k x the frame rate (cubic spline through every sample)."""
+    from scipy.interpolate import CubicSpline
+    t = df[tcol].values.astype(float)
+    tn = np.linspace(t[0], t[-1], (len(t) - 1) * k + 1)
+    cols = {c: tn if c == tcol else (np.arange(len(tn)) + 1) if c == 'Frame'
+            else CubicSpline(t, df[c].values.astype(float))(tn) for c in df.columns}
+    out = pd.DataFrame(cols)[list(df.columns)]
+    out.attrs.update(df.attrs)
+    return out
+
+
+def test_sequence_verdict_does_not_depend_on_the_frame_rate():
+    # Torso peaks 6 ms before the pelvis: inside the ~8 ms resolution limit. With
+    # a 1-FRAME tolerance this was "proper / indeterminate" at 120 Hz and
+    # "reversed / determinate" at 240 Hz for the same motion.
+    t = np.arange(int(2.5 * FS)) / FS
+    mot120 = _mot(85 * _ramp(t, 1.0, 0.25), 40 * _ramp(t, 0.981, 0.25))
+    out = []
+    for mot in (mot120, _upsample(mot120, 'time')):
+        r = _opt().calculate_rotational_torques_refined(mot, hand_speed_peak_time_s=1.2)
+        assert -7.0 < r['sequence_timing_ms'] < -5.0, r['sequence_timing_ms']
+        out.append((r['proper_sequence'], r['sequence_indeterminate'], r['torso_signal_unstable']))
+    assert out[0] == out[1], out
+
+
+def test_real_120hz_trials_and_their_240hz_resamples_agree():
+    # Ethan 1003_7 (OpenCap, 120 Hz): proper_sequence flipped True -> False and
+    # the swing score 57.9 -> 52.7 when the same trial was resampled to 240 Hz.
+    # Over all of Ethan's trials the sequence timing must agree to ~1 ms, and the
+    # verdict must agree wherever the timing is not within 1 ms of the tolerance
+    # itself (a knife-edge trial can fall either side of any threshold).
+    from analyzer import SEQUENCE_TOL_S
+    base = os.environ.get('SWING_DATA', '/tmp/claude-0/-home-user-swing-optimizer-pro/'
+                          '715982cf-832c-5b43-aaf0-1a0a354478dd/scratchpad/cuesta/raw')
+    import glob
+    mots = sorted(glob.glob(os.path.join(base, 'Ethan', '*.mot')))
+    if not mots:
+        print('skip: real trials not available')
+        return
+    import main
+    tol_ms = SEQUENCE_TOL_S * 1000.0
+    for mot in mots:
+        o = _opt()
+        k0, t0 = o.load_mot_file(mot), o.load_trc_file(mot[:-4] + '.trc')
+        res = []
+        for k, tr in ((k0, t0), (_upsample(k0, 'time'), _upsample(t0, 'Time'))):
+            k, tr = main._crop_to_swing(k.copy(), tr.copy())
+            d = RefinedHittingOptimizer(94, 1.84, skill_level='college', handedness='right') \
+                .comprehensive_diagnosis(k, 'x.mot', trc_data=tr)
+            res.append((bool(d['metrics']['proper_sequence']), d['metrics']['sequence_timing_ms'],
+                        d['swing_score']))
+        (ok0, seq0, sc0), (ok1, seq1, sc1) = res
+        name = os.path.basename(mot)
+        assert abs(seq0 - seq1) < 1.5, (name, res)
+        if min(abs(abs(seq0) - tol_ms), abs(abs(seq1) - tol_ms)) > 1.0:
+            assert ok0 == ok1, (name, res)
+            assert abs(sc0 - sc1) < 3.0, (name, res)
+
+
 if __name__ == '__main__':
     for _n in sorted(dir()):
         if _n.startswith('test_'):

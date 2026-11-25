@@ -36,6 +36,15 @@ def butter_lowpass_filter(data, cutoff, fs, order=4):
 # wrapping behind the body in the follow-through), not motion.
 MAX_WRIST_SPEED_MPS = 22.0
 
+# Time tolerances for the sequence and signal checks. They were frame counts, so
+# the same swing got a different verdict at a different frame rate (Ethan
+# 1003_7: proper sequence at 120 Hz, reversed at 240 Hz). Each is the old frame
+# count at 120 Hz, OpenCap's usual capture rate, expressed in seconds.
+SEQUENCE_TOL_S = 1.0 / 120.0      # peak-order tolerance and "indeterminate" cut-off (~8 ms)
+SURGE_HALF_S = 3.0 / 120.0        # half-width of a local peak in the surge check (25 ms)
+CLIP_MIN_S = 3.0 / 120.0          # a joint-stop clip holds its value at least this long
+LUMBAR_SNAP_DEG_S = 30.0 * 120.0  # lumbar change faster than this is an IK snap (30 deg/frame at 120 Hz)
+
 
 def despike_marker(xyz: np.ndarray, t: np.ndarray, max_speed: float = MAX_WRIST_SPEED_MPS,
                    passes: int = 3) -> Tuple[np.ndarray, int]:
@@ -1393,7 +1402,9 @@ class RefinedHittingOptimizer:
         #  1. Flag frames stuck at the joint limit (|angle| >= 89.5°).
         #  2. Also flag the frame *after* any clamped run (the release/snap frame).
         #  3. Linearly interpolate over all flagged frames.
-        # Secondary check: any single-frame jump > 30° that isn't already flagged is also
+        # Secondary check: any single-frame jump faster than LUMBAR_SNAP_DEG_S (30° per
+        # frame at 120 Hz; a rate, so the rule does not change with the frame rate)
+        # that isn't already flagged is also
         # a discontinuity artifact — extend the mask to cover it.
         limit = 89.5  # deg — just inside the ±90° OpenSim joint limit
         bad = np.abs(lumbar_raw_deg) >= limit
@@ -1401,8 +1412,8 @@ class RefinedHittingOptimizer:
         bad_dilated = bad.copy()
         bad_dilated[1:] |= bad[:-1]
         # Also mask frames with single-frame jumps > 30° that aren't yet masked
-        jumps = np.abs(np.diff(lumbar_raw_deg))
-        jump_frames = np.where(jumps > 30.0)[0] + 1  # frame where the snap appears
+        jumps = np.abs(np.diff(lumbar_raw_deg)) / max(dt, 1e-9)   # deg/s
+        jump_frames = np.where(jumps > LUMBAR_SNAP_DEG_S)[0] + 1  # frame where the snap appears
         for jf in jump_frames:
             bad_dilated[max(0, jf-1):min(len(bad_dilated), jf+2)] = True
         # Interpolate over bad frames using surrounding valid values
@@ -1709,7 +1720,9 @@ class RefinedHittingOptimizer:
         # on a 120 Hz capture (1001_120fps) the torso read 785 -> 71 -> 772 -> 219
         # -> 848 deg/s within 250 ms, and the last spike, on the edge of the search
         # window, was reported as the torso, arm and hand peak together.
-        def _surges(sig, lo, hi, high=0.6, low=0.35, half=3):
+        def _surges(sig, lo, hi, high=0.6, low=0.35, half=None):
+            if half is None:
+                half = max(1, int(round(SURGE_HALF_S * fs)))
             s = np.abs(np.asarray(sig[lo:hi], dtype=float))
             if len(s) < 2 * half + 3 or s.max() <= 0:
                 return False
@@ -1720,20 +1733,22 @@ class RefinedHittingOptimizer:
 
         # (The surge check itself runs below, once contact is known.)
         # A torso peak on the last frame searched is the window's edge, not a peak.
-        torso_peak_at_edge = bool(peak_shoulder_frame >= thr_hi - 2)
+        _edge = max(1, int(round(SEQUENCE_TOL_S * fs)))
+        torso_peak_at_edge = bool(peak_shoulder_frame >= thr_hi - 1 - _edge)
 
         # Resolution uncertainty flags:
-        # 1. Timing within ±1 frame → cannot distinguish order at 60Hz.
+        # 1. Timing within ±SEQUENCE_TOL_S (~8 ms; was ±1 frame, so it depended on
+        #    the frame rate) → order cannot be distinguished.
         # 2. Peak pelvis omega < 120 deg/s → too weak a movement to sequence-analyze
         #    (check swing, practice move, or noisy capture).
-        _frame_ms = dt * 1000.0
+        _tol_ms = SEQUENCE_TOL_S * 1000.0
         _peak_pelvis_dgs = float(_pel_fwd[_ph]) * 180.0 / np.pi
         sequence_indeterminate = bool(
-            abs(sequence_timing_ms) < _frame_ms or
+            abs(sequence_timing_ms) < _tol_ms or
             _peak_pelvis_dgs < 120.0
         )
 
-        frame_tol = 1
+        frame_tol = SEQUENCE_TOL_S * fs   # in frames, for the fractional peak indices
         proper_sequence = bool(
             (peak_hip_frac - frame_tol) <= peak_shoulder_frac and
             peak_shoulder_frac <= (peak_arm_frac + frame_tol)
@@ -1975,7 +1990,7 @@ class RefinedHittingOptimizer:
             if len(_raw):
                 _pk = float(np.max(_raw))
                 _at_pk = int(np.sum(np.abs(_raw - _pk) < 0.05))
-                _sep_saturated = bool(_pk >= 70.0 and _at_pk >= 3)
+                _sep_saturated = bool(_pk >= 70.0 and _at_pk >= max(3, int(round(CLIP_MIN_S * fs))))
         if _sep_saturated:
             x_factor_stretch = 0.0
 
