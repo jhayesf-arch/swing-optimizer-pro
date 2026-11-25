@@ -3,7 +3,7 @@ import os
 import glob
 import numpy as np
 import pandas as pd
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, fields
 from typing import Dict, List, Tuple, Optional
 
 try:
@@ -2570,6 +2570,29 @@ class RefinedHittingOptimizer:
     FINISH_WINDOW_S = (0.30, 0.80)  # after contact: from the end of the follow-through on
     FINISH_STEP_M = 0.15            # lead foot moving this far after contact = a catch step
 
+    # Joint loads are only reported for a real swing. Below this pelvis speed the
+    # capture is a check swing, a practice move or a mistracked turn (a competitive
+    # swing turns the hips at ~500-700 deg/s), and the ground-force check alone let
+    # exactly such a trial through: of 132 real trials the only one shown was a
+    # practice move (Eric 1004_120fps_2, ~34 deg/s, capture unusable).
+    DYNAMICS_MIN_PELVIS_DEG_S = 300.0
+
+    def _dynamics_gate(self, capture_quality: Optional[Dict], rotation: Optional[Dict]) -> Optional[str]:
+        """Reason the joint loads (bottom-up and OpenSim ID) are withheld for this
+        capture whatever the ground force says, or None when they may be shown."""
+        cq = capture_quality or {}
+        if cq.get('usable') is False:
+            why = '; '.join(cq.get('reasons') or [])
+            return ('Joint loads withheld: this capture is not usable as a swing'
+                    + (f' ({why})' if why else '') + ', so joint moments computed from it '
+                    'would describe the wrong movement.')
+        pk = float((rotation or {}).get('peak_pelvis_omega_3d_deg_s') or 0.0)
+        if pk < self.DYNAMICS_MIN_PELVIS_DEG_S:
+            return (f'Joint loads withheld: peak pelvis rotation was {pk:.0f}°/s, under the '
+                    f'{self.DYNAMICS_MIN_PELVIS_DEG_S:.0f}°/s of a full swing, so this looks like a '
+                    'check swing or practice move rather than a swing to load.')
+        return None
+
     def _grf_plausibility(self, grf: Dict, trc_data: pd.DataFrame, kinematics: pd.DataFrame,
                           rotation: Optional[Dict]) -> Dict:
         """Check the marker-estimated ground force over the swing (swing start to
@@ -3272,6 +3295,20 @@ class RefinedHittingOptimizer:
             rotation, phase_report.get('dimensions', {}),
             has_markers=trc_data is not None, dt=_dt,
         )
+
+        # Joint loads only for a usable, full swing. The ground-force check above
+        # cannot tell a practice move from a swing: a slow move implies a perfectly
+        # plausible ground force. main._run_id reads capture_gate and does not run
+        # OpenSim ID either.
+        _gate = self._dynamics_gate(capture_quality, rotation) if trc_data is not None else None
+        if _gate:
+            for _f in fields(metrics):
+                if _f.name.startswith(('peak_ankle_moment_id', 'peak_knee_moment_id', 'peak_hip_moment_id',
+                                       'peak_ankle_force_id', 'peak_knee_force_id', 'peak_hip_force_id',
+                                       'peak_grf_vert_l', 'peak_grf_vert_r')):
+                    setattr(metrics, _f.name, 0.0)
+            joint_loads_status = {**(joint_loads_status or {}), 'withheld': True,
+                                  'capture_gate': True, 'reason': _gate}
 
         # Evidence first: the mechanics score reads its reliability flags.
         _evidence = _metric_evidence_block(

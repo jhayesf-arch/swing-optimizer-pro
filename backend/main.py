@@ -62,6 +62,15 @@ def _run_id(file_path, model_path, bat_mass_kg, bat_length_m, diagnosis,
               'model_source': ('uploaded' if model_uploaded else
                                'OPENSIM_MODEL_PATH' if ENV_MODEL else 'default')}
     diagnosis['opensim_id_status'] = status
+    gate = diagnosis.get('joint_loads_status') or {}
+    if gate.get('capture_gate'):
+        # Not a usable full swing (capture quality, or peak pelvis speed under the
+        # analyzer's floor): joint moments would describe the wrong movement, so
+        # ID is not run at all rather than run and shown.
+        status.update(reliable=False, reason=gate.get('reason'))
+        diagnosis['muscle_loads'] = {'status': 'withheld', 'experimental': True,
+                                     'reason': gate.get('reason')}
+        return None
     if not HAS_OPENSIM_ID:
         status['reason'] = ('OpenSim is not installed on this server (the opensim '
                             'wheel needs Python 3.11–3.13; see DYNAMICS_REFERENCE.md).')
