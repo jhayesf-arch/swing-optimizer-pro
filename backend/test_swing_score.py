@@ -77,6 +77,64 @@ def test_lower_is_better_dimensions_rate_by_value():
     assert stars == [5, 4, 3, 1, 1], stars
 
 
+# ── Reliability gate: parts the score withholds stay out of advice and rankings ──
+
+def test_sequencing_is_skipped_when_the_mechanics_score_skipped_it():
+    mech = {'components': [{'key': 'sequencing', 'status': 'skipped',
+                            'reason': '400 ms lag is beyond any published value'}]}
+    r = score({**GOOD, 'sequence_quality': {'value': 400, 'stars': 3}}, mechanics=mech)
+    seq = next(p for p in r['components'] if p['key'] == 'sequence_quality')
+    assert seq['status'] == 'skipped' and '400 ms' in seq['reason'], seq
+
+
+def test_implausible_lead_leg_block_and_stride_are_not_scored():
+    r = score({**GOOD, 'lead_leg_block': {'value': 150, 'stars': 5},
+               'stride_length': {'value': 2.0, 'stars': 5}})
+    parts = {p['key']: p for p in r['components']}
+    assert parts['lead_leg_block']['status'] == 'skipped', parts['lead_leg_block']
+    assert parts['stride_length']['status'] == 'skipped', parts['stride_length']
+
+
+def test_a_nan_value_is_not_measured_rather_than_scored_100():
+    r = score({**GOOD, 'pelvis_speed': {'value': float('nan'), 'stars': 1}})
+    pelvis = next(p for p in r['components'] if p['key'] == 'pelvis_speed')
+    assert pelvis['status'] == 'skipped' and pelvis['score'] is None, pelvis
+
+
+def test_exactly_half_the_weight_still_gets_a_score():
+    # hand speed + sequencing + torso speed + pelvis speed = 0.15 + 0.15 + 0.12 + 0.08 = 0.50
+    keep = {'hand_speed', 'sequence_quality', 'torso_speed', 'pelvis_speed'}
+    dims = {k: (v if k in keep else {**v, 'available': False}) for k, v in GOOD.items()}
+    r = score(dims)
+    assert r['score'] is not None and abs(r['coverage'] - 0.5) < 1e-9, r
+
+
+def test_gate_removes_withheld_parts_from_prescriptions_and_percentile():
+    from swing_score import gate_phase_report
+    dims = {'sequence_quality': {'value': -77, 'stars': 1, 'percentile': 8},
+            'hand_speed': {'value': 17.7, 'stars': 3, 'percentile': 70},
+            'torso_speed': {'value': 1151, 'stars': 5, 'percentile': 99}}
+    report = {
+        'dimensions': dims,
+        'phases': {'p': {'dimensions': [{**dims['sequence_quality'], 'key': 'sequence_quality'},
+                                        {**dims['hand_speed'], 'key': 'hand_speed'}]}},
+        'prescriptions': [{'key': 'sequence_quality', 'priority': 1}, {'key': 'hand_speed', 'priority': 2}],
+        'overall_percentile': 60,
+    }
+    detail = {'components': [
+        {'key': 'sequence_quality', 'status': 'skipped', 'reason': 'torso signal unstable'},
+        {'key': 'hand_speed', 'status': 'scored', 'reason': ''},
+        {'key': 'torso_speed', 'status': 'skipped', 'reason': 'far above the youth range'}]}
+    gate_phase_report(report, detail, {'sequence_quality': 0.15, 'hand_speed': 0.15, 'torso_speed': 0.12})
+    seq = report['dimensions']['sequence_quality']
+    assert seq['available'] is False and seq['unavailable_reason'] == 'torso signal unstable'
+    assert 'percentile' not in seq and seq['value'] == -77           # the value stays visible
+    assert report['phases']['p']['dimensions'][0]['available'] is False
+    assert [p['key'] for p in report['prescriptions']] == ['hand_speed']
+    assert report['prescriptions'][0]['priority'] == 1
+    assert report['overall_percentile'] == 70                          # only the scored part ranks
+
+
 if __name__ == '__main__':
     for name, fn in list(globals().items()):
         if name.startswith('test_'):

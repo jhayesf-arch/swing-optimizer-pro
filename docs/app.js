@@ -348,7 +348,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const unscored = UNSCORED_DIMS.has(d.key) ? ' <span class="pr-tag">not in Swing Score</span>'
                     : skippedBy[d.key] ? ' <span class="pr-tag pr-tag-warn">unreliable here, not scored</span>' : '';
                 if (d.available === false) {
-                    dimsHtml += `<tr class="pr-skip"><td>${esc(d.label)}${unscored}</td><td class="r">—</td><td class="r">—</td><td colspan="2" class="pr-why">Not measured: ${esc(d.unavailable_reason || 'unavailable in this capture')}</td></tr>`;
+                    dimsHtml += `<tr class="pr-skip"><td>${esc(d.label)}${unscored}</td><td class="r">—</td><td class="r">—</td><td colspan="2" class="pr-why">${d.withheld_by_score ? 'Withheld, not reliable here' : 'Not measured'}: ${esc(d.unavailable_reason || 'unavailable in this capture')}</td></tr>`;
                     return;
                 }
                 const pctTxt = (typeof d.percentile === 'number') ? d.percentile + 'th' : '—';
@@ -1685,10 +1685,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="dim-badge badge-unavailable"></div>
                 <div class="dim-info">
                     <div class="dim-name">${dim.label}</div>
-                    <div class="dim-value">Not measured</div>
+                    <div class="dim-value">${dim.withheld_by_score ? `Measured ${dim.value ?? ''}${dim.unit ? ' ' + dim.unit : ''}, not reliable on this capture` : 'Not measured'}</div>
                     <div class="dim-unavailable-why">${dim.unavailable_reason || 'unavailable in this capture'}</div>
                 </div>
-                <div class="dim-pill badge-unavailable">N/A</div>
+                <div class="dim-pill badge-unavailable">${dim.withheld_by_score ? 'Withheld' : 'N/A'}</div>
                 <div class="dim-tooltip">${dim.description || ''}</div>
             `;
             return tile;

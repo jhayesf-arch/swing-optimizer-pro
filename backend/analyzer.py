@@ -646,7 +646,7 @@ SKILL_LEVEL_BENCHMARKS = {
 }
 
 from mechanics_score import compute_mechanics_score
-from swing_score import compute_swing_score
+from swing_score import compute_swing_score, gate_phase_report
 
 try:
     from metric_evidence import build_metric_evidence, detect_ik_branch_jumps, TIER_LABELS
@@ -3160,6 +3160,9 @@ class RefinedHittingOptimizer:
                                              self.skill_level, DIMENSION_THRESHOLDS)
                 phase_report['swing_score_detail'] = _swing
                 phase_report['swing_score'] = _swing['score']
+                # What the score withheld as unreliable gets no stars, percentile or drill.
+                gate_phase_report(phase_report, _swing,
+                                  {k: w for k, w in DIMENSION_WEIGHTS.items() if k not in BALANCE_DIMS})
             except Exception as _e:
                 print(f'[swing] score failed: {type(_e).__name__}: {_e}')
         return {

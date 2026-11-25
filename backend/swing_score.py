@@ -20,9 +20,11 @@ result (hand speed) to ask "how good is the swing?".
 
 from __future__ import annotations
 
+import math
 from typing import Dict, List, Optional
 
-from mechanics_score import PLAUSIBLE_SD, _ramp, _stars_to_points, level_plausible_max
+from mechanics_score import PLAUSIBLE, PLAUSIBLE_SD, _ramp, _stars_to_points, level_plausible_max
+from mechanics_score import _implausible as _mech_implausible
 
 VERSION = 'swing_v2'
 MIN_COVERAGE = 0.5
@@ -49,6 +51,9 @@ WEIGHTS = {
 # the analyzer already treats > 2x as an IK artifact.
 PLAUSIBLE_MAX = {'torso_speed': 1300.0, 'pelvis_speed': 1200.0}
 MAX_TORSO_PELVIS_RATIO = 2.0
+# Dimensions whose believable range the mechanics score already defines (same limits, so
+# the two scores never disagree about what is a capture artifact).
+MECHANICS_LIMIT_KEY = {'lead_leg_block': 'lead_leg_block', 'stride_length': 'stride_ratio'}
 
 
 def plausible_max(key: str, skill_level: Optional[str] = None) -> Optional[float]:
@@ -83,6 +88,12 @@ def _implausible(key: str, dims: Dict, skill_level: Optional[str] = None) -> str
         except (TypeError, ValueError):
             return None
     v = val(key)
+    if v is not None and not math.isfinite(v):
+        return 'not measured (no finite value on this capture)'
+    if key in MECHANICS_LIMIT_KEY and v is not None:
+        why = _mech_implausible(MECHANICS_LIMIT_KEY[key], v)
+        if why:
+            return why
     # The torso/pelvis ratio names the cause, so it is reported ahead of the caps.
     if key == 'torso_speed':
         p = val('pelvis_speed')
@@ -100,6 +111,17 @@ def _implausible(key: str, dims: Dict, skill_level: Optional[str] = None) -> str
     return ''
 
 
+def _mechanics_skipped(key: str, mechanics: Optional[Dict]) -> str:
+    """Sequencing is graded by the mechanics score's timing ramp; when that part was
+    skipped (implausible lag, unreliable trunk), it is skipped here too, for the same reason."""
+    if key != 'sequence_quality' or not mechanics:
+        return ''
+    for c in mechanics.get('components', []):
+        if c.get('key') == 'sequencing' and c.get('status') == 'skipped':
+            return c.get('reason') or 'sequencing not measured reliably on this capture'
+    return ''
+
+
 def _dimension_score(key: str, dim: Dict, table: Optional[List], mechanics: Optional[Dict]) -> Optional[float]:
     if key == 'sequence_quality':
         # Scored like the mechanics score's sequencing part, which ramps through
@@ -108,11 +130,15 @@ def _dimension_score(key: str, dim: Dict, table: Optional[List], mechanics: Opti
             if c.get('key') == 'sequencing' and c.get('status') == 'scored':
                 return float(c['score'])
         stars = dim.get('stars')
+        if mechanics is not None:
+            return None   # the mechanics score judged the timing and did not score it
         return None if stars is None else (stars - 1) * 25.0
     value = dim.get('value')
     try:
         value = float(value)
     except (TypeError, ValueError):
+        return None
+    if not math.isfinite(value):
         return None
     if not table:
         return (dim['stars'] - 1) * 25.0 if dim.get('stars') else None
@@ -131,7 +157,8 @@ def compute_swing_score(dims: Dict, evidence: Dict, mechanics: Optional[Dict],
         elif dim.get('available') is False:
             skip = dim.get('unavailable_reason') or 'not measured on this capture'
         else:
-            skip = _unreliable(evidence, ev_keys) or _implausible(key, dims, skill_level)
+            skip = (_unreliable(evidence, ev_keys) or _implausible(key, dims, skill_level)
+                    or _mechanics_skipped(key, mechanics))
         score = None
         if not skip:
             table = (thresholds.get(key) or {}).get(skill_level)
@@ -148,7 +175,9 @@ def compute_swing_score(dims: Dict, evidence: Dict, mechanics: Optional[Dict],
     scored = [p for p in parts if p['status'] == 'scored']
     total_w = sum(w for w, _ in WEIGHTS.values())
     used_w = sum(p['weight'] for p in scored)
-    coverage = used_w / total_w if total_w else 0.0
+    # Rounded so floating-point sums (weights add to 1.0000000000000002) can't fail
+    # a swing measured on exactly half the weight.
+    coverage = round(used_w / total_w, 9) if total_w else 0.0
     score = (round(sum(p['score'] * p['weight'] for p in scored) / used_w, 1)
              if scored and coverage >= MIN_COVERAGE else None)
     return {
@@ -163,3 +192,54 @@ def compute_swing_score(dims: Dict, evidence: Dict, mechanics: Optional[Dict],
         'note': (None if score is not None else
                  'Not enough reliable measurements on this capture to give a swing score.'),
     }
+
+
+def gate_phase_report(report: Dict, detail: Dict, weights: Dict[str, float]) -> None:
+    """Keep what the Swing Score withheld out of everything else the report says.
+
+    A part skipped as unreliable or implausible (a trunk IK flip, a torso far above its
+    level's range) must not still earn stars, a percentile, a drill or a share of the
+    overall percentile. Each such dimension is marked unavailable with the score's reason
+    (its value stays, for the record), the prescriptions are rebuilt without it, and the
+    overall percentile is re-weighted over the parts that remain. Mutates report in place.
+    The multi-swing profile and the cohort builder already ignore unavailable dimensions,
+    so they inherit the gate.
+    """
+    dims = report.get('dimensions') or {}
+    withheld = {}
+    for c in (detail or {}).get('components', []):
+        d = dims.get(c.get('key'))
+        if c.get('status') == 'skipped' and d is not None and d.get('available') is not False:
+            withheld[c['key']] = c.get('reason') or 'not measured reliably on this capture'
+    for key, why in withheld.items():
+        d = dims[key]
+        d['available'] = False
+        d['unavailable_reason'] = why
+        d['withheld_by_score'] = True
+        for k in ('percentile', 'percentile_benchmark', 'percentile_library', 'percentile_n',
+                  'percentile_weight'):
+            d.pop(k, None)
+    for phase in (report.get('phases') or {}).values():
+        phase['dimensions'] = [({**pd, **dims[pd['key']]} if pd.get('key') in withheld else pd)
+                               for pd in phase.get('dimensions', [])]
+        rated = [pd for pd in phase['dimensions'] if pd.get('available') is not False]
+        if not rated:
+            phase['avg_stars'] = None
+            phase['badge'] = 'unavailable'
+    if withheld:
+        rx = [p for p in report.get('prescriptions', []) if p.get('key') not in withheld]
+        for i, p in enumerate(rx):
+            p['priority'] = i + 1
+        report['prescriptions'] = rx
+        num = den = 0.0
+        for key, w in weights.items():
+            d = dims.get(key) or {}
+            if d.get('available') is False or not isinstance(d.get('percentile'), (int, float)) or w <= 0:
+                continue
+            num += d['percentile'] * w
+            den += w
+        if den > 0:
+            report['overall_percentile'] = int(round(num / den))
+        else:
+            report['overall_percentile'] = None
+    report['withheld_dimensions'] = sorted(withheld)
