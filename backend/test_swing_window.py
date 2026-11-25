@@ -199,6 +199,20 @@ def test_one_missing_sample_does_not_break_the_analysis():
     assert np.isfinite(m['max_hand_speed_mps']) and 9.5 < m['max_hand_speed_mps'] < 10.5, m
 
 
+def test_trunk_flip_caveat_names_the_actual_frame_rate():
+    # The caveat said "filmed at 60 fps; 120-240 fps capture helps" on every
+    # capture, including 120 fps ones.
+    n = int(2.5 * FS)
+    t = np.arange(n) / FS
+    lumbar = 20 * _ramp(t, 1.03, 0.2)
+    lumbar[int(1.08 * FS):int(1.10 * FS)] = -90.0      # pinned at the stop, then a one-frame flip
+    lumbar[int(1.10 * FS):int(1.14 * FS)] = 85.0
+    d = _opt().comprehensive_diagnosis(_mot(85 * _ramp(t, 1.0, 0.25), lumbar), 'flip.mot')
+    cav = d['metric_evidence']['sequence_timing_ms']['caveat']
+    assert 'trunk angle flips' in cav, cav
+    assert '120 fps' in cav and '60 fps' not in cav, cav
+
+
 if __name__ == '__main__':
     for _n in sorted(dir()):
         if _n.startswith('test_'):

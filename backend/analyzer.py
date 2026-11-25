@@ -3283,7 +3283,8 @@ class RefinedHittingOptimizer:
              'pelvis_signal_unstable': bool(rotation.get('pelvis_signal_unstable')) if rotation else False,
              'torso_signal_unstable': bool(rotation.get('torso_signal_unstable')) if rotation else False,
              'torso_peak_at_edge': bool(rotation.get('torso_peak_at_edge')) if rotation else False,
-             'lead_arm_side': rotation.get('lead_arm_side', 'l') if rotation else 'l'})
+             'lead_arm_side': rotation.get('lead_arm_side', 'l') if rotation else 'l',
+             'sample_rate_hz': rotation.get('sample_rate_hz') if rotation else None})
         findings, recommendations = _gate_findings(findings, recommendations, _finding_blocks, _evidence)
         try:
             _mech = compute_mechanics_score(asdict(metrics), (phase_report or {}).get('dimensions', {}),

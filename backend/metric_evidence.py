@@ -336,7 +336,20 @@ def _capture_flags(diagnosis: dict) -> dict:
         'torso_signal_unstable': bool(rot.get('torso_signal_unstable')),
         'torso_peak_at_edge': bool(rot.get('torso_peak_at_edge')),
         'lead_arm_side': rot.get('lead_arm_side', 'l'),
+        'sample_rate_hz': float(rot.get('sample_rate_hz') or 0.0),
     }
+
+
+def _frame_rate_advice(fs: float) -> str:
+    """The capture-rate sentence of the trunk-flip caveat, for THIS capture's rate."""
+    if not fs or fs <= 0:
+        return 'It comes from fast rotation; a higher capture rate (120-240 fps) helps.'
+    fps = int(round(fs))
+    if fps < 100:
+        return f'It comes from fast rotation filmed at {fps} fps; 120-240 fps capture helps.'
+    if fps < 200:
+        return f'It comes from fast rotation, here filmed at {fps} fps; 240 fps capture may help.'
+    return f'It comes from fast rotation the solver could not follow, even at {fps} fps.'
 
 
 def build_metric_evidence(diagnosis: dict) -> dict:
@@ -376,8 +389,8 @@ def build_metric_evidence(diagnosis: dict) -> dict:
                 f'({", ".join(sorted(trunk_jumps))} at t={times[0]:.2f}'
                 f'{"" if len(times) == 1 else f"-{times[-1]:.2f}"} s). The solver is '
                 're-splitting the rotation between pelvis and trunk, so pelvis speed, '
-                'separation and sequence timing in this swing cannot be trusted. It '
-                'comes from fast rotation filmed at 60 fps; 120-240 fps capture helps.')
+                'separation and sequence timing in this swing cannot be trusted. '
+                + _frame_rate_advice(f['sample_rate_hz']))
         for n in _TRUNK_METRICS:
             jump_caveats[n] = text
 
