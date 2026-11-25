@@ -108,6 +108,8 @@ def _one(browser, trial: Trial, session: Session, out_dir: str, app_url: str, PW
             page.fill('#height-in', str(inch))
         if a.mass_kg:
             page.fill('#weight-lbs', str(round(a.mass_kg * 2.20462)))
+        # Age is only printed; leave it blank rather than print the form's default.
+        page.fill('#athlete-age', str(a.age) if a.age else '')
         page.select_option('#athlete-handedness', a.handedness or '')
         page.click(f'.skill-pill[data-level="{a.level}"]')
         if a.bat_length_in:

@@ -9,13 +9,14 @@ An OpenCap session export looks like this (as downloaded from OpenCap or copied 
     sessionMetadata.yaml                              (height_m, mass_kg)
 
 What OpenCap does not know comes from the folder name, e.g.
-"Mason youth right 28in 18oz" (name first; level, side and bat in any order), or from
+"Mason youth right 28in 18oz 10yo" (name first; level, side, bat and age in any order), or from
 an athlete.yaml / athlete.txt / athlete.json (or a Google Doc named "athlete") at the
 top of the folder, which wins over the folder name:
 
     name: Mason
     level: youth            # youth | high_school | college | professional
     handedness: right       # right | left | (blank to infer)
+    age: 10                 # printed on the report only
     bat_length_in: 28
     bat_weight_oz: 18
     height_m: 1.51          # overrides sessionMetadata.yaml
@@ -44,6 +45,7 @@ class Athlete:
     name: str
     level: str = 'high_school'
     handedness: Optional[str] = None          # None: let the app infer it
+    age: Optional[int] = None                 # printed on the report only
     height_m: Optional[float] = None
     mass_kg: Optional[float] = None
     bat_length_in: Optional[float] = None
@@ -117,6 +119,8 @@ def parse_folder_name(folder: str) -> Dict:
             out['handedness'] = lw
         elif re.fullmatch(r'\d+(\.\d+)?(in|\"|inch|inches)', lw):
             out['bat_length_in'] = float(re.match(r'[\d.]+', lw).group())
+        elif re.fullmatch(r'\d{1,2}(yo|y/o|yrs?|years?)', lw):
+            out['age'] = int(re.match(r'\d+', lw).group())
         elif re.fullmatch(r'\d+(\.\d+)?(oz|ounce|ounces)', lw):
             out['bat_weight_oz'] = float(re.match(r'[\d.]+', lw).group())
         elif not out and not re.fullmatch(r'[-–]', w):
@@ -165,6 +169,7 @@ def load_session(root: str, default_name: Optional[str] = None, default_level: s
         mass_kg=num(cfg.get('mass_kg'), meta.get('mass_kg')),
         bat_length_in=num(cfg.get('bat_length_in')),
         bat_weight_oz=num(cfg.get('bat_weight_oz')),
+        age=int(cfg['age']) if cfg.get('age') not in (None, '') else None,
     )
 
     mots = {os.path.splitext(os.path.basename(f))[0]: f for f in files if f.endswith('.mot')}

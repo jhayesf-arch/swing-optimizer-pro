@@ -19,6 +19,7 @@ def test_folder_name_gives_athlete_details():
         'name': 'Joe Smith', 'level': 'college', 'handedness': 'l', 'bat_length_in': 33.0}
     assert parse_folder_name('Tosh high school')['level'] == 'high school'
     assert parse_folder_name('Hunter_1008') == {'name': 'Hunter 1008'}
+    assert parse_folder_name('Nehemiah youth right 28in 10yo')['age'] == 10
 
 
 def _touch(root, rel, text=''):

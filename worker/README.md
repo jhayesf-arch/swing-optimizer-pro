@@ -18,7 +18,7 @@ Without an `ANTHROPIC_API_KEY`, the summary is just the table.
 1. Copy the session from OpenCap (`MarkerData`, `OpenSimData`, `Videos`,
    `sessionMetadata.yaml`) into a new folder inside the inbox folder.
 2. Name the folder with the athlete's details, name first:
-   `Mason youth right 28in 18oz`, `Joe college left 33in 30oz`.
+   `Mason youth right 28in 18oz 10yo`, `Joe college left 33in 30oz`.
    Level is one of `youth`, `high school`, `college`, `pro`. Anything left out uses
    the defaults (level `DEFAULT_LEVEL`, handedness inferred, the app's default bat).
    Or put an `athlete.yaml` (or a Google Doc named `athlete`) in the folder:
@@ -29,6 +29,7 @@ Without an `ANTHROPIC_API_KEY`, the summary is just the table.
    handedness: right
    bat_length_in: 28
    bat_weight_oz: 18
+   age: 10            # printed on the report only
    ```
 
 3. The worker waits until nothing in the folder has changed for `SETTLE_MINUTES`,

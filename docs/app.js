@@ -468,7 +468,7 @@ document.addEventListener('DOMContentLoaded', () => {
               <span><b>Skill:</b> ${esc(skill)}</span>
               <span><b>Height:</b> ${esc(val('height-ft'))}'${esc(val('height-in'))}"</span>
               <span><b>Weight:</b> ${esc(val('weight-lbs'))} lb</span>
-              <span><b>Age:</b> ${esc(val('athlete-age'))}</span>
+              ${val('athlete-age') ? `<span><b>Age:</b> ${esc(val('athlete-age'))}</span>` : ''}
               ${handed ? `<span><b>Bats:</b> ${esc(handed.charAt(0).toUpperCase() + handed.slice(1))}</span>` : ''}
               <span><b>Bat:</b> ${esc(val('bat-weight-oz'))} oz / ${esc(val('bat-length-in'))}"</span>
             </div>
