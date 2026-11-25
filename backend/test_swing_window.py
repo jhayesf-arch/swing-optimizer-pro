@@ -213,6 +213,62 @@ def test_trunk_flip_caveat_names_the_actual_frame_rate():
     assert '120 fps' in cav and '60 fps' not in cav, cav
 
 
+def _sway_capture(pelvis_tx, pelvis_tz):
+    """Right-handed hitter set up like OpenCap's ground frame: the stance line
+    (trail -> lead ankle) runs along -Z, so +X is toward the plate. Pelvis turns
+    85 deg from 1.0 s; both wrists swing together at ~10 m/s around 1.2 s."""
+    n = len(pelvis_tx)
+    t = np.arange(n) / FS
+    mot = _mot(85 * _ramp(t, 1.0, 0.25), 30 * _ramp(t, 1.03, 0.2),
+               extra={'pelvis_tx': pelvis_tx, 'pelvis_tz': pelvis_tz})
+    cols = {'Frame': np.arange(1, n + 1), 'Time': t}
+    pose = {'Neck': (0, 1.5, 0), 'RShoulder': (0, 1.45, .18), 'LShoulder': (0, 1.45, -.18),
+            'RElbow': (0, 1.15, .2), 'LElbow': (0, 1.15, -.2), 'RWrist': (0, .9, .2), 'LWrist': (0, .9, -.2),
+            'RHip': (0, .95, .1), 'LHip': (0, .95, -.1), 'RKnee': (0, .52, .15), 'LKnee': (0, .52, -.25),
+            'RAnkle': (0, .08, .15), 'LAnkle': (0, .08, -.45), 'RHeel': (-.05, .03, .15),
+            'LHeel': (-.05, .03, -.45), 'RBigToe': (.18, .02, .15), 'LBigToe': (.18, .02, -.45)}
+    swing = np.cumsum(10.0 * np.exp(-0.5 * ((t - 1.2) / 0.06) ** 2)) / FS
+    for m, (x, y, z) in pose.items():
+        cols[f'{m}_X'] = np.full(n, float(x)) + (swing if m.endswith('Wrist') else 0.0)
+        cols[f'{m}_Y'] = np.full(n, float(y))
+        cols[f'{m}_Z'] = np.full(n, float(z))
+    return mot, pd.DataFrame(cols)
+
+
+def test_stride_toward_the_pitcher_is_not_lateral_sway():
+    # Every real swing got "Excessive Lateral Sway (37-49 cm)" and "High Lateral
+    # Pelvis Force": the code took pelvis_tz, which on OpenCap runs along the
+    # stance line, i.e. the stride toward the pitcher, over the whole crop.
+    n = int(2.5 * FS)
+    t = np.arange(n) / FS
+    stride = -0.40 * _ramp(t, 0.6, 0.5)                 # 40 cm toward the lead foot
+    mot, trc = _sway_capture(np.zeros(n), stride)
+    d = _opt().comprehensive_diagnosis(mot, 'stride.mot', trc_data=trc)
+    m = d['metrics']
+    assert m['lateral_sway_range_m'] < 0.03, m['lateral_sway_range_m']
+    assert not any('Lateral Sway' in f and 'Excessive' in f for f in d['findings']), d['findings']
+    assert not any('High Lateral Pelvis Force' in f for f in d['findings']), d['findings']
+
+
+def test_pelvis_drifting_toward_the_plate_is_lateral_sway():
+    n = int(2.5 * FS)
+    t = np.arange(n) / FS
+    mot, trc = _sway_capture(0.15 * _ramp(t, 0.95, 0.25), np.zeros(n))
+    m = _opt().comprehensive_diagnosis(mot, 'drift.mot', trc_data=trc)['metrics']
+    assert 0.10 < m['lateral_sway_range_m'] < 0.17, m['lateral_sway_range_m']
+
+
+def test_pelvis_force_peak_is_not_the_crop_edge():
+    # A step in pelvis translation on the last frames of the crop (filter edge)
+    # set the pelvis force peak; peaks are taken inside the swing only.
+    n = int(2.5 * FS)
+    t = np.arange(n) / FS
+    tx = np.zeros(n); tx[-4:] = 0.08
+    mot, trc = _sway_capture(tx, np.zeros(n))
+    d = _opt().comprehensive_diagnosis(mot, 'edge.mot', trc_data=trc)
+    assert d['metrics']['peak_pelvis_force_resultant_N'] < 100.0, d['metrics']['peak_pelvis_force_resultant_N']
+
+
 if __name__ == '__main__':
     for _n in sorted(dir()):
         if _n.startswith('test_'):

@@ -2494,8 +2494,64 @@ class RefinedHittingOptimizer:
 
         return result
 
-    def calculate_linear_inverse_dynamics(self, data: pd.DataFrame) -> Dict:
-        """Compute pelvis segment joint reaction forces via F = m·a on all 3 translation axes."""
+    def _stance_axes(self, trc_data: Optional[pd.DataFrame], data: pd.DataFrame,
+                     plant_frame: Optional[int], rotation: Optional[Dict]) -> Optional[Dict]:
+        """Horizontal unit vectors (ground X, Z) along the stance line, trail ->
+        lead ankle, and perpendicular to it (toward / away from the plate).
+
+        OpenCap's ground frame is set by the cameras, not the batter's box: on the
+        real captures ground Z runs along the stance line, so pelvis_tz is the
+        stride toward the pitcher, not sideways motion. The stance line is taken
+        from the ankle markers at foot plant (contact if no plant); without
+        markers, from the pelvis's medio-lateral axis before the swing.
+        """
+        mt = data['time'].values.astype(float) if 'time' in data.columns else None
+        rot = rotation or {}
+        u, source = None, None
+        if trc_data is not None and mt is not None and len(mt):
+            lead, trail = (('L', 'R') if (self.handedness or 'right') == 'right' else ('R', 'L'))
+            if all(f'{s}Ankle_{a}' in trc_data.columns for s in 'LR' for a in 'XZ'):
+                for label, f in (('ankles at foot plant', plant_frame), ('ankles at contact', rot.get('contact_frame'))):
+                    if f is None:
+                        continue
+                    i = self._trc_index_at(trc_data, float(mt[min(max(int(f), 0), len(mt) - 1)]))
+                    v = np.array([trc_data[f'{lead}Ankle_{a}'].values[i] - trc_data[f'{trail}Ankle_{a}'].values[i]
+                                  for a in 'XZ'], dtype=float)
+                    if np.all(np.isfinite(v)) and np.linalg.norm(v) > 0.10:
+                        u, source = v / np.linalg.norm(v), label
+                        break
+        if u is None and 'pelvis_rotation' in data.columns and len(data):
+            ss = int(rot.get('swing_start_frame') or 0)
+            th = np.deg2rad(float(np.median(data['pelvis_rotation'].values[:max(ss, 1)])))
+            u, source = np.array([np.sin(th), np.cos(th)]), 'pelvis heading before the swing'
+        if u is None:
+            return None
+        return {'stance': u, 'lateral': np.array([-u[1], u[0]]), 'source': source}
+
+    def _swing_index_window(self, n: int, fs: float, rotation: Optional[Dict], after_s: float = 0.0):
+        """[lo, hi) frames from swing start to contact (+ after_s), kept 0.1 s
+        away from both ends of the clip, where the filters ring."""
+        rot = rotation or {}
+        edge = int(round(0.10 * fs))
+        lo = max(int(rot.get('swing_start_frame') or 0), edge)
+        c = rot.get('contact_frame')
+        hi = (int(c) + int(round(after_s * fs)) + 1) if c is not None else n
+        hi = min(hi, n - edge)
+        if hi - lo < 2:
+            lo, hi = edge, n - edge
+        if hi - lo < 2:
+            lo, hi = 0, n
+        return lo, hi
+
+    def calculate_linear_inverse_dynamics(self, data: pd.DataFrame, rotation: Optional[Dict] = None,
+                                          axes: Optional[Dict] = None) -> Dict:
+        """Compute pelvis segment joint reaction forces via F = m·a on all 3 translation axes.
+
+        With stance axes, the two horizontal components are along the stance line
+        ('ap' key: the stride direction) and perpendicular to it ('lat'); without,
+        ground X and Z as before. Peaks are taken from swing start to 0.15 s after
+        contact and never within 0.1 s of the clip's ends: on the real captures
+        the peak used to land on the crop's last frame, a filter edge."""
         dt = data['time'].diff().mean()
         fs = 1.0 / dt if dt > 0 else 60.0
         required = {'pelvis_tx', 'pelvis_ty', 'pelvis_tz'}
@@ -2513,27 +2569,44 @@ class RefinedHittingOptimizer:
             smooth = smooth_data(raw, 11)
             return np.gradient(np.gradient(smooth, dt), dt)
 
-        ax = _accel('pelvis_tx')  # anterior-posterior
+        ax = _accel('pelvis_tx')
         ay = _accel('pelvis_ty')  # vertical
-        az = _accel('pelvis_tz')  # lateral
+        az = _accel('pelvis_tz')
 
-        Fx = pelvis_mass * ax
+        if axes:
+            su, la = axes['stance'], axes['lateral']
+            Fx = pelvis_mass * (ax * su[0] + az * su[1])   # along the stance line (stride)
+            Fz = pelvis_mass * (ax * la[0] + az * la[1])   # perpendicular: toward / away from the plate
+        else:
+            Fx = pelvis_mass * ax
+            Fz = pelvis_mass * az
         Fy = pelvis_mass * ay
-        Fz = pelvis_mass * az
         F_res = np.sqrt(Fx**2 + Fy**2 + Fz**2)
+        lo, hi = self._swing_index_window(len(F_res), fs, rotation, after_s=0.15) if rotation \
+            else (0, len(F_res))
+        w = slice(lo, hi)
 
         return {
             'pelvis_force_ap':         Fx,
             'pelvis_force_vert':       Fy,
             'pelvis_force_lat':        Fz,
-            'peak_pelvis_force_ap_N':  float(np.max(np.abs(Fx))),
-            'peak_pelvis_force_vert_N':float(np.max(np.abs(Fy))),
-            'peak_pelvis_force_lat_N': float(np.max(np.abs(Fz))),
-            'peak_pelvis_force_resultant_N': float(np.max(F_res)),
+            'peak_pelvis_force_ap_N':  float(np.max(np.abs(Fx[w]))),
+            'peak_pelvis_force_vert_N':float(np.max(np.abs(Fy[w]))),
+            'peak_pelvis_force_lat_N': float(np.max(np.abs(Fz[w]))),
+            'peak_pelvis_force_resultant_N': float(np.max(F_res[w])),
+            'axes_source': axes['source'] if axes else 'ground X / Z',
         }
 
-    def calculate_weight_shift(self, data: pd.DataFrame, plant_frame: int) -> Dict:
-        """Lateral balance and weight-shift metrics from pelvis_list and pelvis_tz."""
+    def calculate_weight_shift(self, data: pd.DataFrame, plant_frame: int,
+                               rotation: Optional[Dict] = None, axes: Optional[Dict] = None) -> Dict:
+        """Lateral balance and weight-shift metrics from pelvis_list and the pelvis
+        translation.
+
+        Lateral = horizontal and perpendicular to the stance line (axes, see
+        _stance_axes), over swing start -> contact, relative to the median before
+        the swing (METRIC_FORMULAS.md §9). Without axes and a swing window it
+        falls back to pelvis_tz over the whole clip, which on OpenCap captures is
+        the stride direction, not sideways."""
         dt = data['time'].diff().mean()
         fs = 1.0 / dt if dt > 0 else 60.0
         result = {}
@@ -2550,7 +2623,23 @@ class RefinedHittingOptimizer:
                 arr = _filt(data[col].values)
                 result[key] = float(np.ptp(arr))  # peak-to-peak range
 
-        if 'pelvis_tz' in data.columns:
+        if 'pelvis_tz' in data.columns and 'pelvis_tx' in data.columns and axes and rotation:
+            tz = _filt(data['pelvis_tz'].values)
+            result['pelvis_tz_range_m'] = float(np.ptp(tz))
+            la = axes['lateral']
+            lat = _filt(data['pelvis_tx'].values) * la[0] + tz * la[1]
+            ss = int(rotation.get('swing_start_frame') or 0)
+            c = int(rotation.get('contact_frame', len(lat) - 1))
+            ss = min(max(ss, 0), len(lat) - 1)
+            seg = lat[ss:max(ss + 1, min(c, len(lat) - 1) + 1)]
+            base = float(np.median(lat[:max(ss, 1)]))
+            result['lateral_sway_range_m'] = float(np.ptp(seg))
+            plant_idx = min(max(int(plant_frame), 0), len(lat) - 1)
+            result['lateral_sway_at_plant_m'] = float(lat[plant_idx] - base)
+            result['weight_shift_timing_pct'] = float(
+                int(np.argmax(np.abs(seg - base))) / max(1, len(seg) - 1) * 100.0)
+            result['lateral_axis_source'] = axes['source']
+        elif 'pelvis_tz' in data.columns:
             tz = _filt(data['pelvis_tz'].values)
             result['pelvis_tz_range_m'] = float(np.ptp(tz))
             result['lateral_sway_range_m'] = float(np.ptp(tz))
@@ -2837,9 +2926,12 @@ class RefinedHittingOptimizer:
         stride = self.calculate_stride_refined(kinematics, rotation, trc_data=trc_data)
         hand_speed = self.estimate_hand_speed(rotation, trc_metrics)
         lower_body = self.calculate_lower_body_kinematics(kinematics)
-        linear_id  = self.calculate_linear_inverse_dynamics(kinematics)
         plant_frame = stride['plant_frame'] if stride else len(kinematics) // 2
-        weight_shift = self.calculate_weight_shift(kinematics, plant_frame)
+        # "Lateral" is perpendicular to the stance line, not ground Z.
+        stance_axes = self._stance_axes(trc_data, kinematics,
+                                        stride['plant_frame'] if stride else None, rotation)
+        linear_id  = self.calculate_linear_inverse_dynamics(kinematics, rotation, stance_axes)
+        weight_shift = self.calculate_weight_shift(kinematics, plant_frame, rotation, stance_axes)
 
         # Note: the TRC-based sequence timing override was removed. The joint-angle
         # path now uses absolute thorax velocity (pelvis_rotation + lumbar_rotation)
@@ -3107,7 +3199,7 @@ class RefinedHittingOptimizer:
             elif sway > 0:
                 findings.append(f"Controlled Lateral Sway ({sway*100:.1f} cm range).")
             if abs(sway_at_plant) > 0.06:
-                findings.append(f"Pelvis laterally displaced at plant ({sway_at_plant*100:.1f} cm from start).")
+                findings.append(f"Pelvis laterally displaced at plant ({sway_at_plant*100:.1f} cm from its stance position).")
                 recommendations.append("Pelvis should return near center by front foot plant. Excessive lateral displacement at contact reduces rotational power.")
                 efficiency_score -= 5
 
