@@ -3440,6 +3440,18 @@ class RefinedHittingOptimizer:
                 # What the score withheld as unreliable gets no stars, percentile or drill.
                 gate_phase_report(phase_report, _swing,
                                   {k: w for k, w in DIMENSION_WEIGHTS.items() if k not in BALANCE_DIMS})
+                # A capture that is not a usable swing (a practice move, hands before the
+                # turn) is not graded at all: no score, no drills, the reason stated.
+                if capture_quality and capture_quality.get('usable') is False:
+                    why = '; '.join(capture_quality.get('reasons') or []) or 'the capture check failed'
+                    _swing['score'] = None
+                    _swing['note'] = f'Not scored: this capture is not usable as a swing ({why}).'
+                    phase_report['swing_score'] = None
+                    phase_report['prescriptions'] = []
+                    phase_report['overall_percentile'] = None
+                    if _mech:
+                        _mech['score'] = None
+                        _mech['note'] = _swing['note']
             except Exception as _e:
                 print(f'[swing] score failed: {type(_e).__name__}: {_e}')
         return {

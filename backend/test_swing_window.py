@@ -287,3 +287,21 @@ if __name__ == '__main__':
         if _n.startswith('test_'):
             globals()[_n]()
             print('PASS', _n)
+
+
+def test_a_capture_that_is_not_a_usable_swing_gets_no_score():
+    # Eric 1004_120fps_2 is a practice move (hands 2.3 mph, pelvis ~34 deg/s): the
+    # capture check already calls it unusable, so neither score may grade it.
+    import main
+    raw = '/tmp/claude-0/-home-user-swing-optimizer-pro/715982cf-832c-5b43-aaf0-1a0a354478dd/scratchpad/cuesta/raw/Eric/1004_120fps_2'
+    if not os.path.exists(raw + '.mot'):
+        print('skip: real trial not available'); return
+    o = RefinedHittingOptimizer(body_mass_kg=88, body_height_m=1.83, skill_level='college', handedness='right')
+    kin = o.load_mot_file(raw + '.mot'); trc = o.load_trc_file(raw + '.trc')
+    kin, trc = main._crop_to_swing(kin, trc)
+    d = o.comprehensive_diagnosis(kin, '1004_120fps_2.mot', trc_data=trc)
+    assert d['capture_quality']['usable'] is False
+    pr = d['phase_report']
+    assert pr['swing_score'] is None and 'not usable' in pr['swing_score_detail']['note'], pr['swing_score_detail'].get('note')
+    assert (d.get('mechanics_score') or {}).get('score') is None
+    assert pr['prescriptions'] == []
