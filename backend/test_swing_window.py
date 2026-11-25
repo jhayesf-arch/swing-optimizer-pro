@@ -108,6 +108,20 @@ def test_transition_is_the_last_pelvis_reversal_before_the_peak():
     assert r['x_factor_stretch_deg'] > 15.0, r['x_factor_stretch_deg']
 
 
+def test_a_trunk_burst_after_contact_does_not_void_the_sequence():
+    # Aiden 1009_6: one clean torso peak in the swing, then a tracking burst
+    # ~180 ms after contact. The stability check looks at the swing (to contact
+    # + 150 ms), so the burst in the follow-through must not flag the torso.
+    n = int(2.5 * FS)
+    t = np.arange(n) / FS
+    pelvis = 85 * _ramp(t, 1.0, 0.25)
+    lumbar = 30 * _ramp(t, 1.03, 0.20) + 28 * _ramp(t, 1.26, 0.06)
+    r = _opt().calculate_rotational_torques_refined(_mot(pelvis, lumbar), hand_speed_peak_time_s=1.10)
+    tor = r['torso_omega_abs_deg_s']
+    assert tor[int(1.27 * FS):int(1.31 * FS)].max() > 0.6 * tor[int(1.0 * FS):int(1.25 * FS)].max()   # the burst is there
+    assert r['torso_signal_unstable'] is False
+
+
 if __name__ == '__main__':
     for _n in sorted(dir()):
         if _n.startswith('test_'):

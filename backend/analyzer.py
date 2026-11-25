@@ -1718,10 +1718,7 @@ class RefinedHittingOptimizer:
                      if s[i] >= high * top and s[i] == s[i - half:i + half + 1].max()]
             return any(s[a:b + 1].min() < low * top for a, b in zip(peaks, peaks[1:]))
 
-        _win_lo = max(swing_start, peak_hip_frame - _search_half)
-        _win_hi = min(len(pelvis_om3d), peak_hip_frame + _search_half + 1)
-        pelvis_signal_unstable = bool(_surges(pelvis_om3d, _win_lo, _win_hi))
-        torso_signal_unstable = bool(_surges(torso_om3d, _win_lo, _win_hi))
+        # (The surge check itself runs below, once contact is known.)
         # A torso peak on the last frame searched is the window's edge, not a peak.
         torso_peak_at_edge = bool(peak_shoulder_frame >= thr_hi - 2)
 
@@ -2029,6 +2026,14 @@ class RefinedHittingOptimizer:
         _chk_end = min(len(data), contact_frame + int(round(0.15 * fs)) + 1)
         if separation_source == 'trc_markers' and _chk_end > swing_start:
             _sep_raw_peak = float(np.max(np.abs(separation_full[swing_start:_chk_end])))
+        # Surge check over the same swing window, ending at contact + 150 ms. It
+        # used to run to the pelvis peak + 200 ms and fired on 70 of 132 real
+        # trials, mostly on follow-through bursts (Aiden 1009_6: a burst 183 ms
+        # after contact voided a clean 977 deg/s torso peak).
+        _win_lo = max(swing_start, peak_hip_frame - _search_half)
+        _win_hi = min(len(pelvis_om3d), _chk_end)
+        pelvis_signal_unstable = bool(_surges(pelvis_om3d, _win_lo, _win_hi))
+        torso_signal_unstable = bool(_surges(torso_om3d, _win_lo, _win_hi))
         return {
             'peak_hip_torque_Nm': float(peak_hip_torque),
             'peak_shoulder_torque_Nm': float(peak_shoulder_torque),
