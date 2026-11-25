@@ -48,3 +48,7 @@ backend/athletes.json
 *.log
 .claude/
 .gemini/
+
+# Hallmark design-lint records and screenshots (local only)
+.hallmark/
+docs/.hallmark/

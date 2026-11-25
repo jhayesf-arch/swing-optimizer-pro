@@ -842,6 +842,16 @@ def coach_status():
 def serve_css():
     return FileResponse(os.path.join(FRONTEND_DIR, "style.css"))
 
+# style.css imports these two (design tokens and base rules); without explicit
+# routes they 404 when the app is served from the API backend.
+@app.get("/tokens.css")
+def serve_tokens_css():
+    return FileResponse(os.path.join(FRONTEND_DIR, "tokens.css"), media_type="text/css")
+
+@app.get("/base.css")
+def serve_base_css():
+    return FileResponse(os.path.join(FRONTEND_DIR, "base.css"), media_type="text/css")
+
 @app.get("/app.js")
 def serve_js():
     return FileResponse(os.path.join(FRONTEND_DIR, "app.js"))

@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=27">
+    <link rel="stylesheet" href="style.css?v=28">
 </head>
 <body>
     <a class="skip-link" href="#main">Skip to the report</a>
@@ -67,13 +67,13 @@
             <!-- ===================== RESULTS SECTION ===================== -->
             <section class="results-section hidden" id="results-section">
                 <div class="results-actions">
-                    <button class="btn btn-secondary btn-sm" id="btn-back"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg> New Analysis</button>
+                    <button class="btn btn-secondary btn-sm" id="btn-back"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg> New analysis</button>
                     <div class="view-selector hidden" id="view-selector">
                         <label for="swing-view">Viewing</label>
                         <select id="swing-view" class="input-dark"></select>
                         <span class="small text-muted" id="view-hint"></span>
                     </div>
-                    <button class="btn btn-primary btn-sm" id="btn-report"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg> Download Report</button>
+                    <button class="btn btn-primary btn-sm" id="btn-report"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg> Download report</button>
                 </div>
                 <div class="results-layout">
                     <aside class="stage" aria-label="Swing score and skeleton">
@@ -92,7 +92,7 @@
                             </div>
                         </div>
                         <div class="score-meta">
-                            <div class="score-label-text">Swing Score</div>
+                            <div class="score-label-text">Swing score</div>
                             <div class="skill-badge" id="skill-badge-display">High School</div>
                         </div>
                     </div>
@@ -101,7 +101,7 @@
                         <div class="hero-stats">
                             <div class="hero-stat">
                                 <span class="hero-stat-value accent" id="exit-velo-number">--</span>
-                                <span class="hero-stat-label">Est. Hand Speed (mph)</span>
+                                <span class="hero-stat-label">Est. hand speed (mph)</span>
                             </div>
                             <div class="hero-stat">
                                 <span class="hero-stat-value" id="efficiency-number">--</span>
@@ -109,19 +109,20 @@
                             </div>
                             <div class="hero-stat">
                                 <span class="hero-stat-value" id="overall-pct-number">--</span>
-                                <span class="hero-stat-label" id="overall-pct-label">Overall Percentile (vs level)</span>
+                                <span class="hero-stat-label" id="overall-pct-label">Overall percentile (vs level)</span>
                             </div>
                         </div>
                         <p id="avg-basis-note" class="small text-muted hidden" style="margin-top:8px;"></p>
                         <p id="pct-basis-note" class="small text-muted" style="margin-top:8px;"></p>
                         <p id="data-warning" class="hidden text-muted small" style="margin-top: 12px; max-width: 400px; line-height: 1.4;">
-                            <span class="val-warn" style="font-weight:bold;"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span> Exit velocity is theoretically improbable for this athlete's demographics, likely a data artifact in the motion capture file.
+                            <span class="val-warn" style="font-weight:bold;"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg></span> Exit velocity is theoretically improbable for this athlete’s demographics, likely a data artifact in the motion capture file.
                         </p>
                     </div>
                 </div>
                 <!-- SWING SKELETON PANEL -->
                 <div class="skeleton-panel" id="skeleton-panel">
-                    <h3 class="panel-title">The swing in 3-D <span class="panel-hint">Drag to turn it. Choose a metric to light its body region.</span></h3>
+                    <h3 class="panel-title">The swing in 3-D</h3>
+                    <p class="panel-hint">Drag to turn it. Choose a metric to light its body region.</p>
                     <div class="skeleton-stage">
                         <div id="skeleton-3d" class="skeleton-viewport"></div>
                             <div class="replay" id="replay" hidden>
@@ -144,18 +145,20 @@
                 
                 <!-- MECHANICS SCORE v2 -->
                 <div class="glass-card panel hidden" id="mechanics-panel">
-                    <h3 class="panel-title">Mechanics score <span class="panel-hint">what research says drives bat speed, part by part</span></h3>
+                    <h3 class="panel-title">Mechanics score</h3>
+                    <p class="panel-hint">what research says drives bat speed, part by part</p>
                     <div class="mech-summary">
-                        <span class="mech-big" id="mech-score">—</span>
+                        <span class="mech-big" id="mech-score">--</span>
                         <p class="small" id="mech-basis"></p>
                     </div>
                     <ol class="mech-parts" id="mech-parts"></ol>
-                    <p class="small mech-foot">Each part scores 0–100 on a smooth scale between published reference values for the athlete's level. Parts this capture can't support are skipped, not guessed. A = research-backed, B = research-based with our own definition.</p>
+                    <p class="small mech-foot">Each part scores 0 to 100 on a smooth scale between published reference values for the athlete’s level. Parts this capture can’t support are skipped, not guessed. A = research-backed, B = research-based with our own definition.</p>
                 </div>
 
                 <!-- COACHING FOCUS: BODY HEATMAP + TOP PRIORITIES -->
                 <div class="glass-card panel mt-3 hidden" id="focus-panel">
-                    <h3 class="panel-title">Coaching Focus <span class="panel-hint">weakest links &amp; where to work</span></h3>
+                    <h3 class="panel-title">Coaching focus</h3>
+                    <p class="panel-hint">weakest links and where to work</p>
                     <div class="focus-grid">
                         <div class="focus-heatmap">
                             <div id="body-heatmap"></div>
@@ -166,74 +169,40 @@
                             </div>
                         </div>
                         <div class="focus-priorities">
-                            <div class="focus-priorities-head">Your Top Priorities</div>
+                            <div class="focus-priorities-head">Your top priorities</div>
                             <ol id="priorities-list" class="priorities-list"></ol>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- ASK THE COACH (inline entry point, shown once results load) -->
-                <div class="glass-card panel mt-3" id="coach-cta">
-                    <h3 class="panel-title">Ask the Coach <span class="panel-hint">explains your numbers in plain language</span></h3>
-                    <p class="small text-muted" style="margin:-0.3rem 0 0.9rem;max-width:760px;">
-                        Ask anything about this report and get a straight answer grounded in <strong>your measured numbers</strong> —
-                        it explains what the engine computed and never invents values. Hit <strong>Explain</strong> on any metric tile to ask about that one.
-                    </p>
-                    <div class="coach-suggests" id="coach-cta-chips">
-                        <button class="coach-chip" data-q="What is the single most important thing to work on, and why?">Biggest priority</button>
-                        <button class="coach-chip" data-q="Explain my swing score in plain language. What is driving it?">Explain my score</button>
-                        <button class="coach-chip" data-q="Which of my numbers are strong? Keep it brief.">What am I good at?</button>
-                        <button class="coach-chip" data-q="Which of these measurements should I not trust yet, and why?">What's unreliable?</button>
-                        <button class="coach-chip" data-q="Give me a training plan for the next two weeks based on this report.">Build me a plan</button>
-                    </div>
-                    <p class="small hidden" id="coach-cta-disabled" style="margin-top:0.9rem;">
-                        <span class="val-warn">●</span> The coach needs an <code>ANTHROPIC_API_KEY</code> set on the server.
-                        Set it and restart the backend, the key stays server-side and is never sent to the browser.
-                    </p>
-                </div>
-
-                <!-- PELVIS ANGULAR VELOCITY -->
-                <div class="glass-card panel mt-3" id="pelvis-omega-panel">
-                    <h3 class="panel-title">Peak Pelvis Angular Velocity</h3>
-                    <div style="display:flex;align-items:center;gap:2rem;flex-wrap:wrap;">
-                        <div style="text-align:center;">
-                            <div id="pelvis-omega-value" style="font-size:2.2rem;font-weight:700;color:var(--accent);">—</div>
-                            <div class="small text-muted">deg/s (3D magnitude)</div>
-                        </div>
-                        <div style="flex:1;min-width:180px;">
-                            <p class="small text-muted" style="margin:0;">Validated against Driveline OpenBiomechanics: <strong>±7% error</strong> across 5 trials. Drives swing window detection, sequence timing, and rotation range calculations.</p>
                         </div>
                     </div>
                 </div>
 
                 <!-- KINEMATIC SEQUENCE -->
                 <div class="glass-card panel mt-3" id="kinematic-panel" style="display:none;">
-                    <h3 class="panel-title"><span class="icon"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 14l3-4 3 3 4-6"/></svg></span> Kinematic Sequence</h3>
+                    <h3 class="panel-title"><span class="icon"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 14l3-4 3 3 4-6"/></svg></span> Kinematic sequence</h3>
                     <p class="small text-muted" style="margin-top:-0.4rem;margin-bottom:0.9rem;max-width:680px;">Peak rotational speed of each body segment through the swing. Elite hitters fire <strong>proximal&nbsp;→&nbsp;distal</strong>, pelvis first, then torso, lead arm, and finally the hands, each peaking later and faster than the last.</p>
                     <div class="kine-wrap">
-                        <canvas id="kinematic-chart"></canvas>
+                        <canvas id="kinematic-chart" role="img" aria-label="Angular velocity of the pelvis, torso, lead arm and hands through the swing"></canvas>
                     </div>
                     <div id="kinematic-legend" class="kine-legend"></div>
                     <div id="kine-timeline" class="kine-timeline"></div>
                     <div id="kinematic-caption" class="small" style="margin-top:0.6rem;"></div>
 
-                    <h4 class="panel-title" style="font-size:1rem;margin-top:1.4rem;margin-bottom:0.2rem;">Pelvis &amp; Lower Half</h4>
+                    <h4 class="panel-title" style="font-size:1rem;margin-top:1.4rem;margin-bottom:0.2rem;">Pelvis and lower half</h4>
                     <p class="small text-muted" style="margin-top:0;margin-bottom:0.8rem;max-width:680px;">The engine driving the sequence above. These read most reliably of any group here, the lower half moves slowest, so the markerless capture is cleanest.</p>
                     <div class="metrics-grid" id="pelvis-metrics"></div>
 
-                    <h4 class="panel-title" style="font-size:1rem;margin-top:1.4rem;margin-bottom:0.2rem;" id="id-heading">Joint Loads &mdash; Lower Body</h4>
+                    <h4 class="panel-title" style="font-size:1rem;margin-top:1.4rem;margin-bottom:0.2rem;" id="id-heading">Joint loads, lower body</h4>
                     <p class="small text-muted" style="margin-top:0;margin-bottom:0.8rem;max-width:680px;">Peak moment and reaction force at each joint, per leg, from a Newton-Euler chain built up from the ground reaction force. <em>Requires a <strong>.trc</strong> file.</em> These are the loads the body is <em>actually carrying</em>, not just the rotational-inertia term the earlier metrics used.</p>
                     <div class="metrics-grid" id="id-metrics"></div>
 
                     <div id="dyn-compare" style="display:none;">
-                        <h4 class="panel-title" style="font-size:1rem;margin-top:1.4rem;margin-bottom:0.2rem;">Dynamics Comparison</h4>
+                        <h4 class="panel-title" style="font-size:1rem;margin-top:1.4rem;margin-bottom:0.2rem;">Dynamics comparison</h4>
                         <p class="small text-muted" style="margin-top:0;margin-bottom:0.8rem;max-width:680px;">The same joint loads from independent sources. Our estimate and OpenSim share one ground reaction force, so a gap between them is in the moment math; a force-plate reference measures the ground force itself, so a gap there is in our GRF.</p>
                         <div class="dyn-table-wrap"><table class="dyn-table" id="dyn-table"></table></div>
                         <p class="small text-muted" id="dyn-notes" style="margin-top:0.6rem;"></p>
                     </div>
 
                     <div id="muscle-loads" style="display:none;">
-                        <h4 class="panel-title" style="font-size:1rem;margin-top:1.4rem;margin-bottom:0.2rem;">Leg Muscle Loads <span class="dyn-unit">experimental</span></h4>
+                        <h4 class="panel-title" style="font-size:1rem;margin-top:1.4rem;margin-bottom:0.2rem;">Leg muscle loads <span class="dyn-unit">experimental</span></h4>
                         <p class="small text-muted" style="margin-top:0;margin-bottom:0.8rem;max-width:680px;">Static optimization: the OpenSim joint moments split among the model&rsquo;s 80 leg muscles, using the least total effort. The model has no trunk or arm muscles. Shown only when the ground force and pelvis balance pass their checks; not yet validated against force plates or EMG.</p>
                         <div class="dyn-table-wrap"><table class="dyn-table" id="muscle-table"></table></div>
                         <p class="small text-muted" id="muscle-notes" style="margin-top:0.6rem;"></p>
@@ -243,7 +212,7 @@
                         <span class="ev-badge ev-A">A</span> research-backed &nbsp;
                         <span class="ev-badge ev-B">B</span> literature-based, our definition &nbsp;
                         <span class="ev-badge ev-C">C</span> our own measure &nbsp;
-                        <span class="ev-warn">!</span> this capture can't support it, hover for why
+                        <span class="ev-warn">!</span> this capture can’t support it, hover for why
                     </div>
                 </div>
 
@@ -252,18 +221,10 @@
                     <!-- Populated by JS -->
                 </div>
 
-                <!-- HISTORY PANEL -->
-                <div class="glass-card panel mt-3" id="history-panel" style="display:none;">
-                    <h3 class="panel-title"><span class="icon"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg></span> Session History</h3>
-                    <canvas id="history-chart" height="80" style="width:100%;margin-bottom:1rem;"></canvas>
-                    <div id="history-table" style="font-size:0.82rem;"></div>
-                    <button class="btn btn-secondary btn-sm" id="clear-history" style="margin-top:0.75rem;"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg> Clear History</button>
-                </div>
-
                 <!-- FINDINGS & PRESCRIPTIONS -->
                 <div class="grid-layout mt-4">
                     <div class="glass-card panel anim-slide-up" style="animation-delay: 0.15s">
-                        <h3 class="panel-title"><span class="icon"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span> Mechanical Findings</h3>
+                        <h3 class="panel-title"><span class="icon"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span> Mechanical findings</h3>
                         <ul class="findings-list" id="findings-list"></ul>
                     </div>
                     <div class="glass-card panel anim-slide-up" style="animation-delay: 0.25s">
@@ -272,20 +233,63 @@
                     </div>
                 </div>
 
+                <!-- ASK THE COACH (inline entry point, shown once results load) -->
+                <div class="glass-card panel mt-3" id="coach-cta">
+                    <h3 class="panel-title">Ask the coach</h3>
+                    <p class="panel-hint">explains your numbers in plain language</p>
+                    <p class="small text-muted" style="margin:-0.3rem 0 0.9rem;max-width:760px;">
+                        Ask anything about this report and get a straight answer grounded in <strong>your measured numbers</strong>:
+                        it explains what the engine computed and never invents values. Hit <strong>Explain</strong> on any metric tile to ask about that one.
+                    </p>
+                    <div class="coach-suggests" id="coach-cta-chips">
+                        <button class="coach-chip" data-q="What is the single most important thing to work on, and why?">Biggest priority</button>
+                        <button class="coach-chip" data-q="Explain my swing score in plain language. What is driving it?">Explain my score</button>
+                        <button class="coach-chip" data-q="Which of my numbers are strong? Keep it brief.">What am I good at?</button>
+                        <button class="coach-chip" data-q="Which of these measurements should I not trust yet, and why?">What’s unreliable?</button>
+                        <button class="coach-chip" data-q="Give me a training plan for the next two weeks based on this report.">Build me a plan</button>
+                    </div>
+                    <p class="small hidden" id="coach-cta-disabled" style="margin-top:0.9rem;">
+                        The coach needs an <code>ANTHROPIC_API_KEY</code> set on the server.
+                        Set it and restart the backend, the key stays server-side and is never sent to the browser.
+                    </p>
+                </div>
+
+                <!-- HISTORY PANEL -->
+                <div class="glass-card panel mt-3" id="history-panel" style="display:none;">
+                    <h3 class="panel-title"><span class="icon"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg></span> Session history</h3>
+                    <canvas id="history-chart" role="img" aria-label="Swing score across saved sessions" height="80" style="width:100%;margin-bottom:1rem;"></canvas>
+                    <div id="history-table" style="font-size:0.82rem;"></div>
+                    <button class="btn btn-secondary btn-sm" id="clear-history" style="margin-top:0.75rem;"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg> Clear history</button>
+                </div>
+
                 <!-- ADVANCED PHYSICS TOGGLE -->
                 <div class="advanced-toggle mt-4 anim-slide-up" style="animation-delay: 0.35s">
                     <button class="btn btn-secondary btn-sm" id="toggle-advanced">
-                        <span id="toggle-icon" class="chevron"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></span> Advanced Physics
+                        <span id="toggle-icon" class="chevron"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></span> Advanced physics
                     </button>
                 </div>
                 <div class="advanced-panels hidden" id="advanced-panels">
+                <!-- PELVIS ANGULAR VELOCITY -->
+                <div class="glass-card panel mt-3" id="pelvis-omega-panel">
+                    <h3 class="panel-title">Peak pelvis angular velocity</h3>
+                    <div style="display:flex;align-items:center;gap:2rem;flex-wrap:wrap;">
+                        <div style="text-align:center;">
+                            <div id="pelvis-omega-value">--</div>
+                            <div class="small text-muted">deg/s (3D magnitude)</div>
+                        </div>
+                        <div style="flex:1;min-width:180px;">
+                            <p class="small text-muted" style="margin:0;">Validated against Driveline OpenBiomechanics: <strong>±7% error</strong> across 5 trials. Drives swing window detection, sequence timing, and rotation range calculations.</p>
+                        </div>
+                    </div>
+                </div>
+
                     <div class="grid-layout mt-3">
                         <div class="glass-card panel">
-                            <h3 class="panel-title"><span class="icon"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg></span> Segment Velocities &amp; Sequence</h3>
+                            <h3 class="panel-title"><span class="icon"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg></span> Segment velocities and sequence</h3>
                             <div class="metrics-grid" id="rotational-metrics"></div>
                         </div>
                         <div class="glass-card panel">
-                            <h3 class="panel-title"><span class="icon"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span> Energy Transfer &amp; Stride</h3>
+                            <h3 class="panel-title"><span class="icon"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span> Energy transfer and stride</h3>
                             <div class="metrics-grid" id="stride-metrics"></div>
                         </div>
                     </div>
@@ -320,7 +324,7 @@
                         <button class="coach-chip" data-q="What is the single most important thing to work on, and why?">Biggest priority</button>
                         <button class="coach-chip" data-q="Explain my swing score in plain language. What is driving it?">Explain my score</button>
                         <button class="coach-chip" data-q="Which of my numbers are strong? Keep it brief.">What am I good at?</button>
-                        <button class="coach-chip" data-q="Which of these measurements should I not trust yet, and why?">What's unreliable?</button>
+                        <button class="coach-chip" data-q="Which of these measurements should I not trust yet, and why?">What’s unreliable?</button>
                     </div>
                 </div>
             </div>
@@ -338,15 +342,15 @@
     <div class="loading-overlay hidden" id="loading-overlay" role="status" aria-live="polite">
         <div class="spinner-container">
             <div class="spinner"></div>
-            <h3>Running Biomechanical Analysis...</h3>
-            <p class="text-muted">Computing 12-Dimension Report...</p>
+            <h3>Analyzing the swing…</h3>
+            <p class="text-muted">Computing the 12-dimension report…</p>
         </div>
     </div>
     
     <!-- Demographics / Skill Level Modal -->
     <div class="modal-overlay hidden" id="demo-modal">
         <div class="glass-card modal-content" style="max-width: 460px; text-align: center;">
-            <h2 style="margin-bottom: 0;">Configure Athlete</h2>
+            <h2 style="margin-bottom: 0;">Configure the athlete</h2>
             <p class="small mb-4" style="margin-top: 0.25rem;">Physics algorithms and dimension thresholds are calibrated by skill level and body metrics.</p>
             
             <div class="modal-inputs">
@@ -376,21 +380,21 @@
                 </div>
             </div>
 
-            <p class="small" style="margin: 1rem 0 0.5rem; font-weight: 600; color: var(--accent);"> Bat Equipment</p>
+            <p class="small modal-equipment" style="margin: 1rem 0 0.5rem;">Bat</p>
             <div class="modal-inputs">
                 <div class="input-group">
-                    <label>Bat Weight (oz)</label>
+                    <label>Bat weight (oz)</label>
                     <input type="number" id="bat-weight-oz" value="31" min="20" max="40" step="0.5" class="input-dark">
                 </div>
                 <div class="input-group">
-                    <label>Bat Length (in)</label>
+                    <label>Bat length (in)</label>
                     <input type="number" id="bat-length-in" value="34" min="26" max="36" step="0.5" class="input-dark">
                 </div>
             </div>
 
             <!-- Skill Level Selector -->
             <div class="skill-selector mt-3">
-                <label class="skill-selector-label">Skill Level</label>
+                <label class="skill-selector-label">Skill level</label>
                 <div class="skill-pills" id="skill-pills">
                     <button class="skill-pill" data-level="youth">Youth</button>
                     <button class="skill-pill active" data-level="high_school">High School</button>
@@ -401,7 +405,7 @@
             
             <div style="display: flex; gap: 1rem; justify-content: center; margin-top: 1.5rem;">
                 <button class="btn btn-secondary" id="btn-cancel-demo">Cancel</button>
-                <button class="btn btn-primary" id="btn-run-physics"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Analyze Swing</button>
+                <button class="btn btn-primary" id="btn-run-physics"><svg class="icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> Analyze swing</button>
             </div>
         </div>
     </div>
