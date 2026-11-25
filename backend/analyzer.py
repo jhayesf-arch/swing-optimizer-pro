@@ -59,6 +59,32 @@ def despike_marker(xyz: np.ndarray, t: np.ndarray, max_speed: float = MAX_WRIST_
     return x, fixed
 
 
+def hand_peak_time(trc_df) -> Optional[float]:
+    """Time (s) the two wrists move fastest together, or None without wrist
+    markers. Both hands hold the bat, so the swing is where the SLOWER wrist is
+    fastest: a tracking burst on one wrist cannot move it. Used both to crop the
+    recording to the swing (main._crop_to_swing) and to time hand speed.
+
+    The speeds are low-passed at 6 Hz for TIMING only. A swing keeps both hands
+    fast for ~0.1 s; follow-through tracking loss is a 30-50 ms burst that can
+    drag the slower wrist along with it. At 12 Hz such a burst out-ranked the
+    swing on Mateo 1010_4 (39 mph, 0.5 s after a 813 deg/s pelvis peak) and
+    Sean 1011; at 6 Hz the swing wins on both. Hand SPEED is still read from the
+    15 Hz signal (calculate_trc_metrics)."""
+    if trc_df is None:
+        return None
+    tcol = 'Time' if 'Time' in trc_df.columns else 'time' if 'time' in trc_df.columns else None
+    wrists = [w for w in ('LWrist', 'RWrist') if all(f'{w}_{x}' in trc_df.columns for x in 'XYZ')]
+    if not tcol or not wrists or len(trc_df) < 16 or not HAS_SCIPY:
+        return None
+    tt = trc_df[tcol].values.astype(float)
+    b, a = butter(4, min(6.0 / (0.5 / float(np.median(np.diff(tt)))), 0.99), btype='low')
+    speed = np.min([np.linalg.norm(np.gradient(
+        filtfilt(b, a, despike_marker(trc_df[[f'{w}_{x}' for x in 'XYZ']].values.astype(float), tt)[0], axis=0),
+        tt, axis=0), axis=1) for w in wrists], axis=0)
+    return float(tt[int(np.argmax(speed))])
+
+
 def savgol_smooth_and_diff(data, window=11, polyorder=3, deriv=0, dt=1.0):
     if not HAS_SCIPY:
         if deriv == 0:
@@ -1170,18 +1196,21 @@ class RefinedHittingOptimizer:
                     side_speed[sd] = marker_speed[(sd, wrist)]
                     break
         if side_speed:
-            # When is the swing? Both hands hold one bat, so their speed peaks
-            # coincide. When the two wrists disagree, the later peak is the
-            # follow-through: OpenCap often loses the lead arm as it wraps behind
-            # the body, reading 35-40 mph for ~0.1 s. So the swing is the shared
-            # peak when the wrists agree (within 0.15 s), else the earlier peak.
-            peaks = {sd: int(np.argmax(v)) for sd, v in side_speed.items()}
-            pk_list = sorted(peaks.values())
-            if len(pk_list) == 2 and abs(times[pk_list[1]] - times[pk_list[0]]) <= 0.15:
-                both = np.mean(list(side_speed.values()), axis=0)
-                pk0 = pk_list[0] + int(np.argmax(both[pk_list[0]:pk_list[1] + 1]))
+            # When is the swing? Both hands hold one bat, so the swing is where
+            # the two wrists move fast TOGETHER: the peak of the slower wrist, the
+            # same timing the crop uses (hand_peak_time). A burst on one wrist alone is
+            # tracking: OpenCap loses the lead arm as it wraps behind the body in
+            # the follow-through (35-40 mph for ~0.1 s), and on Talen 1007 the
+            # right wrist read 26.6 mph ~0.5 s before the swing while the left
+            # read 0.6. Taking "the earlier of two disagreeing peaks" reported
+            # that burst as hand speed on 5 of his 10 trials.
+            _hp = hand_peak_time(trc_data)
+            if _hp is not None:
+                pk0 = int(np.argmin(np.abs(times - _hp)))
+            elif len(side_speed) == 2:
+                pk0 = int(np.argmax(np.min(np.vstack(list(side_speed.values())), axis=0)))
             else:
-                pk0 = pk_list[0]
+                pk0 = int(np.argmax(next(iter(side_speed.values()))))
             # Hand speed: the fastest wrist marker within 30 ms of that moment.
             w0, w1 = max(0, pk0 - int(0.03 * fs)), min(len(times), pk0 + int(0.03 * fs) + 1)
             best = max(marker_speed.values(), key=lambda v: float(np.max(v[w0:w1])))

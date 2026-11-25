@@ -71,6 +71,28 @@ def test_contact_before_swing_start_marks_the_capture_unusable():
     assert any('contact' in s for s in cq['reasons']), cq['reasons']
 
 
+def _wrists_trc(fs, n, bumps):
+    """Two-wrist .trc whose speeds are Gaussian bumps: bumps = {name: [(t, v, w)]}."""
+    t = np.arange(n) / fs
+    cols = {'Frame': np.arange(1, n + 1), 'Time': t}
+    for name in ('RWrist', 'LWrist'):
+        sp = sum(v * np.exp(-0.5 * ((t - tc) / w) ** 2) for tc, v, w in bumps.get(name, []))
+        cols[f'{name}_X'] = np.cumsum(sp + 0 * t) / fs
+        cols[f'{name}_Y'] = np.full(n, 1.0)
+        cols[f'{name}_Z'] = np.zeros(n)
+    return pd.DataFrame(cols)
+
+
+def test_one_wrist_burst_before_the_swing_is_not_hand_speed():
+    # Talen 1007: the right wrist alone reads 26.6 mph ~0.5 s before the swing
+    # while the left reads 0.6 mph. Both wrists then swing together at ~10 m/s.
+    trc = _wrists_trc(FS, 300, {'RWrist': [(0.5, 12.0, 0.04), (1.0, 10.0, 0.08)],
+                                'LWrist': [(1.0, 9.0, 0.08)]})
+    m = _opt().calculate_trc_metrics(trc)
+    assert abs(m['hand_speed_peak_time_s'] - 1.0) < 0.05, m['hand_speed_peak_time_s']
+    assert 9.5 < m['max_hand_speed_mps'] < 10.5, m['max_hand_speed_mps']
+
+
 if __name__ == '__main__':
     for _n in sorted(dir()):
         if _n.startswith('test_'):

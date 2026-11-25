@@ -281,24 +281,11 @@ def _kinematic_sequence(mot_df, rotation=None, max_points: int = 72) -> dict:
 
 def _hand_peak_time(trc_df):
     """Time (s) the wrists move fastest, or None without wrist markers. Only the
-    swing itself moves the hands that fast, so it marks the swing reliably."""
-    import numpy as np
-    from scipy.signal import butter, filtfilt
-    if trc_df is None:
-        return None
-    tcol = 'Time' if 'Time' in trc_df.columns else 'time' if 'time' in trc_df.columns else None
-    wrists = [w for w in ('LWrist', 'RWrist') if all(f'{w}_{x}' in trc_df.columns for x in 'XYZ')]
-    if not tcol or not wrists or len(trc_df) < 16:
-        return None
-    tt = trc_df[tcol].values.astype(float)
-    b, a = butter(4, min(12.0 / (0.5 / float(np.median(np.diff(tt)))), 0.99), btype='low')
-    from analyzer import despike_marker
-    # Both hands hold the bat: the swing is where the slower wrist is fastest,
-    # so a tracking burst on one wrist cannot move the crop.
-    speed = np.min([np.linalg.norm(np.gradient(
-        filtfilt(b, a, despike_marker(trc_df[[f'{w}_{x}' for x in 'XYZ']].values.astype(float), tt)[0], axis=0),
-        tt, axis=0), axis=1) for w in wrists], axis=0)
-    return float(tt[int(np.argmax(speed))])
+    swing itself moves the hands that fast, so it marks the swing reliably.
+    The analyzer times its hand speed with the same function, so the crop and
+    the reported hand speed always agree on when the swing was."""
+    from analyzer import hand_peak_time
+    return hand_peak_time(trc_df)
 
 
 def _crop_to_swing(kin, trc_df, before_s: float = 2.0, after_s: float = 1.0):
