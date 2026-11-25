@@ -85,6 +85,9 @@ def _run_id(file_path, model_path, bat_mass_kg, bat_length_m, diagnosis,
             file_path, model_path=model_path,
             bat_mass_kg=bat_mass_kg, bat_length_m=bat_length_m,
             external_loads=foot_loads, time_range=time_range,
+            # The analyzer's swing window, shared with the bottom-up estimate so
+            # the comparison table compares the same frames.
+            window=diagnosis.get('dynamics_window_s'),
         )
     except Exception as e:
         status['reason'] = f'OpenSim ID failed: {type(e).__name__}: {e}'

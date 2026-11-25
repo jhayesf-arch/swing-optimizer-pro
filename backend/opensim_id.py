@@ -50,7 +50,8 @@ def run_inverse_dynamics(mot_path: str, model_path: str = DEFAULT_MODEL,
                           use_shoulder_model: bool = False,
                           external_loads: Optional[dict] = None,
                           time_range: Optional[tuple] = None,
-                          consistent_grf: bool = True) -> dict:
+                          consistent_grf: bool = True,
+                          window: Optional[tuple] = None) -> dict:
     """
     Run OpenSim Inverse Dynamics on a swing .mot file.
 
@@ -61,6 +62,10 @@ def run_inverse_dynamics(mot_path: str, model_path: str = DEFAULT_MODEL,
                  quiet standing at 15 Hz implied 0.2–1.65 BW vertical and 1.2 BW
                  sideways (impossible); at 10 Hz 0.56–1.28 and 0.45 BW. Provisional
                  until a clean swing is checked against lab force plates.
+    window : (t_start, t_end) to run ID on. The analyzer passes its own swing
+             window (swing start - 0.1 s to + 0.5 s) so OpenSim and the bottom-up
+             estimate take their peaks over the same frames. Without it the
+             window is found here from the pelvis peak (inside time_range).
     use_shoulder_model : if True, use the ISB shoulder model (adds scapular DOFs)
                          instead of the standard ball-and-socket arm model.
     external_loads : per-foot ground reaction forces to apply, as produced by
@@ -106,7 +111,8 @@ def run_inverse_dynamics(mot_path: str, model_path: str = DEFAULT_MODEL,
     with tempfile.TemporaryDirectory() as tmpdir:
         # ── 1. Trim .mot to swing window ────────────────────────────────────
         trimmed_mot = os.path.join(tmpdir, "swing_trimmed.mot")
-        t_start, t_end = _trim_to_swing_window(mot_path, trimmed_mot, time_range=time_range)
+        t_start, t_end = _trim_to_swing_window(mot_path, trimmed_mot, time_range=time_range,
+                                               window=window)
 
         # ── 2. Build modified model (lumbar limits + optional bat) ──────────
         mod_model_path = os.path.join(tmpdir, "model_modified.osim")
@@ -355,15 +361,23 @@ def _read_mot_df(mot_path: str) -> pd.DataFrame:
 
 
 def _trim_to_swing_window(mot_path: str, out_path: str,
-                           window_s: float = 0.5, time_range: Optional[tuple] = None) -> tuple:
+                           window_s: float = 0.5, time_range: Optional[tuple] = None,
+                           window: Optional[tuple] = None) -> tuple:
     """
     Detect swing onset by walking backward from peak pelvis omega.
-    Write a trimmed .mot covering [onset - 0.1s, onset + window_s].
+    Write a trimmed .mot covering [onset - 0.1s, onset + window_s], or exactly
+    `window` (t_start, t_end) when it is given.
     Returns (t_start, t_end).
     """
     df, header_lines = _read_mot_df(mot_path)
     time = df['time'].values
     dt = float(np.diff(time).mean())
+
+    if window is not None:
+        mask = (time >= window[0] - 1e-9) & (time <= window[1] + 1e-9)
+        if mask.sum() >= 3:
+            _write_trimmed_mot(out_path, header_lines, df[mask].copy())
+            return float(time[mask][0]), float(time[mask][-1])
 
     if 'pelvis_rotation' not in df.columns:
         # Can't detect swing — use full trial
@@ -400,19 +414,19 @@ def _trim_to_swing_window(mot_path: str, out_path: str,
     t_end   = min(time[-1], t_onset + window_s)
 
     mask = (time >= t_start) & (time <= t_end)
-    df_trim = df[mask].copy()
+    _write_trimmed_mot(out_path, header_lines, df[mask].copy())
+    return float(t_start), float(t_end)
 
-    # Rewrite .mot with same header
+
+def _write_trimmed_mot(out_path: str, header_lines, df_trim: pd.DataFrame) -> None:
+    """Rewrite a .mot with the same header (nRows updated) and the given rows."""
     with open(out_path, 'w') as f:
         for line in header_lines:
-            # Update nRows
             if line.strip().startswith('nRows'):
                 f.write(f'nRows={len(df_trim)}\n')
             else:
                 f.write(line)
         df_trim.to_csv(f, sep='\t', index=False)
-
-    return float(t_start), float(t_end)
 
 
 def _build_modified_model(src_path: str, dst_path: str,

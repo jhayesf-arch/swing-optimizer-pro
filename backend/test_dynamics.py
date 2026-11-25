@@ -253,6 +253,49 @@ def test_practice_move_gets_no_joint_loads():
     assert d['metrics']['peak_hip_moment_id_l_Nm'] == 0.0
 
 
+def test_bottom_up_peaks_are_taken_over_the_id_window():
+    # Bottom-up took its peaks from swing start to the end of the crop (~1 s after
+    # contact) while OpenSim ID covers onset - 0.1 s to + 0.5 s, so the comparison
+    # table set mismatched windows side by side (Keller_1 lead hip 644 vs 435 N m).
+    from bottom_up_id import bottom_up_lower_body
+    trc, t = _static_trc()
+    grf = estimate_grf(trc, M)['grf_total'].copy()
+    grf[110:115, 1] *= 3.0                       # a late spike, after the ID window
+    mot = pd.DataFrame({'time': t})
+    win = (t[20], t[90])
+    out = bottom_up_lower_body(trc, mot, grf_ts=grf, grf_time=t, body_mass_kg=M,
+                               body_height_m=H, window_s=win)
+    assert abs(out['peak_grf_vert_l_N'] - M * G / 2) < 5.0, out['peak_grf_vert_l_N']
+    whole = bottom_up_lower_body(trc, mot, grf_ts=grf, grf_time=t, body_mass_kg=M, body_height_m=H)
+    assert whole['peak_grf_vert_l_N'] > 1.4 * M * G / 2          # without a window the spike counts
+
+
+def test_opensim_trim_uses_the_given_window():
+    from opensim_id import _trim_to_swing_window
+    with tempfile.TemporaryDirectory() as d:
+        src, dst = os.path.join(d, 'a.mot'), os.path.join(d, 'b.mot')
+        t = np.arange(240) / 120.0
+        rows = '\n'.join(f'{x:.6f}\t{30 * np.sin(4 * x):.4f}' for x in t)
+        open(src, 'w').write('a\nversion=1\nnRows=240\nnColumns=2\ninDegrees=yes\nendheader\n'
+                             'time\tpelvis_rotation\n' + rows + '\n')
+        t0, t1 = _trim_to_swing_window(src, dst, window=(0.5, 1.1))
+        assert abs(t0 - 0.5) < 1e-6 and abs(t1 - 1.1) < 1e-6, (t0, t1)
+
+
+def test_run_id_hands_the_analyzer_window_to_opensim():
+    import main
+    seen = {}
+    saved = main.HAS_OPENSIM_ID, main.run_inverse_dynamics
+    main.HAS_OPENSIM_ID = True
+    main.run_inverse_dynamics = lambda *a, **k: seen.update(k) or {'external_loads_applied': False}
+    try:
+        diag = {'metrics': {}, 'joint_loads_status': {}, 'dynamics_window_s': (1.2, 1.8)}
+        main._run_id('x.mot', os.path.abspath(__file__), 0.88, 0.86, diag, time_range=(0.0, 3.0))
+    finally:
+        main.HAS_OPENSIM_ID, main.run_inverse_dynamics = saved
+    assert seen.get('window') == (1.2, 1.8), seen
+
+
 if __name__ == '__main__':
     tests = [v for k, v in dict(globals()).items() if k.startswith('test_')]
     for fn in tests:

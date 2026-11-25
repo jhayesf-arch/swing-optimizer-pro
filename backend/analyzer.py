@@ -2881,6 +2881,7 @@ class RefinedHittingOptimizer:
         # printed for the same "no silent bugs" reason.
         id_data = {}
         joint_loads_status = {}
+        dynamics_window = None
         # Athlete-specific leg segments from the scaled model when one is given,
         # otherwise the de Leva population table.
         seg_params = None
@@ -2903,6 +2904,13 @@ class RefinedHittingOptimizer:
                 from grf_estimation import estimate_grf
                 _grf = estimate_grf(trc_data, body_mass_kg=self.body_mass_kg)
                 _ss = int((rotation or {}).get('swing_start_frame') or 0)
+                # The window joint-load peaks are taken over, shared with OpenSim
+                # ID (main._run_id): swing start - 0.1 s to + 0.5 s, the window
+                # ID has always used. Bottom-up used swing start to the end of the
+                # crop (~1 s after contact), so the comparison mixed windows.
+                _mt = kinematics['time'].values.astype(float)
+                _t_ss = float(_mt[min(_ss, len(_mt) - 1)])
+                dynamics_window = (max(float(_mt[0]), _t_ss - 0.1), min(float(_mt[-1]), _t_ss + 0.5))
                 # Same plausibility limits OpenSim ID uses: if the ground force the
                 # tracked motion implies is impossible for a swing, the joint
                 # moments built on it are noise, so they are withheld, not shown.
@@ -2915,6 +2923,7 @@ class RefinedHittingOptimizer:
                     body_height_m=self.body_height_m,
                     swing_start_frame=_ss,
                     seg_params=seg_params,
+                    window_s=dynamics_window,
                 )
             except Exception as _e:
                 print(f"[id] bottom-up ID failed: {type(_e).__name__}: {_e}")
@@ -3348,6 +3357,9 @@ class RefinedHittingOptimizer:
             # callers MUST pop it before JSON serialisation, like _rotation.
             "_foot_loads": id_data.pop('_foot_loads', None) if isinstance(id_data, dict) else None,
             "joint_loads_status": joint_loads_status,
+            # (t_start, t_end) s: the frames joint loads are computed over, for
+            # OpenSim ID as well as the bottom-up estimate.
+            "dynamics_window_s": dynamics_window,
             "capture_quality": capture_quality,
             "metrics": asdict(metrics),
             "findings": findings,

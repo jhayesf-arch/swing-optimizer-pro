@@ -327,7 +327,8 @@ def bottom_up_lower_body(trc_df: pd.DataFrame, mot_df: pd.DataFrame,
                          grf_ts: np.ndarray, grf_time: np.ndarray,
                          body_mass_kg: float, body_height_m: float,
                          swing_start_frame: int = 0,
-                         seg_params: Optional[Dict] = None) -> Dict:
+                         seg_params: Optional[Dict] = None,
+                         window_s: Optional[tuple] = None) -> Dict:
     """Peak ankle, knee and hip moment magnitudes per side.
 
     Parameters
@@ -340,6 +341,10 @@ def bottom_up_lower_body(trc_df: pd.DataFrame, mot_df: pd.DataFrame,
     body_mass_kg, body_height_m
     swing_start_frame : trc-frame index of swing start; peaks are taken from
              this frame onward so setup wobbles don't dominate.
+    window_s : (t_start, t_end) in seconds. When given, peaks are taken only
+             inside it (and swing_start_frame is ignored). The analyzer passes
+             the same window OpenSim ID runs on, so the two columns of the
+             dynamics comparison describe the same part of the swing.
 
     Returns
     -------
@@ -381,8 +386,16 @@ def bottom_up_lower_body(trc_df: pd.DataFrame, mot_df: pd.DataFrame,
 
     # Trim to swing window. TRC and MOT share the same time base on OpenCap
     # output, so swing_start_frame is comparable.
+    if window_s is not None:
+        sel = (trc_time >= window_s[0] - 1e-9) & (trc_time <= window_s[1] + 1e-9)
+        if not sel.any():
+            sel = np.ones(len(trc_time), bool)
+    else:
+        sel = np.zeros(len(trc_time), bool)
+        sel[max(0, swing_start_frame):] = True
+
     def _peak(vec_ts: np.ndarray) -> float:
-        seg = vec_ts[max(0, swing_start_frame):]
+        seg = vec_ts[sel[:len(vec_ts)]]
         if seg.size == 0:
             return 0.0
         return float(np.max(np.linalg.norm(seg, axis=1)))
@@ -405,8 +418,8 @@ def bottom_up_lower_body(trc_df: pd.DataFrame, mot_df: pd.DataFrame,
         # Per-foot peak vertical GRF. A force plate measures this directly, so it
         # is the cleanest single comparison against Cortex: it isolates the
         # per-foot split from everything the moment chain adds on top.
-        'peak_grf_vert_l_N': float(np.max(split['F_grf_l'][max(0, swing_start_frame):, 1])) if len(split['F_grf_l']) else 0.0,
-        'peak_grf_vert_r_N': float(np.max(split['F_grf_r'][max(0, swing_start_frame):, 1])) if len(split['F_grf_r']) else 0.0,
+        'peak_grf_vert_l_N': float(np.max(split['F_grf_l'][sel[:len(split['F_grf_l'])], 1])) if sel[:len(split['F_grf_l'])].any() else 0.0,
+        'peak_grf_vert_r_N': float(np.max(split['F_grf_r'][sel[:len(split['F_grf_r'])], 1])) if sel[:len(split['F_grf_r'])].any() else 0.0,
         'method': 'bottom_up_ID (GRF from CoM Newton, α=0 approximation, static CoP on floor)',
         'segment_source': 'scaled .osim' if seg_params else 'de Leva 1996 (population average)',
         # Per-frame loads for OpenSim external loads. numpy — callers must pop
