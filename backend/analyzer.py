@@ -68,6 +68,26 @@ def despike_marker(xyz: np.ndarray, t: np.ndarray, max_speed: float = MAX_WRIST_
     return x, fixed
 
 
+def fill_gaps(df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
+    """Missing samples (NaN) interpolated linearly from their neighbours, with the
+    first/last valid value held at the edges. Every filter downstream (Butterworth,
+    Savitzky-Golay) fails or smears NaN over the whole series otherwise: one NaN in
+    pelvis_rotation raised ValueError (an HTTP 500), one in a wrist made hand speed
+    NaN. Returns the frame unchanged when nothing is missing; attrs are kept."""
+    if df is None or len(df) == 0:
+        return df
+    num = df.select_dtypes(include=[np.number]).columns
+    if not df[num].isna().any().any():
+        return df
+    attrs = dict(df.attrs)
+    out = df.copy()
+    for c in num:
+        if out[c].isna().any() and out[c].notna().any():
+            out[c] = out[c].interpolate(method='linear', limit_direction='both')
+    out.attrs.update(attrs)
+    return out
+
+
 def hand_peak_time(trc_df) -> Optional[float]:
     """Time (s) the two wrists move fastest together, or None without wrist
     markers. Both hands hold the bat, so the swing is where the SLOWER wrist is
@@ -82,6 +102,7 @@ def hand_peak_time(trc_df) -> Optional[float]:
     15 Hz signal (calculate_trc_metrics)."""
     if trc_df is None:
         return None
+    trc_df = fill_gaps(trc_df)
     tcol = 'Time' if 'Time' in trc_df.columns else 'time' if 'time' in trc_df.columns else None
     wrists = [w for w in ('LWrist', 'RWrist') if all(f'{w}_{x}' in trc_df.columns for x in 'XYZ')]
     if not tcol or not wrists or len(trc_df) < 16 or not HAS_SCIPY:
@@ -1095,7 +1116,7 @@ class RefinedHittingOptimizer:
             data[rot] = np.degrees(data[rot])
         # Attach event times as metadata via attrs (pandas 1.0+)
         data.attrs.update(event_times)
-        return data
+        return fill_gaps(data)
         
     def load_trc_file(self, filepath: str) -> pd.DataFrame:
         """Parse native .trc file with OpenSim header stripping and flatten columns"""
@@ -1156,7 +1177,7 @@ class RefinedHittingOptimizer:
             df.columns = flat_cols[:len(df.columns)]
             if scale != 1.0:
                 df.iloc[:, 2:] = df.iloc[:, 2:].astype(float) * scale
-            return df
+            return fill_gaps(df)
         except Exception:
             return None
             
@@ -1164,7 +1185,8 @@ class RefinedHittingOptimizer:
         """Extract spatial metrics (e.g. hand speed) from 3D marker coordinates"""
         if trc_data is None or len(trc_data) == 0:
             return {'max_hand_speed_mph': 0.0}
-            
+        trc_data = fill_gaps(trc_data)
+
         dt = trc_data['Time'].diff().mean()
         if dt <= 0 or np.isnan(dt): dt = 1/60.0
         fs = 1.0 / dt
@@ -1378,6 +1400,7 @@ class RefinedHittingOptimizer:
     def calculate_rotational_torques_refined(self, data: pd.DataFrame, wrist_speed_mps: float = 0.0,
                                              hand_speed_peak_time_s: float = 0.0,
                                              marker_separation: Optional[Dict] = None) -> Dict:
+        data = fill_gaps(data)
         dt = data['time'].diff().mean()
         fs = 1.0 / dt if dt > 0 else 60.0
         
@@ -2779,6 +2802,9 @@ class RefinedHittingOptimizer:
 
     def comprehensive_diagnosis(self, kinematics: pd.DataFrame, filename: str, trc_data: pd.DataFrame = None, verbose: bool = False,
                                 model_path: Optional[str] = None) -> Dict:
+        # Missing samples interpolated once, before any filter sees them.
+        kinematics = fill_gaps(kinematics)
+        trc_data = fill_gaps(trc_data)
         trc_metrics = self.calculate_trc_metrics(trc_data) if trc_data is not None else {'max_hand_speed_mph': 0.0, 'max_hand_speed_mps': 0.0}
         wrist_speed_mps = float(trc_metrics.get('max_hand_speed_mps', 0.0))
         rotation = self.calculate_rotational_torques_refined(

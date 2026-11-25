@@ -182,6 +182,23 @@ def test_real_120hz_trials_and_their_240hz_resamples_agree():
             assert abs(sc0 - sc1) < 3.0, (name, res)
 
 
+def test_one_missing_sample_does_not_break_the_analysis():
+    # One NaN in pelvis_rotation raised ValueError in the Savitzky-Golay filter
+    # (an HTTP 500); one NaN in a wrist made hand speed NaN. Short gaps are
+    # interpolated (edges held) before any filtering.
+    n = int(2.5 * FS)
+    t = np.arange(n) / FS
+    mot = _mot(85 * _ramp(t, 1.0, 0.25), 30 * _ramp(t, 1.03, 0.2))
+    mot.loc[40, 'pelvis_rotation'] = np.nan
+    mot.loc[0, 'lumbar_rotation'] = np.nan
+    d = _opt().comprehensive_diagnosis(mot, 'gap.mot')
+    assert np.isfinite(d['metrics']['peak_pelvis_omega_3d_deg_s']) and d['metrics']['peak_pelvis_omega_3d_deg_s'] > 300
+    trc = _wrists_trc(FS, 300, {'RWrist': [(1.0, 10.0, 0.08)], 'LWrist': [(1.0, 9.0, 0.08)]})
+    trc.loc[5, 'RWrist_X'] = np.nan
+    m = _opt().calculate_trc_metrics(trc)
+    assert np.isfinite(m['max_hand_speed_mps']) and 9.5 < m['max_hand_speed_mps'] < 10.5, m
+
+
 if __name__ == '__main__':
     for _n in sorted(dir()):
         if _n.startswith('test_'):
